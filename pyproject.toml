@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "alchemy"
 version = "0.1.0"
-description = "Local-first LLM core engine — Ollama model management, routing, shared API"
+description = "Core engine — CPU-side heavy lifting, shadow desktop, UI-TARS vision agent"
 requires-python = ">=3.12"
 license = "MIT"
 authors = [
@@ -18,17 +18,11 @@ dependencies = [
     "httpx",
     "pydantic>=2.0",
     "pydantic-settings",
-    "litellm",
+    "Pillow",
+    "aiofiles",
 ]
 
 [project.optional-dependencies]
-voice = [
-    "faster-whisper",
-    "piper-tts",
-    "openwakeword",
-    "sounddevice",
-    "webrtcvad",
-]
 dev = [
     "pytest",
     "pytest-asyncio",
@@ -38,6 +32,10 @@ dev = [
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    "live: tests requiring running WSL2 + shadow desktop",
+    "integration: tests requiring NEO-TX running",
+]
 
 [tool.ruff]
 target-version = "py312"

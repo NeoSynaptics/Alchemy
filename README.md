@@ -1,51 +1,43 @@
 # Alchemy
 
-**Local-first LLM core engine. Model management, routing, voice pipeline, and shared API.**
+**Core engine — CPU-side heavy lifting, shadow desktop, UI-TARS vision agent.**
 
-Alchemy is the foundation layer that any Alchemy-ecosystem tool connects to. It manages local models via Ollama, routes requests to the right model, handles voice input/output, and exposes a clean API. Currently serves [NEO-TX](https://github.com/NeoSynaptics/NEO-TX) (Shadow Desktop).
+Alchemy is the slow, smart backend. It runs UI-TARS-72B on CPU (128GB RAM) for GUI interaction — analyzing screenshots, deciding where to click, executing actions on a hidden virtual desktop. NEO-TX (the user-facing layer) delegates heavy work here.
 
 ## Design Principles
 
 - **Local-first.** Everything runs on your hardware. No cloud dependency.
-- **Model-aware.** Knows which models are loaded, their VRAM/RAM cost, and routes accordingly.
-- **Thin.** No bloat. If it's not routing, model management, voice, or API — it doesn't belong here.
+- **CPU-powered.** 72B model on 128GB RAM. Slow but accurate. Accuracy beats speed for GUI work.
+- **Headless.** No user interface. The shadow desktop is invisible. NEO-TX handles all user interaction.
 
-## Models
+## What Alchemy Owns
 
-### Active Stack
+| Responsibility | Detail |
+|----------------|--------|
+| **Shadow Desktop** | WSL2 + Xvfb + Fluxbox + x11vnc + noVNC — hidden virtual desktop |
+| **Vision Agent** | UI-TARS-72B analyzes screenshots → outputs action JSON |
+| **Agent Loop** | screenshot → UI-TARS → parse action → xdotool → repeat |
+| **Model Management** | CPU model lifecycle (load/unload/health) |
+| **API** | FastAPI on port 8000 — NEO-TX connects here |
+| **Auth** | Bearer tokens |
 
-| Model | Role | Size | Where | Speed | Purpose |
-|-------|------|------|-------|-------|---------|
-| **UI-TARS-72B** (Q4) | Visuomotor Agent | ~42GB | CPU (128GB RAM) | 3-5 tok/s | GUI interaction — screenshot in, click/type out |
-| **Qwen2.5-Coder-14B** | Planner / Reasoning | ~9.4GB | GPU (RTX 4070) | 30-50 tok/s | Intent parsing, task decomposition, voice interpretation |
-| **Qwen3-8B** | Fast Chat | ~5.2GB | GPU (swapped) | 40-60 tok/s | Quick responses, triviality handling |
+## What Alchemy Does NOT Own
 
-### Model Routing Strategy
+| Responsibility | Owner |
+|----------------|-------|
+| Voice (STT/TTS) | **NEO-TX** (GPU, fast) |
+| User conversation | **NEO-TX** (14B conversational model) |
+| Tray widget / viewport | **NEO-TX** |
+| Approval gates | **NEO-TX** |
+| GPU models | **NEO-TX** |
 
-```
-User input arrives (text or voice)
-    │
-    ├─ Voice? → Whisper STT → text
-    │
-    ├─ Triviality detector (regex, zero LLM cost)
-    │   └─ Trivial? → Qwen3-8B (fast, cheap)
-    │
-    ├─ Needs GUI interaction?
-    │   └─ Yes → route to NEO-TX → UI-TARS-72B on CPU
-    │
-    └─ Complex reasoning / planning?
-        └─ Qwen2.5-Coder-14B on GPU (fast, accurate)
-```
+## Model
 
-### Future: Adapter Pattern (Apple-inspired)
+| Model | Size | Hardware | Speed | Purpose |
+|-------|------|----------|-------|---------|
+| **UI-TARS-72B** (Q4_K_M) | ~42GB | CPU (128GB RAM) | 3-5 tok/s | GUI agent — screenshot in, click/type out |
 
-One base model stays resident (~9GB for 14B). Tiny LoRA adapters hot-swap per request (~200MB each, 1-5ms switch):
-- **Routing classifier** — replaces regex with actual understanding
-- **Code understanding** — structured diff analysis
-- **Doc classification** — fast categorization
-- **Intent parser** — natural language → structured task spec
-
-Requires llama.cpp server (Ollama doesn't support LoRA hot-swap yet). Train with Unsloth.
+UI-TARS (ByteDance, open-weight) is purpose-built for computer use. 72B is slow on CPU but accurate — each output is a short action JSON, not a novel. The 128GB RAM is the moat.
 
 ## Architecture
 
@@ -54,69 +46,47 @@ Requires llama.cpp server (Ollama doesn't support LoRA hot-swap yet). Train with
 │                 Alchemy Core                  │
 │                 port 8000                     │
 │                                               │
-│  ┌─────────┐  ┌──────────┐  ┌─────────────┐  │
-│  │ Router  │  │  Model   │  │    Voice    │  │
-│  │         │  │ Manager  │  │             │  │
-│  │classify │  │ load     │  │ wake word   │  │
-│  │escalate │  │ unload   │  │ STT (Whisp) │  │
-│  │gateway  │  │ health   │  │ TTS (Piper) │  │
-│  └────┬────┘  └────┬─────┘  └──────┬──────┘  │
-│       │            │               │          │
-│  ┌────▼────────────▼───────────────▼──────┐   │
-│  │            FastAPI Server              │   │
-│  │            port 8000                   │   │
+│  ┌──────────┐  ┌──────────┐  ┌────────────┐  │
+│  │  Shadow  │  │  Vision  │  │   Model    │  │
+│  │  Desktop │  │  Agent   │  │   Manager  │  │
+│  │          │  │          │  │            │  │
+│  │  WSL2    │  │  UI-TARS │  │  load      │  │
+│  │  Xvfb    │  │  loop    │  │  unload    │  │
+│  │  xdotool │  │  actions │  │  health    │  │
+│  └────┬─────┘  └────┬─────┘  └─────┬──────┘  │
+│       │             │              │          │
+│  ┌────▼─────────────▼──────────────▼──────┐   │
+│  │      Ollama CPU (localhost:11434)      │   │
+│  │      UI-TARS-72B Q4_K_M (~42GB RAM)   │   │
 │  └────────────────────────────────────────┘   │
-│       │                                       │
-│  ┌────▼──────────────────────────────────┐    │
-│  │         Ollama (localhost:11434)       │    │
-│  │                                       │    │
-│  │  GPU: Qwen2.5-Coder-14B (resident)   │    │
-│  │  GPU: Qwen3-8B (swapped)             │    │
-│  │  CPU: UI-TARS-72B (128GB RAM)         │    │
-│  └───────────────────────────────────────┘    │
 └──────────────────┬────────────────────────────┘
                    │ HTTP API
-        ┌──────────┼──────────┐
-        ▼          ▼          ▼
-    NEO-TX      Future      Future
-   (Shadow     (Mobile)    (Plugin)
-   Desktop)
+                   ▼
+               NEO-TX (:8100)
+              (smart interface)
 ```
-
-### Voice Flow
-
-```
-Mic → openWakeWord ("Hey Neo") → faster-whisper (STT, GPU)
-  → 14B interprets intent
-    ├─ Needs GUI? → route to NEO-TX shadow desktop
-    └─ Text answer? → Piper TTS (CPU) → speaker
-```
-
-Voice lives in Alchemy because it's a general input/output layer. NEO-TX never touches audio — it receives pre-parsed intent via API.
 
 ## API Endpoints
 
 ```
 # Health
-GET  /health                    → {"status": "ok", "models": {...}}
+GET  /health                    → {"status": "ok", "model": "ui-tars:72b"}
 
-# Chat / Routing
-POST /chat                      → Route to best model, return response
-POST /chat/stream               → Same but streaming
+# Vision Agent
+POST /vision/analyze            → Send screenshot, get action JSON from UI-TARS
+POST /vision/task               → Submit a full GUI task (multi-step agent loop)
+GET  /vision/task/{id}/status   → Check task progress
+
+# Shadow Desktop
+POST /shadow/start              → Start shadow desktop
+POST /shadow/stop               → Stop shadow desktop
+GET  /shadow/health             → Shadow desktop service status
+GET  /shadow/screenshot         → Capture current screenshot
 
 # Model Management
-GET  /models                    → List loaded models + VRAM/RAM usage
-POST /models/load               → Load a model (GPU or CPU)
-POST /models/unload             → Unload a model
-GET  /models/health             → Ollama status + per-model stats
-
-# Vision (for NEO-TX)
-POST /vision/analyze            → Send screenshot, get action JSON from UI-TARS
-
-# Voice
-POST /voice/transcribe          → Audio → text (Whisper)
-POST /voice/speak               → Text → audio (Piper TTS)
-GET  /voice/status              → Voice pipeline health
+GET  /models                    → Model status + RAM usage
+POST /models/load               → Load model
+POST /models/unload             → Unload model
 ```
 
 ## Quick Start
@@ -129,28 +99,26 @@ cd Alchemy
 # 2. Install
 pip install -e .
 
-# 3. With voice support
-pip install -e ".[voice]"
+# 3. Setup WSL2 shadow desktop
+make shadow-setup
 
-# 4. Pull models
-ollama pull qwen2.5-coder:14b
-ollama pull qwen3:8b
-# UI-TARS-72B: ollama pull ui-tars:72b (when available, or manual GGUF import)
+# 4. Pull model
+ollama pull ui-tars:72b  # or manual GGUF import
 
 # 5. Run
-python -m alchemy
-# → Server on http://localhost:8000
+make server              # → http://localhost:8000
+make shadow-start        # → shadow desktop at localhost:6080
 ```
 
 ## Hardware Requirements
 
-- **GPU:** RTX 4070 (12GB VRAM) — runs 14B model + Whisper STT
-- **RAM:** 64GB minimum, 128GB recommended — runs 72B on CPU
-- **CPU:** Modern multi-core (i9-13900K or equivalent) — CPU inference for 72B + Piper TTS
+- **RAM:** 128GB (UI-TARS-72B Q4_K_M = ~42GB)
+- **CPU:** i9-13900K or equivalent (CPU inference)
+- **WSL2:** Ubuntu with Xvfb, Fluxbox, x11vnc, xdotool, scrot
 
 ## Connected Projects
 
-- **[NEO-TX](https://github.com/NeoSynaptics/NEO-TX)** — Shadow Desktop. AI operates a hidden virtual desktop. Connects to Alchemy for model routing and vision analysis.
+- **[NEO-TX](https://github.com/NeoSynaptics/NEO-TX)** — Smart AI interface. Voice, tray widget, approval gates, fast GPU models. Sends GUI tasks to Alchemy.
 
 ## License
 

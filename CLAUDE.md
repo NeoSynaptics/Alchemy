@@ -1,44 +1,44 @@
 # Alchemy — Claude Session Guide
 
 ## What This Is
-Local-first LLM core engine. Manages Ollama models, routes requests, handles voice I/O, exposes API on port 8000. Serves NEO-TX and future tools.
+Core engine — CPU-side heavy lifting. Runs UI-TARS-72B for GUI interaction on a hidden shadow desktop (WSL2 + Xvfb). NEO-TX (the user-facing layer) delegates heavy work here via API.
 
 ## Key Paths
 - Config: `config/settings.py`
 - Server: `alchemy/server.py` (FastAPI, port 8000)
-- Router: `alchemy/router/` (classifier, gateway, escalation)
-- Models: `alchemy/models/` (Ollama manager, VRAM scheduling)
-- Voice: `alchemy/voice/` (wake word, STT, TTS, pipeline)
-- Auth: `alchemy/security/` (bearer token, trust levels)
+- Shadow Desktop: `alchemy/shadow/` (WSL2 bridge, controller, health)
+- Vision Agent: `alchemy/agent/` (screenshot → UI-TARS → action → xdotool loop)
+- Models: `alchemy/models/` (CPU model lifecycle)
+- Router: `alchemy/router/` (request classification)
+- Auth: `alchemy/security/` (bearer tokens)
+- WSL Scripts: `wsl/` (setup, start, stop, health)
 
-## Models
-- **UI-TARS-72B** → CPU (128GB RAM) → GUI agent (NEO-TX Model B)
-- **Qwen2.5-Coder-14B** → GPU (12GB VRAM) → planner, reasoning, voice interpretation
-- **Qwen3-8B** → GPU (swapped) → fast chat, triviality
+## Model
+- **UI-TARS-72B** → CPU (128GB RAM) → GUI visuomotor agent (~42GB, 3-5 tok/s)
 
-## Voice Pipeline
-Voice lives here (NOT in NEO-TX). Flow:
-1. Mic → openWakeWord ("Hey Neo")
-2. faster-whisper STT (GPU, on-demand ~3GB VRAM)
-3. 14B interprets intent
-4. Routes: GUI tasks → NEO-TX, text answers → Piper TTS → speaker
+## What Alchemy Does NOT Own
+- Voice (STT/TTS) → NEO-TX (GPU)
+- User conversation → NEO-TX (14B conversational model on GPU)
+- Tray widget → NEO-TX
+- Approval gates → NEO-TX
+- GPU models → NEO-TX
 
 ## API
-- `POST /chat` → route to best model
 - `POST /vision/analyze` → screenshot → UI-TARS → action JSON
-- `POST /voice/transcribe` → audio → text
-- `POST /voice/speak` → text → audio
-- `GET /models` → loaded models + resource usage
-- `POST /models/load` / `POST /models/unload` → manage models
+- `POST /vision/task` → submit multi-step GUI task
+- `POST /shadow/start|stop` → control shadow desktop
+- `GET /shadow/health` → service status
+- `GET /models` → model status + RAM usage
 
 ## Commands
 ```bash
-pip install -e .            # Install core
-pip install -e ".[voice]"   # With voice deps
-python -m alchemy           # Run server on :8000
-pytest tests/ -v            # Test
+make shadow-setup    # Install Xvfb/Fluxbox/x11vnc/noVNC in WSL2
+make shadow-start    # Start shadow desktop
+make shadow-stop     # Stop shadow desktop
+make shadow-health   # Check services
+make server          # Run Alchemy on :8000
+make test            # Run pytest
 ```
 
-## Connected Projects
-- NEO-TX (Shadow Desktop) connects via HTTP to port 8000
-- NEO-TX never touches audio — receives pre-parsed intent via API
+## NEO-TX Integration
+NEO-TX (port 8100) sends GUI tasks to Alchemy. For APPROVE-tier actions, the agent loop pauses and sends an approval request back to NEO-TX before executing.

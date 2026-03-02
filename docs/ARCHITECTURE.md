@@ -2,73 +2,88 @@
 
 ## Overview
 
-Alchemy is the core engine. It manages local LLM models, handles voice I/O, and exposes a routing API. Client tools (NEO-TX, future tools) connect via HTTP.
+Alchemy is the CPU-side core engine. It runs UI-TARS-72B for GUI interaction on a hidden shadow desktop. NEO-TX (GPU-side, user-facing) delegates heavy GUI work here.
 
 ```
-┌───────────────────────────────────────────────┐
-│                 Alchemy Core                  │
-│                 port 8000                     │
-│                                               │
-│  ┌─────────┐  ┌──────────┐  ┌─────────────┐  │
-│  │ Router  │  │  Model   │  │    Voice    │  │
-│  │         │  │ Manager  │  │             │  │
-│  │classify │  │ Ollama   │  │ wake word   │  │
-│  │escalate │  │ load     │  │ STT (Whisp) │  │
-│  │gateway  │  │ unload   │  │ TTS (Piper) │  │
-│  └────┬────┘  └────┬─────┘  └──────┬──────┘  │
-│       │            │               │          │
-│  ┌────▼────────────▼───────────────▼──────┐   │
-│  │         Ollama (localhost:11434)        │   │
-│  │                                        │   │
-│  │  GPU: Qwen2.5-Coder-14B (resident)    │   │
-│  │  GPU: Qwen3-8B (swapped)              │   │
-│  │  CPU: UI-TARS-72B                      │   │
-│  └────────────────────────────────────────┘   │
-└──────────────────┬────────────────────────────┘
-                   │ HTTP API
-        ┌──────────┼──────────┐
-        ▼          ▼          ▼
-    NEO-TX      Future      Future
+YOUR PC (i9-13900K, 128GB RAM, RTX 4070 12GB)
+┌─────────────────────────────────────────────────────────────────┐
+│                                                                 │
+│  WINDOWS 11 (your screen — untouched)                          │
+│                                                                 │
+│  ┌─────────────────────────┐  ┌──────────────────────────────┐  │
+│  │  Alchemy (port 8000)    │  │  Ollama (port 11434)         │  │
+│  │  CPU-side core engine   │  │                              │  │
+│  │                         │  │  CPU (128GB RAM):            │  │
+│  │  - Shadow desktop ctrl  │  │    UI-TARS-72B (~42GB)       │  │
+│  │  - Vision agent loop    │  │                              │  │
+│  │  - /vision/analyze      │  │  GPU (12GB VRAM):            │  │
+│  │  - /shadow/start|stop   │  │    14B conversational (NEO)  │  │
+│  │                         │  │    + small models (NEO)      │  │
+│  └─────────────────────────┘  │    + Whisper STT (NEO)       │  │
+│                                │                              │  │
+│  ┌─────────────────────────┐  └──────────────────────────────┘  │
+│  │  NEO-TX (port 8100)     │                                    │
+│  │  GPU-side smart iface   │  ┌────────────────────────────┐    │
+│  │                         │  │  WSL2 Ubuntu               │    │
+│  │  - Voice pipeline       │  │                            │    │
+│  │  - 14B conversation     │  │  Xvfb :99 (invisible)     │    │
+│  │  - Tray widget          │  │  Fluxbox (window manager)  │    │
+│  │  - Approval gates       │  │  x11vnc → noVNC (:6080)   │    │
+│  │  - Small specialized    │  │  Firefox, LibreOffice...   │    │
+│  │    GPU models           │  │                            │    │
+│  │                         │  │  THE SHADOW DESKTOP        │    │
+│  │  Delegates GUI tasks ───┼──┤  (controlled by Alchemy)   │    │
+│  │  to Alchemy             │  │                            │    │
+│  └─────────────────────────┘  └────────────────────────────┘    │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ## Separation of Concerns
 
-**Alchemy** (this repo):
-- Ollama model lifecycle (load, unload, health)
-- Request routing (which model handles which request)
-- Voice pipeline (wake word, STT, TTS, intent routing)
-- Shared API server (port 8000)
+**Alchemy** (this repo) — CPU side:
+- Shadow desktop (WSL2 + Xvfb + Fluxbox + x11vnc + noVNC)
+- Vision agent loop (screenshot → UI-TARS-72B → action → xdotool)
+- CPU model lifecycle (UI-TARS-72B load/unload/health)
+- API server (port 8000)
 - Auth (bearer tokens)
 
-**NEO-TX** (separate repo):
-- Shadow desktop (WSL2 + Xvfb)
-- Agent loop (screenshot → action via UI-TARS)
-- Tray widget + viewport
+**NEO-TX** (separate repo) — GPU side:
+- Voice pipeline (Whisper STT + Piper TTS + wake word)
+- 14B conversational model (semantic, NOT coding)
+- Small specialized GPU models for specific fast tasks
+- Tray widget + viewport (noVNC view into shadow desktop)
 - Defense constitution (approval gates)
+- User interaction layer
 
-**The boundary is the API.** NEO-TX calls `POST /chat` and `POST /vision/analyze`. It never touches Ollama directly. It never touches audio — Alchemy handles voice and sends pre-parsed intent.
+**The boundary is the API.** NEO-TX calls Alchemy endpoints for GUI tasks. Alchemy calls NEO-TX back for approval on dangerous actions.
 
-## Voice Flow
-
-```
-Mic (Windows)
-  → openWakeWord ("Hey Neo", CPU, ~10MB)
-  → faster-whisper STT (GPU, on-demand ~3GB VRAM)
-  → Qwen2.5-Coder-14B interprets intent (GPU, resident)
-    ├─ Needs GUI? → POST to NEO-TX /task (shadow desktop handles it)
-    └─ Text answer? → Piper TTS (CPU, ~50MB) → speaker
-```
-
-## Future: Adapter Architecture
-
-Apple-inspired pattern — one base model resident, tiny LoRA adapters hot-swap:
+## Resource Split
 
 ```
-Qwen2.5-Coder-14B (base, resident ~9GB VRAM)
-  ├─ Adapter: Routing classifier (~200MB, 1-5ms swap)
-  ├─ Adapter: Code understanding (~200MB)
-  ├─ Adapter: Doc classification (~200MB)
-  └─ Adapter: Intent parser (~200MB)
+CPU (i9-13900K, 128GB RAM):           GPU (RTX 4070, 12GB VRAM):
+  UI-TARS-72B Q4_K_M  = ~42GB           14B conversational  = ~9GB (resident)
+  Piper TTS            = ~50MB           Whisper large-v3    = ~3GB (on-demand)
+  Shadow desktop       = minimal         Small models        = ~2GB (on-demand)
+  Remaining            = ~86GB free      Scheduling: time-share VRAM
 ```
 
-Requires llama.cpp server (Ollama doesn't support LoRA hot-swap yet). Potential replacement for regex-based triviality detection with actual learned routing.
+GPU and CPU never block each other. They work in parallel.
+
+## Agent Loop (Alchemy-side)
+
+```
+NEO-TX sends: POST /vision/task {goal: "send email with hours"}
+    │
+    ▼
+Alchemy agent loop:
+    1. Capture screenshot from Xvfb (:99)
+    2. Send to UI-TARS-72B → get action JSON
+    3. Classify action tier (AUTO / NOTIFY / APPROVE)
+    4. If APPROVE → pause, request approval from NEO-TX
+    5. Execute action via xdotool in WSL2
+    6. Repeat (max 50 steps)
+    │
+    ▼
+NEO-TX receives: task complete / approval request / status update
+```
