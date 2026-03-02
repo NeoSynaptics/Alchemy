@@ -32,9 +32,10 @@ dev = [
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+addopts = "-m 'not integration and not live'"
 markers = [
     "live: tests requiring running WSL2 + shadow desktop",
-    "integration: tests requiring NEO-TX running",
+    "integration: tests requiring both Alchemy + NEO-TX servers running",
 ]
 
 [tool.ruff]

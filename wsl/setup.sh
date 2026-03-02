@@ -17,7 +17,7 @@ sudo apt-get install -y -qq \
     xclip \
     imagemagick \
     python3-xlib \
-    firefox-esr 2>/dev/null
+    firefox-esr 2>/dev/null || sudo apt-get install -y -qq firefox
 
 # noVNC (web-based VNC client)
 echo "[2/4] Installing noVNC..."

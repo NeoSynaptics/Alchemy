@@ -1,6 +1,7 @@
 #!/bin/bash
 # Start Alchemy Shadow Desktop services in WSL2.
 # Usage: bash wsl/start_shadow.sh [display_num] [vnc_port] [novnc_port] [resolution]
+# Uses nohup + setsid so processes survive after the WSL session exits.
 set -euo pipefail
 
 DISPLAY_NUM=${1:-99}
@@ -8,6 +9,7 @@ VNC_PORT=${2:-5900}
 NOVNC_PORT=${3:-6080}
 RESOLUTION=${4:-1920x1080x24}
 LOG_DIR="$HOME/.alchemy/logs"
+mkdir -p "$LOG_DIR"
 
 export DISPLAY=":${DISPLAY_NUM}"
 
@@ -27,27 +29,30 @@ sleep 1
 
 # Start Xvfb (virtual framebuffer)
 echo "[2/4] Starting Xvfb..."
-Xvfb ":${DISPLAY_NUM}" -screen 0 "${RESOLUTION}" -ac > "${LOG_DIR}/xvfb.log" 2>&1 &
-XVFB_PID=$!
+nohup setsid Xvfb ":${DISPLAY_NUM}" -screen 0 "${RESOLUTION}" -ac \
+    > "${LOG_DIR}/xvfb.log" 2>&1 &
 sleep 1
 
-if ! kill -0 "$XVFB_PID" 2>/dev/null; then
+if ! pgrep -f "Xvfb :${DISPLAY_NUM}" > /dev/null; then
     echo "ERROR: Xvfb failed to start. Check ${LOG_DIR}/xvfb.log"
     exit 1
 fi
 
 # Start Fluxbox (window manager)
 echo "[3/4] Starting Fluxbox + x11vnc..."
-DISPLAY=":${DISPLAY_NUM}" fluxbox > "${LOG_DIR}/fluxbox.log" 2>&1 &
+nohup setsid env DISPLAY=":${DISPLAY_NUM}" fluxbox \
+    > "${LOG_DIR}/fluxbox.log" 2>&1 &
 sleep 1
 
-# Start x11vnc (VNC server)
-x11vnc -display ":${DISPLAY_NUM}" -forever -shared -nopw -rfbport "${VNC_PORT}" \
-    -bg -o "${LOG_DIR}/x11vnc.log" 2>/dev/null
+# Start x11vnc (VNC server) — unset Wayland vars so it connects to Xvfb, not WSLg
+nohup setsid env -u WAYLAND_DISPLAY -u XDG_SESSION_TYPE \
+    x11vnc -display ":${DISPLAY_NUM}" -forever -shared -nopw -rfbport "${VNC_PORT}" \
+    -o "${LOG_DIR}/x11vnc.log" > /dev/null 2>&1 &
+sleep 1
 
 # Start noVNC (WebSocket bridge)
 echo "[4/4] Starting noVNC..."
-"$HOME/noVNC/utils/novnc_proxy" --vnc "localhost:${VNC_PORT}" --listen "${NOVNC_PORT}" \
+nohup setsid "$HOME/noVNC/utils/novnc_proxy" --vnc "localhost:${VNC_PORT}" --listen "${NOVNC_PORT}" \
     > "${LOG_DIR}/novnc.log" 2>&1 &
 sleep 1
 
