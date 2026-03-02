@@ -1,5 +1,5 @@
 #!/bin/bash
-# Start NEO-TX Shadow Desktop services in WSL2.
+# Start Alchemy Shadow Desktop services in WSL2.
 # Usage: bash wsl/start_shadow.sh [display_num] [vnc_port] [novnc_port] [resolution]
 set -euo pipefail
 
@@ -7,11 +7,11 @@ DISPLAY_NUM=${1:-99}
 VNC_PORT=${2:-5900}
 NOVNC_PORT=${3:-6080}
 RESOLUTION=${4:-1920x1080x24}
-LOG_DIR="$HOME/.neotx/logs"
+LOG_DIR="$HOME/.alchemy/logs"
 
 export DISPLAY=":${DISPLAY_NUM}"
 
-echo "=== Starting NEO-TX Shadow Desktop ==="
+echo "=== Starting Alchemy Shadow Desktop ==="
 echo "  Display:    :${DISPLAY_NUM}"
 echo "  VNC port:   ${VNC_PORT}"
 echo "  noVNC port: ${NOVNC_PORT}"

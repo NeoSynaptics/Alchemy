@@ -1,9 +1,9 @@
 #!/bin/bash
-# NEO-TX WSL2 Shadow Desktop Setup
+# Alchemy WSL2 Shadow Desktop Setup
 # Run this inside WSL2 Ubuntu to install all shadow desktop dependencies.
 set -euo pipefail
 
-echo "=== NEO-TX Shadow Desktop Setup ==="
+echo "=== Alchemy Shadow Desktop Setup ==="
 
 # System packages
 echo "[1/4] Installing system packages..."
@@ -31,9 +31,9 @@ fi
 
 # Create working directories
 echo "[3/4] Creating working directories..."
-mkdir -p "$HOME/.neotx/screenshots"
-mkdir -p "$HOME/.neotx/logs"
-mkdir -p "$HOME/.neotx/audit"
+mkdir -p "$HOME/.alchemy/screenshots"
+mkdir -p "$HOME/.alchemy/logs"
+mkdir -p "$HOME/.alchemy/audit"
 
 # Verify installations
 echo "[4/4] Verifying installations..."

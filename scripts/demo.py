@@ -1,4 +1,4 @@
-"""NEO-TX Phase 1 Demo — Start shadow desktop and open Firefox.
+"""Alchemy Shadow Desktop Demo — Start shadow desktop and open Firefox.
 
 Usage:
     python scripts/demo.py
@@ -14,7 +14,7 @@ import time
 
 
 def main():
-    print("=== NEO-TX Shadow Desktop Demo ===")
+    print("=== Alchemy Shadow Desktop Demo ===")
     print()
 
     # Check WSL2 availability
@@ -33,7 +33,7 @@ def main():
     print("[2/3] Starting shadow desktop...")
     subprocess.run(
         ["wsl", "-d", "Ubuntu", "--", "bash", "-c",
-         "cd /mnt/c/Users/info/GitHub/NEO-TX && bash wsl/start_shadow.sh"],
+         "cd /mnt/c/Users/info/GitHub/Alchemy && bash wsl/start_shadow.sh"],
         timeout=30,
     )
 

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Check health of NEO-TX Shadow Desktop services.
+# Check health of Alchemy Shadow Desktop services.
 set -euo pipefail
 
 DISPLAY_NUM=${1:-99}
@@ -7,7 +7,7 @@ VNC_PORT=${2:-5900}
 NOVNC_PORT=${3:-6080}
 ALL_OK=true
 
-echo "=== NEO-TX Shadow Desktop Health Check ==="
+echo "=== Alchemy Shadow Desktop Health Check ==="
 
 # Check Xvfb
 if pgrep -f "Xvfb :${DISPLAY_NUM}" > /dev/null 2>&1; then
