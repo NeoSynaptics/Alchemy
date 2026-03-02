@@ -3,12 +3,13 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager
-from functools import partial
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from alchemy.agent.task_manager import TaskManager
 from alchemy.api import models_api, shadow, vision
+from alchemy.models.ollama_client import OllamaClient
 from alchemy.shadow.controller import ShadowDesktopController
 from alchemy.shadow.wsl import WslRunner
 from config.settings import settings
@@ -37,9 +38,31 @@ async def lifespan(app: FastAPI):
         logger.warning("WSL2 not available — shadow desktop endpoints will return mock data")
         app.state.shadow_controller = None
 
+    # Initialize Ollama client
+    ollama = OllamaClient(
+        host=settings.ollama_host,
+        timeout=120.0,
+        keep_alive=settings.ollama_keep_alive,
+    )
+    await ollama.start()
+
+    if await ollama.ping():
+        logger.info("Ollama at %s — connected", settings.ollama_host)
+        if await ollama.is_model_available(settings.ollama_cpu_model):
+            logger.info("Model %s — available", settings.ollama_cpu_model)
+        else:
+            logger.warning("Model %s not found — pull with: ollama pull %s",
+                          settings.ollama_cpu_model, settings.ollama_cpu_model)
+    else:
+        logger.warning("Ollama not reachable at %s", settings.ollama_host)
+
+    app.state.ollama_client = ollama
+    app.state.task_manager = TaskManager()
+
     yield
 
-    # Cleanup: stop shadow desktop if running
+    # Cleanup
+    await ollama.close()
     if app.state.shadow_controller:
         logger.info("Shutting down shadow desktop...")
         await app.state.shadow_controller.stop()
@@ -68,4 +91,8 @@ app.include_router(models_api.router)
 @app.get("/health")
 async def health():
     wsl_ok = getattr(app.state, "shadow_controller", None) is not None
-    return {"status": "ok", "version": "0.1.0", "wsl_available": wsl_ok}
+    ollama_ok = getattr(app.state, "ollama_client", None) is not None
+    return {
+        "status": "ok", "version": "0.1.0",
+        "wsl_available": wsl_ok, "ollama_connected": ollama_ok,
+    }

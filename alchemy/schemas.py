@@ -43,12 +43,16 @@ class ShadowStatus(str, Enum):
 # ---------------------------------------------------------------------------
 
 class VisionAction(BaseModel):
-    action: str  # click, type, scroll, done, fail
+    action: str  # click, double_click, right_click, drag, type, hotkey, scroll, wait, done, fail
     x: int | None = None
     y: int | None = None
-    text: str | None = None
+    end_x: int | None = None       # drag end position
+    end_y: int | None = None       # drag end position
+    text: str | None = None        # for type / hotkey / finished content
     reasoning: str = ""
     tier: ActionTier = ActionTier.AUTO
+    direction: str | None = None   # scroll direction: up/down/left/right
+    amount: int | None = None      # scroll amount
 
 
 class VisionTaskRequest(BaseModel):

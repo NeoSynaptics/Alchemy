@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     agent_max_steps: int = 50
     agent_screenshot_interval: float = 1.0
     agent_timeout: float = 300.0
+    agent_approval_timeout: float = 60.0
+    agent_history_window: int = 8
 
 
 settings = Settings()
