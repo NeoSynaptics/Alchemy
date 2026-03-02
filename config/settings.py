@@ -24,5 +24,12 @@ class Settings(BaseSettings):
     # --- Routing ---
     triviality_threshold: float = 0.7
 
+    # --- Voice ---
+    voice_enabled: bool = False
+    wake_word: str = "hey_neo"
+    whisper_model: str = "large-v3"
+    whisper_device: str = "cuda"
+    piper_model: str = "en_US-lessac-medium"
+
 
 settings = Settings()
