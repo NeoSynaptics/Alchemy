@@ -3,6 +3,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from alchemy.api import models_api, shadow, vision
+
 app = FastAPI(
     title="Alchemy",
     description="Local-first LLM core engine",
@@ -16,6 +18,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(vision.router)
+app.include_router(shadow.router)
+app.include_router(models_api.router)
 
 
 @app.get("/health")
