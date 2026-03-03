@@ -8,7 +8,7 @@ class Settings(BaseSettings):
 
     # --- Ollama ---
     ollama_host: str = "http://localhost:11434"
-    ollama_cpu_model: str = "ui-tars:72b"           # CPU — GUI visuomotor agent
+    ollama_cpu_model: str = "rashakol/UI-TARS-72B-DPO"  # CPU — GUI visuomotor agent
     ollama_keep_alive: str = "10m"
 
     # --- Server ---
