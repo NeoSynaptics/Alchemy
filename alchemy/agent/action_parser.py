@@ -23,8 +23,11 @@ _CONTENT_RE = re.compile(r"content='((?:[^'\\]|\\.)*)'")
 _KEY_RE = re.compile(r"key='([^']*)'")
 _DIRECTION_RE = re.compile(r"direction='([^']*)'")
 _AMOUNT_RE = re.compile(r"amount=(\d+)")
-_START_BOX_RE = re.compile(r"start_box='(\([^']+\))'")
-_END_BOX_RE = re.compile(r"end_box='(\([^']+\))'")
+# Handles both formats:
+#   start_box='(452,128)'                          — 7B / simple format
+#   start_box='<|box_start|>(13,980)<|box_end|>'   — 72B-DPO native format
+_START_BOX_RE = re.compile(r"start_box='([^']+)'")
+_END_BOX_RE = re.compile(r"end_box='([^']+)'")
 
 # Map UI-TARS action names to VisionAction.action values
 _ACTION_MAP = {

@@ -91,6 +91,20 @@ class TestParseUitarsResponse:
         assert p.action_type == "click"
         assert p.start_box == (452, 128)
 
+    def test_72b_box_tokens(self):
+        """72B-DPO uses <|box_start|>...<|box_end|> coordinate tokens."""
+        raw = "Thought: Click the icon.\nAction: click(start_box='<|box_start|>(13,980)<|box_end|>')"
+        p = parse_uitars_response(raw)
+        assert p.action_type == "click"
+        assert p.start_box == (13, 980)
+
+    def test_72b_drag_box_tokens(self):
+        raw = "Thought: Drag it.\nAction: drag(start_box='<|box_start|>(100,200)<|box_end|>', end_box='<|box_start|>(800,900)<|box_end|>')"
+        p = parse_uitars_response(raw)
+        assert p.action_type == "drag"
+        assert p.start_box == (100, 200)
+        assert p.end_box == (800, 900)
+
 
 class TestScaleCoord:
     def test_center(self):
