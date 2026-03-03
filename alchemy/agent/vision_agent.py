@@ -103,7 +103,10 @@ class VisionAgent:
 
         self._task_manager.update_task(task_id, status=TaskStatus.RUNNING)
 
-        messages = [{"role": "system", "content": SYSTEM_PROMPT.format(goal=goal)}]
+        # VLMs via Ollama don't support the 'system' role with images.
+        # Merge system prompt into the first user message instead.
+        system_text = SYSTEM_PROMPT.format(goal=goal)
+        messages: list[dict] = []
         deadline = time.monotonic() + self._timeout
 
         try:
@@ -134,11 +137,13 @@ class VisionAgent:
 
                 screenshot_b64 = base64.b64encode(screenshot).decode("ascii")
 
-                # Add user message with screenshot
-                messages.append({
-                    "role": "user",
-                    "content": f"Step {step + 1}. What should I do next to: {goal}",
-                })
+                # Build user message — first step includes system prompt
+                if step == 0:
+                    user_content = f"{system_text}\n\nStep 1. What should I do first?"
+                else:
+                    user_content = f"Step {step + 1}. What should I do next to: {goal}"
+
+                messages.append({"role": "user", "content": user_content})
 
                 # Call UI-TARS
                 try:
@@ -230,9 +235,10 @@ class VisionAgent:
         self, screenshot: bytes, goal: str
     ) -> VisionAnalyzeResponse:
         """One-shot: analyze a screenshot and return the next action (no execution)."""
+        # Merge system prompt into user message (VLMs don't support system role)
+        system_text = SYSTEM_PROMPT.format(goal=goal)
         messages = [
-            {"role": "system", "content": SYSTEM_PROMPT.format(goal=goal)},
-            {"role": "user", "content": f"What should I do to: {goal}"},
+            {"role": "user", "content": f"{system_text}\n\nWhat should I do to: {goal}"},
         ]
 
         start = time.monotonic()
