@@ -22,6 +22,9 @@ from alchemy.agent.action_parser import (
 from alchemy.agent.task_manager import TaskManager
 from alchemy.clients.neotx_client import NeoTXClient
 from alchemy.models.ollama_client import OllamaClient
+from alchemy.router.categories import classify_task
+from alchemy.router.context_builder import ContextBuilder
+from alchemy.router.tier import classify_tier_contextual
 from alchemy.schemas import (
     ActionTier,
     ApprovalRequest,
@@ -38,6 +41,8 @@ logger = logging.getLogger(__name__)
 SYSTEM_PROMPT = """You are a GUI automation agent. You interact with a desktop computer by looking at screenshots and performing mouse/keyboard actions.
 
 Your task: {goal}
+
+{context}
 
 For each step:
 1. Look at the screenshot carefully
@@ -80,6 +85,7 @@ class VisionAgent:
         history_window: int = 8,
         screen_width: int = 1920,
         screen_height: int = 1080,
+        context_builder: ContextBuilder | None = None,
     ):
         self._ollama = ollama
         self._executor = ActionExecutor(controller)
@@ -94,6 +100,7 @@ class VisionAgent:
         self._history_window = history_window
         self._screen_width = screen_width
         self._screen_height = screen_height
+        self._context_builder = context_builder
 
     async def run_task(self, task_id: UUID, goal: str) -> TaskStatus:
         """Execute a multi-step GUI task. Returns final status."""
@@ -105,7 +112,9 @@ class VisionAgent:
 
         # VLMs via Ollama don't support the 'system' role with images.
         # Merge system prompt into the first user message instead.
-        system_text = SYSTEM_PROMPT.format(goal=goal)
+        context = self._context_builder.build(goal) if self._context_builder else ""
+        system_text = SYSTEM_PROMPT.format(goal=goal, context=context)
+        category = classify_task(goal) if self._context_builder else None
         messages: list[dict] = []
         deadline = time.monotonic() + self._timeout
 
@@ -164,7 +173,10 @@ class VisionAgent:
                 try:
                     parsed = parse_uitars_response(raw_text)
                     action = to_vision_action(parsed, self._screen_width, self._screen_height)
-                    action.tier = classify_tier(action)
+                    if category:
+                        action.tier = classify_tier_contextual(action, category, goal)
+                    else:
+                        action.tier = classify_tier(action)
                 except ValueError as e:
                     logger.warning("Parse error at step %d: %s", step, e)
                     messages.append({"role": "assistant", "content": raw_text})
@@ -236,7 +248,8 @@ class VisionAgent:
     ) -> VisionAnalyzeResponse:
         """One-shot: analyze a screenshot and return the next action (no execution)."""
         # Merge system prompt into user message (VLMs don't support system role)
-        system_text = SYSTEM_PROMPT.format(goal=goal)
+        context = self._context_builder.build(goal) if self._context_builder else ""
+        system_text = SYSTEM_PROMPT.format(goal=goal, context=context)
         messages = [
             {"role": "user", "content": f"{system_text}\n\nWhat should I do to: {goal}"},
         ]
@@ -248,7 +261,11 @@ class VisionAgent:
         raw_text = response.get("message", {}).get("content", "")
         parsed = parse_uitars_response(raw_text)
         action = to_vision_action(parsed, self._screen_width, self._screen_height)
-        action.tier = classify_tier(action)
+        category = classify_task(goal) if self._context_builder else None
+        if category:
+            action.tier = classify_tier_contextual(action, category, goal)
+        else:
+            action.tier = classify_tier(action)
 
         return VisionAnalyzeResponse(
             action=action,

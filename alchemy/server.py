@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from alchemy.agent.task_manager import TaskManager
 from alchemy.api import models_api, shadow, vision
 from alchemy.models.ollama_client import OllamaClient
+from alchemy.router.environment import EnvironmentDetector
 from alchemy.shadow.controller import ShadowDesktopController
 from alchemy.shadow.wsl import WslRunner
 from config.settings import settings
@@ -58,6 +59,18 @@ async def lifespan(app: FastAPI):
 
     app.state.ollama_client = ollama
     app.state.task_manager = TaskManager()
+
+    # Detect environment for context router
+    if settings.router_enabled:
+        detector = EnvironmentDetector(wsl=wsl if wsl_ok else None)
+        app.state.environment = await detector.detect()
+        logger.info(
+            "Router environment: %d shadow apps, %d windows apps",
+            len(app.state.environment.shadow_apps),
+            len(app.state.environment.windows_apps),
+        )
+    else:
+        app.state.environment = None
 
     yield
 

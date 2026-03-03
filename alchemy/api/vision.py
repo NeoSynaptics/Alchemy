@@ -18,6 +18,7 @@ from alchemy.agent.task_manager import TaskManager
 from alchemy.agent.vision_agent import VisionAgent
 from alchemy.clients.neotx_client import NeoTXClient
 from alchemy.models.ollama_client import OllamaClient
+from alchemy.router.context_builder import ContextBuilder
 from alchemy.schemas import (
     ApprovalDecision,
     ApprovalDecisionResponse,
@@ -41,6 +42,19 @@ def _get_deps(request: Request):
         getattr(request.app.state, "ollama_client", None),
         getattr(request.app.state, "shadow_controller", None),
         getattr(request.app.state, "task_manager", None),
+    )
+
+
+def _get_context_builder(request: Request) -> ContextBuilder | None:
+    """Build a ContextBuilder from cached environment, if router is enabled."""
+    env = getattr(request.app.state, "environment", None)
+    if not env or not settings.router_enabled:
+        return None
+    return ContextBuilder(
+        env,
+        category_hints=settings.router_category_hints,
+        recovery_nudges=settings.router_recovery_nudges,
+        completion_criteria=settings.router_completion_criteria,
     )
 
 
@@ -76,6 +90,7 @@ async def create_task(req: VisionTaskRequest, request: Request) -> VisionTaskRes
         history_window=settings.agent_history_window,
         screen_width=width,
         screen_height=height,
+        context_builder=_get_context_builder(request),
     )
 
     # Start agent loop as background task
@@ -107,6 +122,7 @@ async def analyze(req: VisionAnalyzeRequest, request: Request) -> VisionAnalyzeR
         model=settings.ollama_cpu_model,
         screen_width=width,
         screen_height=height,
+        context_builder=_get_context_builder(request),
     )
 
     screenshot = base64.b64decode(req.screenshot_b64)

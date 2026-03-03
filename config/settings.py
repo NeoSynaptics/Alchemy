@@ -33,5 +33,13 @@ class Settings(BaseSettings):
     agent_approval_timeout: float = 60.0
     agent_history_window: int = 8
 
+    # --- Router (context injection) ---
+    router_enabled: bool = True
+    router_detect_shadow_apps: bool = True
+    router_detect_windows_apps: bool = True
+    router_category_hints: bool = True
+    router_recovery_nudges: bool = True
+    router_completion_criteria: bool = True
+
 
 settings = Settings()
