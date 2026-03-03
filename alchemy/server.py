@@ -34,6 +34,11 @@ async def lifespan(app: FastAPI):
             vnc_port=settings.vnc_port,
             novnc_port=settings.novnc_port,
             resolution=settings.resolution,
+            screenshot_format=settings.screenshot_format,
+            screenshot_jpeg_quality=settings.screenshot_jpeg_quality,
+            screenshot_resize_width=settings.screenshot_resize_width,
+            screenshot_resize_height=settings.screenshot_resize_height,
+            repo_wsl_path=settings.shadow_wsl_repo_path,
         )
     else:
         logger.warning("WSL2 not available — shadow desktop endpoints will return mock data")
@@ -44,16 +49,20 @@ async def lifespan(app: FastAPI):
         host=settings.ollama_host,
         timeout=120.0,
         keep_alive=settings.ollama_keep_alive,
+        retry_attempts=settings.ollama_retry_attempts,
+        retry_delay=settings.ollama_retry_delay,
     )
     await ollama.start()
 
     if await ollama.ping():
         logger.info("Ollama at %s — connected", settings.ollama_host)
-        if await ollama.is_model_available(settings.ollama_cpu_model):
-            logger.info("Model %s — available", settings.ollama_cpu_model)
-        else:
-            logger.warning("Model %s not found — pull with: ollama pull %s",
-                          settings.ollama_cpu_model, settings.ollama_cpu_model)
+        # Check both models
+        for model_name in [settings.ollama_cpu_model, settings.ollama_fast_model]:
+            if await ollama.is_model_available(model_name):
+                logger.info("Model %s — available", model_name)
+            else:
+                logger.warning("Model %s not found — pull with: ollama pull %s",
+                              model_name, model_name)
     else:
         logger.warning("Ollama not reachable at %s", settings.ollama_host)
 
@@ -84,7 +93,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Alchemy",
     description="Local-first LLM core engine",
-    version="0.1.0",
+    version="0.2.0",
     lifespan=lifespan,
 )
 
@@ -106,6 +115,6 @@ async def health():
     wsl_ok = getattr(app.state, "shadow_controller", None) is not None
     ollama_ok = getattr(app.state, "ollama_client", None) is not None
     return {
-        "status": "ok", "version": "0.1.0",
+        "status": "ok", "version": "0.2.0",
         "wsl_available": wsl_ok, "ollama_connected": ollama_ok,
     }

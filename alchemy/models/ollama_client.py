@@ -2,12 +2,14 @@
 
 Uses the native Ollama API (/api/chat, /api/tags, /api/pull) for full control
 over keep_alive, streaming, and model management. Images are base64-encoded
-internally — callers pass raw PNG bytes.
+internally — callers pass raw PNG/JPEG bytes.
 """
 
 from __future__ import annotations
 
+import asyncio
 import base64
+import json
 import logging
 from typing import AsyncGenerator
 
@@ -24,10 +26,14 @@ class OllamaClient:
         host: str = "http://localhost:11434",
         timeout: float = 120.0,
         keep_alive: str = "10m",
+        retry_attempts: int = 3,
+        retry_delay: float = 1.0,
     ):
         self._host = host.rstrip("/")
         self._timeout = timeout
         self._keep_alive = keep_alive
+        self._retry_attempts = retry_attempts
+        self._retry_delay = retry_delay
         self._client: httpx.AsyncClient | None = None
 
     async def start(self):
@@ -53,16 +59,21 @@ class OllamaClient:
         model: str,
         messages: list[dict],
         images: list[bytes] | None = None,
+        options: dict | None = None,
     ) -> dict:
-        """Send a chat completion request and return the full response.
+        """Send a chat completion request with retry logic.
 
         Args:
-            model: Ollama model name (e.g., "avil/UI-TARS").
+            model: Ollama model name.
             messages: Chat messages in Ollama format.
-            images: Optional list of raw PNG bytes to attach to the last user message.
+            images: Optional list of raw image bytes to attach to the last user message.
+            options: Optional Ollama options (temperature, num_predict, etc).
 
         Returns:
             Full Ollama response dict with 'message', 'total_duration', etc.
+
+        Raises:
+            After exhausting retries: the last exception encountered.
         """
         client = self._ensure_client()
 
@@ -75,18 +86,43 @@ class OllamaClient:
             "stream": False,
             "keep_alive": self._keep_alive,
         }
+        if options:
+            payload["options"] = options
 
-        resp = await client.post("/api/chat", json=payload)
-        resp.raise_for_status()
-        return resp.json()
+        last_exc: Exception | None = None
+        for attempt in range(self._retry_attempts):
+            try:
+                resp = await client.post("/api/chat", json=payload)
+                resp.raise_for_status()
+                return resp.json()
+            except (httpx.TimeoutException, httpx.HTTPStatusError) as e:
+                last_exc = e
+                if attempt < self._retry_attempts - 1:
+                    delay = self._retry_delay * (2 ** attempt)
+                    logger.warning(
+                        "Ollama chat attempt %d/%d failed (%s), retrying in %.1fs",
+                        attempt + 1, self._retry_attempts, e, delay,
+                    )
+                    await asyncio.sleep(delay)
+                else:
+                    logger.error("Ollama chat failed after %d attempts: %s", self._retry_attempts, e)
+
+        raise last_exc  # type: ignore[misc]
 
     async def chat_stream(
         self,
         model: str,
         messages: list[dict],
         images: list[bytes] | None = None,
-    ) -> AsyncGenerator[dict, None]:
-        """Stream chat completion responses as they arrive."""
+        options: dict | None = None,
+        stop_at: str | None = None,
+    ) -> str:
+        """Stream chat completion, optionally stopping early when stop_at is found.
+
+        Returns the full accumulated response text. If stop_at is provided,
+        stops reading as soon as that string appears in the accumulated output —
+        saves time by not waiting for the model to finish generating.
+        """
         client = self._ensure_client()
 
         if images:
@@ -98,12 +134,72 @@ class OllamaClient:
             "stream": True,
             "keep_alive": self._keep_alive,
         }
+        if options:
+            payload["options"] = options
+
+        accumulated = ""
+        last_exc: Exception | None = None
+
+        for attempt in range(self._retry_attempts):
+            try:
+                accumulated = ""
+                async with client.stream("POST", "/api/chat", json=payload) as resp:
+                    resp.raise_for_status()
+                    async for line in resp.aiter_lines():
+                        if not line.strip():
+                            continue
+                        chunk = json.loads(line)
+                        token = chunk.get("message", {}).get("content", "")
+                        accumulated += token
+
+                        if chunk.get("done"):
+                            break
+
+                        # Early stop: once we have a complete Action line, stop reading
+                        if stop_at and stop_at in accumulated:
+                            # Check if we have a complete action (ends with closing paren)
+                            after_action = accumulated[accumulated.index(stop_at):]
+                            if ")" in after_action:
+                                break
+                return accumulated
+            except (httpx.TimeoutException, httpx.HTTPStatusError) as e:
+                last_exc = e
+                if attempt < self._retry_attempts - 1:
+                    delay = self._retry_delay * (2 ** attempt)
+                    logger.warning(
+                        "Ollama stream attempt %d/%d failed (%s), retrying in %.1fs",
+                        attempt + 1, self._retry_attempts, e, delay,
+                    )
+                    await asyncio.sleep(delay)
+
+        raise last_exc  # type: ignore[misc]
+
+    async def chat_stream_raw(
+        self,
+        model: str,
+        messages: list[dict],
+        images: list[bytes] | None = None,
+        options: dict | None = None,
+    ) -> AsyncGenerator[dict, None]:
+        """Yield raw streaming chunks for low-level consumers."""
+        client = self._ensure_client()
+
+        if images:
+            messages = self._attach_images(messages, images)
+
+        payload = {
+            "model": model,
+            "messages": messages,
+            "stream": True,
+            "keep_alive": self._keep_alive,
+        }
+        if options:
+            payload["options"] = options
 
         async with client.stream("POST", "/api/chat", json=payload) as resp:
             resp.raise_for_status()
             async for line in resp.aiter_lines():
                 if line.strip():
-                    import json
                     yield json.loads(line)
 
     async def list_models(self) -> list[dict]:
@@ -134,7 +230,6 @@ class OllamaClient:
             resp.raise_for_status()
             async for line in resp.aiter_lines():
                 if line.strip():
-                    import json
                     yield json.loads(line)
 
     async def ping(self) -> bool:

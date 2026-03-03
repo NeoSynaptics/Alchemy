@@ -9,7 +9,12 @@ class Settings(BaseSettings):
     # --- Ollama ---
     ollama_host: str = "http://localhost:11434"
     ollama_cpu_model: str = "rashakol/UI-TARS-72B-DPO"  # CPU — GUI visuomotor agent
+    ollama_fast_model: str = "hf.co/Mungert/UI-TARS-1.5-7B-GGUF:Q4_K_M"  # Fast dev/simple tasks
     ollama_keep_alive: str = "10m"
+    ollama_temperature: float = 0.0  # Deterministic for GUI actions
+    ollama_max_tokens: int = 384  # Actions are short — save context budget
+    ollama_retry_attempts: int = 3
+    ollama_retry_delay: float = 1.0  # Seconds between retries (exponential)
 
     # --- Server ---
     host: str = "0.0.0.0"
@@ -21,17 +26,26 @@ class Settings(BaseSettings):
 
     # --- Shadow Desktop (WSL2) ---
     wsl_distro: str = "Ubuntu"
+    shadow_wsl_repo_path: str = "/mnt/c/Users/info/GitHub/Alchemy"
     display_num: int = 99
     vnc_port: int = 5900
     novnc_port: int = 6080
     resolution: str = "1920x1080x24"
+
+    # --- Screenshot ---
+    screenshot_format: str = "jpeg"  # jpeg or png — jpeg is ~5x smaller
+    screenshot_jpeg_quality: int = 85  # JPEG quality (0-100)
+    screenshot_resize_width: int = 1280  # Downscale to reduce visual tokens
+    screenshot_resize_height: int = 720  # 720p = ~40% fewer tokens than 1080p
 
     # --- Agent ---
     agent_max_steps: int = 50
     agent_screenshot_interval: float = 1.0
     agent_timeout: float = 300.0
     agent_approval_timeout: float = 60.0
-    agent_history_window: int = 8
+    agent_history_window: int = 4  # Text-only for older steps saves tokens
+    agent_use_streaming: bool = True  # Stream inference, stop on Action:
+    agent_model_routing: bool = True  # Use fast model for simple tasks
 
     # --- Router (context injection) ---
     router_enabled: bool = True

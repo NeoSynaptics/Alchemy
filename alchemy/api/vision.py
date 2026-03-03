@@ -1,7 +1,7 @@
 """Vision API — task submission, analysis, and approval flow.
 
 NEO-TX calls these endpoints to delegate GUI work to Alchemy.
-Phase 2: real UI-TARS inference via Ollama + agent loop.
+Phase 4: optimized inference (streaming, dual-model, adaptive timeouts).
 """
 
 from __future__ import annotations
@@ -58,6 +58,39 @@ def _get_context_builder(request: Request) -> ContextBuilder | None:
     )
 
 
+def _make_agent(
+    ollama: OllamaClient,
+    controller: ShadowDesktopController | None,
+    task_manager: TaskManager,
+    neotx: NeoTXClient,
+    context_builder: ContextBuilder | None,
+) -> VisionAgent:
+    """Create a VisionAgent with all current settings wired in."""
+    parts = settings.resolution.split("x")
+    width, height = int(parts[0]), int(parts[1])
+
+    return VisionAgent(
+        ollama=ollama,
+        controller=controller,
+        neotx=neotx,
+        task_manager=task_manager,
+        model=settings.ollama_cpu_model,
+        fast_model=settings.ollama_fast_model if settings.agent_model_routing else None,
+        max_steps=settings.agent_max_steps,
+        timeout=settings.agent_timeout,
+        screenshot_interval=settings.agent_screenshot_interval,
+        approval_timeout=settings.agent_approval_timeout,
+        history_window=settings.agent_history_window,
+        screen_width=width,
+        screen_height=height,
+        context_builder=context_builder,
+        use_streaming=settings.agent_use_streaming,
+        model_routing=settings.agent_model_routing,
+        temperature=settings.ollama_temperature,
+        max_tokens=settings.ollama_max_tokens,
+    )
+
+
 @router.post("/task", response_model=VisionTaskResponse)
 async def create_task(req: VisionTaskRequest, request: Request) -> VisionTaskResponse:
     """Submit a GUI task for the vision agent to execute."""
@@ -72,29 +105,16 @@ async def create_task(req: VisionTaskRequest, request: Request) -> VisionTaskRes
     now = datetime.now(timezone.utc)
     task_manager.create_task(task_id, req.goal)
 
-    # Parse screen resolution from settings
-    parts = settings.resolution.split("x")
-    width, height = int(parts[0]), int(parts[1])
-
     neotx = NeoTXClient(base_url=req.callback_url)
-    agent = VisionAgent(
-        ollama=ollama,
-        controller=controller,
-        neotx=neotx,
-        task_manager=task_manager,
-        model=settings.ollama_cpu_model,
-        max_steps=settings.agent_max_steps,
-        timeout=settings.agent_timeout,
-        screenshot_interval=settings.agent_screenshot_interval,
-        approval_timeout=settings.agent_approval_timeout,
-        history_window=settings.agent_history_window,
-        screen_width=width,
-        screen_height=height,
-        context_builder=_get_context_builder(request),
-    )
+    agent = _make_agent(ollama, controller, task_manager, neotx, _get_context_builder(request))
 
-    # Start agent loop as background task
-    async_task = asyncio.create_task(agent.run_task(task_id, req.goal))
+    async def _run_and_close():
+        try:
+            return await agent.run_task(task_id, req.goal)
+        finally:
+            await neotx.close()
+
+    async_task = asyncio.create_task(_run_and_close())
     task_manager.register_agent_task(task_id, async_task)
 
     return VisionTaskResponse(task_id=task_id, status=TaskStatus.PENDING, created_at=now)
@@ -108,25 +128,15 @@ async def analyze(req: VisionAnalyzeRequest, request: Request) -> VisionAnalyzeR
     if not ollama:
         raise HTTPException(status_code=503, detail="Ollama not available")
 
-    # Parse screen resolution
-    parts = settings.resolution.split("x")
-    width, height = int(parts[0]), int(parts[1])
+    neotx = NeoTXClient()
+    task_manager = TaskManager()
+    agent = _make_agent(ollama, controller, task_manager, neotx, _get_context_builder(request))
 
-    neotx = NeoTXClient()  # dummy — not used for single analysis
-    task_manager = TaskManager()  # dummy — not used for single analysis
-    agent = VisionAgent(
-        ollama=ollama,
-        controller=controller,
-        neotx=neotx,
-        task_manager=task_manager,
-        model=settings.ollama_cpu_model,
-        screen_width=width,
-        screen_height=height,
-        context_builder=_get_context_builder(request),
-    )
-
-    screenshot = base64.b64decode(req.screenshot_b64)
-    return await agent.analyze_single(screenshot, req.goal)
+    try:
+        screenshot = base64.b64decode(req.screenshot_b64)
+        return await agent.analyze_single(screenshot, req.goal)
+    finally:
+        await neotx.close()
 
 
 @router.get("/task/{task_id}/status", response_model=TaskStatusResponse)

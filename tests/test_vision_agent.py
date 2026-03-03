@@ -11,10 +11,6 @@ from alchemy.models.ollama_client import OllamaClient
 from alchemy.schemas import TaskStatus
 
 
-def _make_ollama_response(text: str) -> dict:
-    return {"message": {"role": "assistant", "content": text}}
-
-
 @pytest.fixture
 def deps():
     """Create mocked dependencies for VisionAgent."""
@@ -34,7 +30,9 @@ def _make_agent(ollama, controller, neotx, task_manager, **kwargs):
     defaults = dict(
         model="test-model", max_steps=10, timeout=30.0,
         screenshot_interval=0.0, approval_timeout=5.0,
-        history_window=8, screen_width=1920, screen_height=1080,
+        history_window=4, screen_width=1920, screen_height=1080,
+        use_streaming=True, model_routing=False,
+        temperature=0.0, max_tokens=384,
     )
     defaults.update(kwargs)
     return VisionAgent(
@@ -49,10 +47,10 @@ class TestRunTask:
         tid = uuid4()
         tm.create_task(tid, "test task")
 
-        # Step 1: click, Step 2: finished
-        ollama.chat = AsyncMock(side_effect=[
-            _make_ollama_response("Thought: Click it.\nAction: click(start_box='(500,500)')"),
-            _make_ollama_response("Thought: Done.\nAction: finished(content='Complete')"),
+        # Agent uses chat_stream (returns string directly)
+        ollama.chat_stream = AsyncMock(side_effect=[
+            "Thought: Click it.\nAction: click(start_box='(500,500)')",
+            "Thought: Done.\nAction: finished(content='Complete')",
         ])
 
         agent = _make_agent(*deps)
@@ -67,8 +65,7 @@ class TestRunTask:
         tid = uuid4()
         tm.create_task(tid, "endless task")
 
-        # Always returns click — never finishes
-        ollama.chat = AsyncMock(return_value=_make_ollama_response(
+        ollama.chat_stream = AsyncMock(return_value=(
             "Thought: Keep clicking.\nAction: click(start_box='(100,100)')"
         ))
 
@@ -96,7 +93,7 @@ class TestRunTask:
         tid = uuid4()
         tm.create_task(tid, "inference fail")
 
-        ollama.chat = AsyncMock(side_effect=Exception("Connection refused"))
+        ollama.chat_stream = AsyncMock(side_effect=Exception("Connection refused"))
 
         agent = _make_agent(*deps)
         status = await agent.run_task(tid, "inference fail")
@@ -110,9 +107,9 @@ class TestRunTask:
         tm.create_task(tid, "parse error")
 
         # Step 1: garbled, Step 2: valid finished
-        ollama.chat = AsyncMock(side_effect=[
-            _make_ollama_response("I don't know what to do"),
-            _make_ollama_response("Thought: Done.\nAction: finished(content='ok')"),
+        ollama.chat_stream = AsyncMock(side_effect=[
+            "I don't know what to do",
+            "Thought: Done.\nAction: finished(content='ok')",
         ])
 
         agent = _make_agent(*deps)
@@ -131,11 +128,49 @@ class TestRunTask:
 
         assert status == TaskStatus.DENIED
 
+    async def test_non_streaming_mode(self, deps):
+        """When streaming is disabled, use chat() instead."""
+        ollama, controller, neotx, tm = deps
+        tid = uuid4()
+        tm.create_task(tid, "non-streaming")
+
+        ollama.chat = AsyncMock(return_value={
+            "message": {"role": "assistant", "content": "Thought: Done.\nAction: finished(content='ok')"},
+        })
+
+        agent = _make_agent(*deps, use_streaming=False)
+        status = await agent.run_task(tid, "non-streaming")
+
+        assert status == TaskStatus.COMPLETED
+        ollama.chat.assert_called()
+
+    async def test_model_escalation_on_failure(self, deps):
+        """When fast model fails, escalate to full model."""
+        ollama, controller, neotx, tm = deps
+        tid = uuid4()
+        tm.create_task(tid, "escalation test")
+
+        call_count = 0
+
+        async def mock_stream(model, *args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if model == "fast-model" and call_count == 1:
+                raise Exception("Fast model OOM")
+            return "Thought: Done.\nAction: finished(content='ok')"
+
+        ollama.chat_stream = AsyncMock(side_effect=mock_stream)
+
+        agent = _make_agent(*deps, fast_model="fast-model", model_routing=True)
+        status = await agent.run_task(tid, "open spotify and play music")
+
+        assert status == TaskStatus.COMPLETED
+
 
 class TestAnalyzeSingle:
     async def test_returns_action(self, deps):
         ollama, controller, neotx, tm = deps
-        ollama.chat = AsyncMock(return_value=_make_ollama_response(
+        ollama.chat_stream = AsyncMock(return_value=(
             "Thought: Click the button.\nAction: click(start_box='(500,250)')"
         ))
 
@@ -148,3 +183,15 @@ class TestAnalyzeSingle:
         assert resp.action.y == 270
         assert resp.inference_ms > 0
         assert resp.model == "test-model"
+
+    async def test_non_streaming_analyze(self, deps):
+        ollama, controller, neotx, tm = deps
+        ollama.chat = AsyncMock(return_value={
+            "message": {"role": "assistant", "content": "Thought: Click.\nAction: click(start_box='(500,500)')"},
+        })
+
+        agent = _make_agent(*deps, use_streaming=False)
+        png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 100
+        resp = await agent.analyze_single(png, "click it")
+
+        assert resp.action.action == "click"

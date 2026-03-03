@@ -1,4 +1,4 @@
-.PHONY: install dev shadow-setup shadow-start shadow-stop shadow-health test server demo
+.PHONY: install dev shadow-setup shadow-start shadow-stop shadow-health test check-schemas server demo
 
 # Install core dependencies
 install:
@@ -27,6 +27,10 @@ shadow-health:
 # Run tests
 test:
 	pytest tests/ -v
+
+# Check schemas.py sync between Alchemy and NEO-TX
+check-schemas:
+	python scripts/check_schema_sync.py
 
 # Run Alchemy server
 server:

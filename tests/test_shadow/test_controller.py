@@ -25,6 +25,7 @@ def controller(mock_wsl):
         vnc_port=5900,
         novnc_port=6080,
         resolution="1920x1080x24",
+        screenshot_format="png",  # Tests use PNG data
     )
 
 

@@ -21,6 +21,9 @@ async def client():
         "total_duration": 2500000000,
         "eval_count": 15,
     })
+    mock_ollama.chat_stream = AsyncMock(
+        return_value="Thought: Click.\nAction: click(start_box='(500,500)')"
+    )
     mock_ollama.ping = AsyncMock(return_value=True)
     mock_ollama.list_models = AsyncMock(return_value=[])
 

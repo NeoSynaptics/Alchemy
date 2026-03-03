@@ -1,12 +1,13 @@
 """ShadowDesktopController — orchestrates the shadow desktop lifecycle.
 
 Uses WslRunner to start/stop Xvfb, Fluxbox, x11vnc, noVNC inside WSL2.
-Provides screenshot capture and health checks.
+Provides screenshot capture with configurable format and resolution.
 """
 
 from __future__ import annotations
 
 import logging
+import os
 
 from alchemy.schemas import (
     ShadowHealthResponse,
@@ -19,10 +20,6 @@ from alchemy.shadow.wsl import WslRunner
 
 logger = logging.getLogger(__name__)
 
-# Path to shadow desktop scripts (as seen from WSL2 via /mnt/c/...)
-_REPO_WSL_PATH = "/mnt/c/Users/info/GitHub/Alchemy"
-_SCREENSHOT_PATH = "/tmp/alchemy_screenshot.png"
-
 
 class ShadowDesktopController:
     """Manage the shadow desktop lifecycle via WSL2."""
@@ -34,21 +31,28 @@ class ShadowDesktopController:
         vnc_port: int = 5900,
         novnc_port: int = 6080,
         resolution: str = "1920x1080x24",
+        screenshot_format: str = "jpeg",
+        screenshot_jpeg_quality: int = 85,
+        screenshot_resize_width: int = 0,
+        screenshot_resize_height: int = 0,
+        repo_wsl_path: str = "/mnt/c/Users/info/GitHub/Alchemy",
     ):
         self.wsl = wsl
         self.display_num = display_num
         self.vnc_port = vnc_port
         self.novnc_port = novnc_port
         self.resolution = resolution
+        self._screenshot_format = screenshot_format.lower()
+        self._jpeg_quality = screenshot_jpeg_quality
+        self._resize_width = screenshot_resize_width
+        self._resize_height = screenshot_resize_height
+        self._repo_wsl_path = repo_wsl_path
+        self._screenshot_path = f"/tmp/alchemy_screenshot_{os.getpid()}"
 
     def _run_script(self, script_name: str, *args: str | int) -> str:
-        """Build a command that runs a WSL script with CRLF stripping.
-
-        Scripts live on /mnt/c/ (Windows FS) and may have \\r\\n line endings.
-        Pipe through tr to fix before executing.
-        """
+        """Build a command that runs a WSL script with CRLF stripping."""
         args_str = " ".join(str(a) for a in args)
-        return f"cd {_REPO_WSL_PATH} && tr -d '\\r' < wsl/{script_name} | bash -s -- {args_str}"
+        return f"cd {self._repo_wsl_path} && tr -d '\\r' < wsl/{script_name} | bash -s -- {args_str}"
 
     async def start(self, req: ShadowStartRequest | None = None) -> ShadowStartResponse:
         """Start the shadow desktop (Xvfb + Fluxbox + x11vnc + noVNC)."""
@@ -94,7 +98,6 @@ class ShadowDesktopController:
         cmd = self._run_script("health_check.sh", self.display_num, self.vnc_port, self.novnc_port)
         result = await self.wsl.run(cmd, timeout=10.0, env_display=False)
 
-        # Parse [OK] / [FAIL] lines from health_check.sh output
         output = result.stdout
         xvfb = "[OK] Xvfb" in output
         fluxbox = "[OK] Fluxbox" in output
@@ -114,33 +117,67 @@ class ShadowDesktopController:
         )
 
     async def screenshot(self) -> bytes:
-        """Capture a screenshot from the shadow desktop. Returns PNG bytes."""
-        # Use scrot to capture the display
-        result = await self.wsl.run(
-            f"scrot -o {_SCREENSHOT_PATH}",
-            timeout=10.0,
-        )
+        """Capture a screenshot from the shadow desktop.
+
+        Returns image bytes in the configured format (JPEG or PNG).
+        If resize dimensions are set, scales the image to reduce visual tokens.
+        """
+        use_jpeg = self._screenshot_format == "jpeg"
+        ext = "jpg" if use_jpeg else "png"
+        output_path = f"{self._screenshot_path}.{ext}"
+
+        # Build capture + optional resize pipeline
+        if self._resize_width > 0 and self._resize_height > 0:
+            resize = f"{self._resize_width}x{self._resize_height}"
+            if use_jpeg:
+                cmd = (
+                    f"scrot -o {self._screenshot_path}.png && "
+                    f"convert {self._screenshot_path}.png "
+                    f"-resize {resize} -quality {self._jpeg_quality} "
+                    f"{output_path}"
+                )
+            else:
+                cmd = (
+                    f"scrot -o {self._screenshot_path}.png && "
+                    f"convert {self._screenshot_path}.png -resize {resize} {output_path}"
+                )
+        elif use_jpeg:
+            cmd = (
+                f"scrot -o {self._screenshot_path}.png && "
+                f"convert {self._screenshot_path}.png -quality {self._jpeg_quality} {output_path}"
+            )
+        else:
+            cmd = f"scrot -o {output_path}"
+            output_path = f"{self._screenshot_path}.png"
+
+        result = await self.wsl.run(cmd, timeout=10.0)
         if not result.ok:
             # Fallback: try xwd + convert
-            result = await self.wsl.run(
-                f"xwd -root -silent | convert xwd:- png:{_SCREENSHOT_PATH}",
-                timeout=10.0,
-            )
+            if use_jpeg:
+                fallback = (
+                    f"xwd -root -silent | convert xwd:- "
+                    f"-quality {self._jpeg_quality} {output_path}"
+                )
+            else:
+                fallback = f"xwd -root -silent | convert xwd:- png:{output_path}"
+            result = await self.wsl.run(fallback, timeout=10.0)
             if not result.ok:
                 raise RuntimeError(f"Screenshot capture failed: {result.stderr}")
 
-        # Read the PNG file back
-        png_bytes = await self.wsl.read_file(_SCREENSHOT_PATH)
-        if not png_bytes or png_bytes[:4] != b"\x89PNG":
-            raise RuntimeError("Screenshot capture returned invalid data")
+        img_bytes = await self.wsl.read_file(output_path)
 
-        return png_bytes
+        if not img_bytes:
+            raise RuntimeError("Screenshot capture returned empty data")
+        if use_jpeg:
+            if img_bytes[:2] != b"\xff\xd8":
+                raise RuntimeError("Screenshot capture returned invalid JPEG data")
+        else:
+            if img_bytes[:4] != b"\x89PNG":
+                raise RuntimeError("Screenshot capture returned invalid PNG data")
+
+        return img_bytes
 
     async def execute(self, cmd: str) -> str:
-        """Run an arbitrary command on the shadow desktop.
-
-        The DISPLAY variable is set automatically.
-        Use this for xdotool, launching apps, etc.
-        """
+        """Run an arbitrary command on the shadow desktop."""
         result = await self.wsl.run(cmd, timeout=15.0)
         return result.stdout

@@ -24,33 +24,38 @@ class NeoTXClient:
     def __init__(self, base_url: str = "http://localhost:8100", timeout: float = 30.0):
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+        self._client = httpx.AsyncClient(
+            base_url=self.base_url,
+            timeout=self.timeout,
+        )
+
+    async def close(self) -> None:
+        """Close the underlying HTTP connection pool."""
+        await self._client.aclose()
 
     async def request_approval(self, req: ApprovalRequest) -> ApprovalRequestAck:
         """Ask NEO-TX to show an approval dialog to the user."""
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            resp = await client.post(
-                f"{self.base_url}/callbacks/approval",
-                json=req.model_dump(mode="json"),
-            )
-            resp.raise_for_status()
-            return ApprovalRequestAck.model_validate(resp.json())
+        resp = await self._client.post(
+            "/callbacks/approval",
+            json=req.model_dump(mode="json"),
+        )
+        resp.raise_for_status()
+        return ApprovalRequestAck.model_validate(resp.json())
 
     async def notify(self, req: NotifyRequest) -> NotifyAck:
         """Tell NEO-TX a NOTIFY-tier action was executed."""
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            resp = await client.post(
-                f"{self.base_url}/callbacks/notify",
-                json=req.model_dump(mode="json"),
-            )
-            resp.raise_for_status()
-            return NotifyAck.model_validate(resp.json())
+        resp = await self._client.post(
+            "/callbacks/notify",
+            json=req.model_dump(mode="json"),
+        )
+        resp.raise_for_status()
+        return NotifyAck.model_validate(resp.json())
 
     async def task_update(self, req: TaskUpdateRequest) -> TaskUpdateAck:
         """Report task status change to NEO-TX."""
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            resp = await client.post(
-                f"{self.base_url}/callbacks/task-update",
-                json=req.model_dump(mode="json"),
-            )
-            resp.raise_for_status()
-            return TaskUpdateAck.model_validate(resp.json())
+        resp = await self._client.post(
+            "/callbacks/task-update",
+            json=req.model_dump(mode="json"),
+        )
+        resp.raise_for_status()
+        return TaskUpdateAck.model_validate(resp.json())
