@@ -1,4 +1,4 @@
-.PHONY: install dev shadow-setup shadow-start shadow-stop shadow-health test check-schemas server demo
+.PHONY: install dev shadow-setup shadow-start shadow-stop shadow-health test check-schemas lock server demo
 
 # Install core dependencies
 install:
@@ -31,6 +31,10 @@ test:
 # Check schemas.py sync between Alchemy and NEO-TX
 check-schemas:
 	python scripts/check_schema_sync.py
+
+# Generate pinned dependency lockfile
+lock:
+	pip-compile pyproject.toml -o requirements-lock.txt --strip-extras
 
 # Run Alchemy server
 server:

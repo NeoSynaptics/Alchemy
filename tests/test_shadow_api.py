@@ -39,7 +39,7 @@ async def client():
 
 @pytest.mark.asyncio
 async def test_shadow_start(client):
-    resp = await client.post("/shadow/start", json={
+    resp = await client.post("/v1/shadow/start", json={
         "resolution": "1920x1080x24", "display_num": 99,
     })
     assert resp.status_code == 200
@@ -51,21 +51,21 @@ async def test_shadow_start(client):
 
 @pytest.mark.asyncio
 async def test_shadow_start_defaults(client):
-    resp = await client.post("/shadow/start")
+    resp = await client.post("/v1/shadow/start")
     assert resp.status_code == 200
     assert resp.json()["status"] == "running"
 
 
 @pytest.mark.asyncio
 async def test_shadow_stop(client):
-    resp = await client.post("/shadow/stop")
+    resp = await client.post("/v1/shadow/stop")
     assert resp.status_code == 200
     assert resp.json()["status"] == "stopped"
 
 
 @pytest.mark.asyncio
 async def test_shadow_health(client):
-    resp = await client.get("/shadow/health")
+    resp = await client.get("/v1/shadow/health")
     assert resp.status_code == 200
     data = resp.json()
     assert "xvfb_running" in data
@@ -76,7 +76,7 @@ async def test_shadow_health(client):
 
 @pytest.mark.asyncio
 async def test_screenshot_returns_png(client):
-    resp = await client.get("/shadow/screenshot")
+    resp = await client.get("/v1/shadow/screenshot")
     assert resp.status_code == 200
     assert resp.headers["content-type"] == "image/png"
     assert resp.content[:4] == b"\x89PNG"

@@ -1,4 +1,4 @@
-"""Tests for Tier 1.5 vision escalation — stuck detection + UI-TARS 7B fallback."""
+"""Tests for Tier 1.5 vision escalation — stuck detection + vision fallback."""
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -9,6 +9,7 @@ from alchemy.playwright.escalation import (
     StuckReason,
     VisionEscalation,
     _parse_escalation_response,
+    extract_task_text,
 )
 
 
@@ -79,17 +80,17 @@ class TestStuckDetector:
 class TestParseEscalationResponse:
     def test_click_action(self):
         raw = """Thought: I see a search button at the top right.
-Action: click(start_box='(452,128)')"""
+Action: click(start_box="(452,128)")"""
         result = _parse_escalation_response(raw, 1280, 720)
         assert result.success is True
         assert result.action_type == "click"
-        assert result.x == round(452 / 1000 * 1280)
-        assert result.y == round(128 / 1000 * 720)
+        assert result.x == 452  # Raw pixel coordinates
+        assert result.y == 128
         assert "search button" in result.thought
 
     def test_scroll_action(self):
         raw = """Thought: Need to scroll down to see more content.
-Action: scroll(start_box='(500,500)', direction='down')"""
+Action: scroll(start_box="(500,500)", direction="down")"""
         result = _parse_escalation_response(raw, 1280, 720)
         assert result.success is True
         assert result.action_type == "scroll"
@@ -97,15 +98,22 @@ Action: scroll(start_box='(500,500)', direction='down')"""
 
     def test_type_action(self):
         raw = """Thought: I need to type the search query.
-Action: type(content='hello world')"""
+Action: type(content="hello world")"""
         result = _parse_escalation_response(raw, 1280, 720)
         assert result.success is True
         assert result.action_type == "type"
         assert result.text == "hello world"
 
+    def test_type_single_quotes(self):
+        """Both single and double quotes should work."""
+        raw = """Thought: Type query.
+Action: type(content='hello world')"""
+        result = _parse_escalation_response(raw, 1280, 720)
+        assert result.text == "hello world"
+
     def test_finished_maps_to_done(self):
         raw = """Thought: Task is complete.
-Action: finished(content='done')"""
+Action: finished(content="done")"""
         result = _parse_escalation_response(raw, 1280, 720)
         assert result.action_type == "done"
 
@@ -120,16 +128,17 @@ Action: wait()"""
             _parse_escalation_response("Just some random text", 1280, 720)
 
     def test_box_start_format(self):
+        """UI-TARS box_start format should also parse (coordinates are raw pixels)."""
         raw = "Thought: Click.\nAction: click(start_box='<|box_start|>(300,400)<|box_end|>')"
         result = _parse_escalation_response(raw, 1280, 720)
         assert result.action_type == "click"
-        assert result.x == round(300 / 1000 * 1280)
-        assert result.y == round(400 / 1000 * 720)
+        assert result.x == 300  # Raw pixel, not normalized
+        assert result.y == 400
 
     def test_coordinates_clamped(self):
-        raw = "Thought: Edge.\nAction: click(start_box='(1100,1100)')"
+        raw = "Thought: Edge.\nAction: click(start_box='(1500,800)')"
         result = _parse_escalation_response(raw, 1280, 720)
-        # 1100/1000 * 1280 = 1408 → clamped to 1280
+        # 1500 > 1280 → clamped to 1280, 800 > 720 → clamped to 720
         assert result.x == 1280
         assert result.y == 720
 
@@ -252,3 +261,107 @@ class TestVisionEscalation:
         prompt_text = messages[0]["content"]
         assert "parse_failures" in prompt_text
         assert "Step 1" in prompt_text
+
+
+# --- Task Text Extraction Tests ---
+
+
+class TestExtractTaskText:
+    def test_quoted_single(self):
+        assert extract_task_text("Search Wikipedia for 'pole vault'") == "pole vault"
+
+    def test_quoted_double(self):
+        assert extract_task_text('Search for "machine learning"') == "machine learning"
+
+    def test_search_for_pattern(self):
+        assert extract_task_text("Search for cats on Google") == "cats"
+
+    def test_type_pattern(self):
+        assert extract_task_text("Type hello world") == "hello world"
+
+    def test_look_up_pattern(self):
+        assert extract_task_text("Look up python tutorials") == "python tutorials"
+
+    def test_no_match(self):
+        assert extract_task_text("Click the submit button") is None
+
+    def test_quoted_takes_priority(self):
+        # Quoted text is more explicit than pattern match
+        assert extract_task_text("Search for 'exact phrase' on Wikipedia") == "exact phrase"
+
+
+# --- Click-Dedup Tests ---
+
+
+class TestClickDedup:
+    async def test_first_click_passes_through(self):
+        """First click at any location should not be deduped."""
+        ollama = MagicMock()
+        ollama.chat = AsyncMock(return_value={
+            "message": {"content": "Thought: Click search.\nAction: click(start_box='(500,300)')"}
+        })
+        esc = VisionEscalation(ollama_client=ollama, model="test")
+        page = AsyncMock()
+        page.screenshot = AsyncMock(return_value=b"fake")
+
+        result = await esc.escalate(page, "Search for 'cats'")
+        assert result.action_type == "click"
+        assert result.x == 500
+
+    async def test_repeated_click_converts_to_type(self):
+        """Second click at same spot should become a type action."""
+        ollama = MagicMock()
+        ollama.chat = AsyncMock(return_value={
+            "message": {"content": "Thought: Click again.\nAction: click(start_box='(505,298)')"}
+        })
+        esc = VisionEscalation(ollama_client=ollama, model="test", click_dedup_radius=50)
+        page = AsyncMock()
+        page.screenshot = AsyncMock(return_value=b"fake")
+
+        # First click — register it
+        esc._recent_clicks.append((500, 300))
+
+        # Second click near same spot
+        result = await esc.escalate(page, "Search for 'cats'")
+        assert result.action_type == "type"
+        assert result.text == "cats"
+        assert "AUTO-TYPE" in result.thought
+
+    async def test_click_far_away_not_deduped(self):
+        """Click at a different location should not be deduped."""
+        ollama = MagicMock()
+        ollama.chat = AsyncMock(return_value={
+            "message": {"content": "Thought: Click menu.\nAction: click(start_box='(100,600)')"}
+        })
+        esc = VisionEscalation(ollama_client=ollama, model="test", click_dedup_radius=50)
+        page = AsyncMock()
+        page.screenshot = AsyncMock(return_value=b"fake")
+
+        esc._recent_clicks.append((500, 300))
+
+        result = await esc.escalate(page, "Search for 'cats'")
+        assert result.action_type == "click"  # Not deduped — far away
+
+    async def test_reset_clicks_clears_history(self):
+        """reset_clicks should clear the history."""
+        esc = VisionEscalation(ollama_client=MagicMock(), model="test")
+        esc._recent_clicks.append((100, 200))
+        esc._recent_clicks.append((300, 400))
+        esc.reset_clicks()
+        assert len(esc._recent_clicks) == 0
+
+    async def test_no_text_extractable_keeps_click(self):
+        """If we can't extract text from task, keep the click."""
+        ollama = MagicMock()
+        ollama.chat = AsyncMock(return_value={
+            "message": {"content": "Thought: Click.\nAction: click(start_box='(500,300)')"}
+        })
+        esc = VisionEscalation(ollama_client=ollama, model="test", click_dedup_radius=50)
+        page = AsyncMock()
+        page.screenshot = AsyncMock(return_value=b"fake")
+
+        esc._recent_clicks.append((500, 300))
+
+        # Task has no extractable search text
+        result = await esc.escalate(page, "Click the submit button")
+        assert result.action_type == "click"  # Can't dedup without text

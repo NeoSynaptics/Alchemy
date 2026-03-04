@@ -4,8 +4,6 @@ Tier 1 agent: structured data approach (DOM/a11y tree) instead of vision (screen
 Works with Chrome, Electron apps (VS Code, Spotify, Slack, Discord, Notion).
 """
 
-from alchemy.playwright.browser import BrowserManager
-from alchemy.playwright.executor import execute_action
-from alchemy.playwright.snapshot import SnapshotResult, capture_snapshot
+from alchemy.core import BrowserManager, execute_action, SnapshotResult, capture_snapshot
 
 __all__ = ["BrowserManager", "capture_snapshot", "execute_action", "SnapshotResult"]

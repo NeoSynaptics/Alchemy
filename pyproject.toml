@@ -22,6 +22,8 @@ dependencies = [
     "aiofiles",
     "psutil",
     "playwright",
+    "duckduckgo-search>=7.0",
+    "trafilatura>=2.0",
 ]
 
 [project.optional-dependencies]
@@ -30,6 +32,7 @@ dev = [
     "pytest-asyncio",
     "ruff",
     "pip-tools",
+    "import-linter",
 ]
 
 [tool.pytest.ini_options]

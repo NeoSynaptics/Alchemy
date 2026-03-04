@@ -9,41 +9,36 @@ from alchemy.agent.pw_agent import PlaywrightAgent, AgentResult, AgentStatus
 # --- Mock helpers ---
 
 def _mock_ollama(responses: list[str]):
-    """Create a mock OllamaClient that returns predefined responses."""
+    """Create a mock OllamaClient that returns predefined responses via chat_think()."""
     client = MagicMock()
-    inner_client = AsyncMock()
-    client._ensure_client = MagicMock(return_value=inner_client)
-    client._keep_alive = "10m"
 
     call_count = [0]
 
-    async def mock_post(path, json=None):
+    async def mock_chat_think(model, messages, think=True, options=None, seed=None):
         idx = min(call_count[0], len(responses) - 1)
         call_count[0] += 1
-        resp = MagicMock()
-        resp.raise_for_status = MagicMock()
-        resp.json = MagicMock(return_value={
-            "message": {"content": responses[idx], "thinking": ""},
-        })
-        return resp
+        return {"content": responses[idx], "thinking": "", "total_duration": 0}
 
-    inner_client.post = mock_post
+    client.chat_think = mock_chat_think
     return client
 
 
-def _mock_page(tree: dict):
-    """Create a mock page with accessibility snapshot."""
+def _mock_page(aria_text: str):
+    """Create a mock page with aria_snapshot() response."""
     page = AsyncMock()
-    page.accessibility = MagicMock()
-    page.accessibility.snapshot = AsyncMock(return_value=tree)
+
+    # Mock page.locator(":root").aria_snapshot() for capture_snapshot
+    snapshot_locator = AsyncMock()
+    snapshot_locator.aria_snapshot = AsyncMock(return_value=aria_text)
+    page.locator = MagicMock(return_value=snapshot_locator)
     page.wait_for_load_state = AsyncMock()
 
-    # Mock get_by_role for execution
-    locator = AsyncMock()
-    locator.click = AsyncMock()
-    locator.fill = AsyncMock()
-    locator.nth = MagicMock(return_value=locator)
-    page.get_by_role = MagicMock(return_value=locator)
+    # Mock get_by_role for executor
+    action_locator = AsyncMock()
+    action_locator.click = AsyncMock()
+    action_locator.fill = AsyncMock()
+    action_locator.nth = MagicMock(return_value=action_locator)
+    page.get_by_role = MagicMock(return_value=action_locator)
     page.mouse = AsyncMock()
     page.mouse.wheel = AsyncMock()
     page.keyboard = AsyncMock()
@@ -52,14 +47,11 @@ def _mock_page(tree: dict):
     return page
 
 
-SIMPLE_TREE = {
-    "role": "WebArea",
-    "name": "Test",
-    "children": [
-        {"role": "textbox", "name": "Search"},
-        {"role": "button", "name": "Go"},
-    ],
-}
+SIMPLE_TREE = """\
+- document:
+  - textbox "Search"
+  - button "Go"\
+"""
 
 
 # --- Tests ---

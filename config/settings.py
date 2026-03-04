@@ -70,7 +70,7 @@ class Settings(BaseSettings):
 
     # --- Playwright Escalation (Tier 1.5 — vision fallback) ---
     pw_escalation_enabled: bool = True  # Enable UI-TARS 7B fallback when stuck
-    pw_escalation_model: str = "hf.co/Mungert/UI-TARS-1.5-7B-GGUF:Q4_K_M"  # Vision model
+    pw_escalation_model: str = "minicpm-v"  # Vision model — pixel coordinate output
     pw_escalation_temperature: float = 0.0
     pw_escalation_max_tokens: int = 384
     pw_escalation_parse_failures: int = 3  # Consecutive parse errors before escalating

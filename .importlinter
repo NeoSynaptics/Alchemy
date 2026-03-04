@@ -1,0 +1,29 @@
+[importlinter]
+root_packages =
+    alchemy
+    config
+
+[importlinter:contract:core-independence]
+name = Core never imports from outer layers
+type = forbidden
+source_modules =
+    alchemy.core
+forbidden_modules =
+    alchemy.api
+    alchemy.research
+    alchemy.router
+    alchemy.shadow
+    alchemy.server
+
+[importlinter:contract:adapters-independence]
+name = Adapters don't import from API/research/router/shadow
+type = forbidden
+source_modules =
+    alchemy.adapters
+forbidden_modules =
+    alchemy.api
+    alchemy.research
+    alchemy.router
+    alchemy.shadow
+    alchemy.server
+    alchemy.core

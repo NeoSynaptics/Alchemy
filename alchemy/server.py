@@ -17,11 +17,11 @@ from fastapi import FastAPI
 setup_logging()
 from fastapi.middleware.cors import CORSMiddleware
 
+from alchemy.adapters import OllamaClient
 from alchemy.agent.task_manager import TaskManager
 from alchemy.api import models_api, shadow, vision
 from alchemy.api import playwright_api
 from alchemy.api import research_api
-from alchemy.models.ollama_client import OllamaClient
 from alchemy.router.environment import EnvironmentDetector
 from alchemy.shadow.controller import ShadowDesktopController
 from alchemy.shadow.wsl import WslRunner
@@ -84,9 +84,7 @@ async def lifespan(app: FastAPI):
     # --- Playwright Agent (Tier 1) ---
     if settings.pw_enabled:
         try:
-            from alchemy.agent.pw_agent import PlaywrightAgent
-            from alchemy.approval.gate import ApprovalGate
-            from alchemy.playwright.browser import BrowserManager
+            from alchemy.core import PlaywrightAgent, ApprovalGate, BrowserManager
 
             browser_mgr = BrowserManager(headless=settings.pw_headless)
             await browser_mgr.start()
@@ -98,7 +96,7 @@ async def lifespan(app: FastAPI):
             vision_escalation = None
             stuck_detector = None
             if settings.pw_escalation_enabled:
-                from alchemy.playwright.escalation import StuckDetector, VisionEscalation
+                from alchemy.core import StuckDetector, VisionEscalation
 
                 vision_escalation = VisionEscalation(
                     ollama_client=ollama,

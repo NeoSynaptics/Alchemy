@@ -27,7 +27,7 @@ async def client():
 
 @pytest.mark.asyncio
 async def test_get_models(client):
-    resp = await client.get("/models")
+    resp = await client.get("/v1/models")
     assert resp.status_code == 200
     data = resp.json()
     assert len(data["models"]) == 2

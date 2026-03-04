@@ -36,7 +36,7 @@ class NeoTXClient:
     async def request_approval(self, req: ApprovalRequest) -> ApprovalRequestAck:
         """Ask NEO-TX to show an approval dialog to the user."""
         resp = await self._client.post(
-            "/callbacks/approval",
+            "/v1/callbacks/approval",
             json=req.model_dump(mode="json"),
         )
         resp.raise_for_status()
@@ -45,7 +45,7 @@ class NeoTXClient:
     async def notify(self, req: NotifyRequest) -> NotifyAck:
         """Tell NEO-TX a NOTIFY-tier action was executed."""
         resp = await self._client.post(
-            "/callbacks/notify",
+            "/v1/callbacks/notify",
             json=req.model_dump(mode="json"),
         )
         resp.raise_for_status()
@@ -54,7 +54,7 @@ class NeoTXClient:
     async def task_update(self, req: TaskUpdateRequest) -> TaskUpdateAck:
         """Report task status change to NEO-TX."""
         resp = await self._client.post(
-            "/callbacks/task-update",
+            "/v1/callbacks/task-update",
             json=req.model_dump(mode="json"),
         )
         resp.raise_for_status()
