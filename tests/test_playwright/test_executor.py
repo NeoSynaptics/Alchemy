@@ -129,16 +129,20 @@ class TestExecuteAction:
 
 
 class TestBuildLocator:
-    def test_simple_locator(self):
+    def test_simple_locator_uses_nth_zero(self):
+        """Even index=0 uses .nth(0) to avoid strict mode violations."""
         page = MagicMock()
         locator = MagicMock()
+        nth_locator = MagicMock()
+        locator.nth = MagicMock(return_value=nth_locator)
         page.get_by_role = MagicMock(return_value=locator)
 
         entry = RefEntry(role="button", name="OK", index=0)
         result = _build_locator(page, entry)
 
         page.get_by_role.assert_called_once_with("button", name="OK")
-        assert result == locator
+        locator.nth.assert_called_once_with(0)
+        assert result == nth_locator
 
     def test_nth_locator(self):
         page = MagicMock()

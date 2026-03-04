@@ -74,24 +74,30 @@ async def execute_action(
 
     locator = _build_locator(page, entry)
 
-    if action_type == "click":
-        await locator.click(timeout=timeout)
-        logger.debug("Clicked %s (%s '%s')", ref, entry.role, entry.name)
-        return True
+    try:
+        if action_type == "click":
+            await locator.click(timeout=timeout)
+            logger.debug("Clicked %s (%s '%s')", ref, entry.role, entry.name)
+            return True
 
-    if action_type == "type":
-        if text is None:
-            raise ExecutionError("type action requires text")
-        await locator.fill(text, timeout=timeout)
-        logger.debug("Typed into %s: %r", ref, text[:50])
-        return True
+        if action_type == "type":
+            if text is None:
+                raise ExecutionError("type action requires text")
+            await locator.fill(text, timeout=timeout)
+            logger.debug("Typed into %s: %r", ref, text[:50])
+            return True
 
-    if action_type == "select":
-        if text is None:
-            raise ExecutionError("select action requires text")
-        await locator.select_option(label=text, timeout=timeout)
-        logger.debug("Selected '%s' in %s", text, ref)
-        return True
+        if action_type == "select":
+            if text is None:
+                raise ExecutionError("select action requires text")
+            await locator.select_option(label=text, timeout=timeout)
+            logger.debug("Selected '%s' in %s", text, ref)
+            return True
+
+    except ExecutionError:
+        raise
+    except Exception as e:
+        raise ExecutionError(str(e)) from e
 
     raise ExecutionError(f"Unknown action type: {action_type}")
 
@@ -99,12 +105,8 @@ async def execute_action(
 def _build_locator(page, entry: RefEntry):
     """Build a Playwright locator from a RefEntry.
 
-    Uses get_by_role with name matching. If multiple elements share the
-    same role+name, uses .nth() to pick the right one.
+    Uses get_by_role with name matching. Always uses .nth() to avoid
+    strict mode violations when multiple elements share the same role+name.
     """
-    locator = page.get_by_role(entry.role, name=entry.name)
-
-    if entry.index > 0:
-        locator = locator.nth(entry.index)
-
+    locator = page.get_by_role(entry.role, name=entry.name).nth(entry.index)
     return locator

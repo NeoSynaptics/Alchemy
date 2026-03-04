@@ -1,12 +1,14 @@
 """Capture and format Playwright accessibility tree for LLM consumption.
 
-Walks the accessibility tree, assigns ref IDs to interactive/named elements,
-and formats as indented text that a 14B text model can read and act on.
+Uses Playwright's aria_snapshot() API (replaces deprecated page.accessibility).
+Parses the YAML-like output, assigns ref IDs to interactive elements, and builds
+a ref_map so the executor can locate elements by ref.
 """
 
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
@@ -18,18 +20,19 @@ INTERACTIVE_ROLES = frozenset({
     "switch", "searchbox", "spinbutton",
 })
 
-# Roles that are structural containers — get a ref only if named
-CONTAINER_ROLES = frozenset({
-    "WebArea", "navigation", "main", "banner", "contentinfo", "form",
-    "search", "complementary", "group", "list", "tree", "table", "row",
-    "toolbar", "menu", "menubar", "tablist", "dialog", "alert", "region",
-})
+# Unicode control characters that some pages inject (RTL markers, etc.)
+_UNICODE_JUNK_RE = re.compile(r"[\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]")
 
-# Properties to include in formatted output
-DISPLAY_PROPS = frozenset({
-    "level", "valuetext", "valuemin", "valuemax", "checked", "pressed",
-    "expanded", "selected", "disabled", "required", "readonly",
-})
+# Match aria_snapshot lines: "  - role "name" [props]" or "  - 'role "name"': value"
+_ROLE_NAME_RE = re.compile(
+    r"^(\s*-\s+)"               # indent + "- "
+    r"(?:')?(\w+)\s+"           # optional quote + role + space
+    r'"([^"]*)"'                # "name"
+    r"(?:')?(.*)$"              # optional closing quote + rest
+)
+
+# Match unnamed role lines: "  - role:" or "  - role"
+_ROLE_ONLY_RE = re.compile(r"^(\s*-\s+)(\w+)([:].*)$")
 
 
 @dataclass
@@ -50,84 +53,6 @@ class SnapshotResult:
     element_count: int = 0
 
 
-def _should_assign_ref(role: str, name: str) -> bool:
-    """Decide if an element gets a ref ID."""
-    if role in INTERACTIVE_ROLES:
-        return True
-    if role in CONTAINER_ROLES:
-        return False
-    # Headings, images, cells — assign ref if they have a name
-    return bool(name)
-
-
-def _format_node(
-    node: dict,
-    ref_counter: list[int],
-    ref_map: dict[str, RefEntry],
-    role_counts: dict[tuple[str, str], int],
-    depth: int = 0,
-    max_depth: int = 10,
-    max_elements: int = 150,
-) -> list[str]:
-    """Recursively format an accessibility tree node."""
-    if depth > max_depth or ref_counter[0] > max_elements:
-        return []
-
-    role = node.get("role", "unknown")
-    name = node.get("name", "")
-
-    # Skip the root WebArea — just process children
-    if role == "WebArea" and depth == 0:
-        lines = []
-        for child in node.get("children", []):
-            lines.extend(
-                _format_node(child, ref_counter, ref_map, role_counts, depth, max_depth, max_elements)
-            )
-        return lines
-
-    # Skip empty unnamed nodes
-    if not name and role in CONTAINER_ROLES and not node.get("children"):
-        return []
-
-    indent = "  " * depth
-    parts = [f"{indent}- {role}"]
-
-    if name:
-        # Truncate very long names
-        display_name = name[:120] + "..." if len(name) > 120 else name
-        parts.append(f'"{display_name}"')
-
-    # Assign ref if appropriate
-    ref_id = None
-    if _should_assign_ref(role, name):
-        ref_counter[0] += 1
-        ref_id = f"e{ref_counter[0]}"
-        parts.append(f"[ref={ref_id}]")
-
-        # Track how many times we've seen this role+name combo
-        key = (role, name)
-        idx = role_counts.get(key, 0)
-        role_counts[key] = idx + 1
-
-        ref_map[ref_id] = RefEntry(role=role, name=name, index=idx)
-
-    # Add properties
-    for prop in DISPLAY_PROPS:
-        val = node.get(prop)
-        if val is not None:
-            parts.append(f"[{prop}={val}]")
-
-    lines = [" ".join(parts)]
-
-    # Process children
-    for child in node.get("children", []):
-        lines.extend(
-            _format_node(child, ref_counter, ref_map, role_counts, depth + 1, max_depth, max_elements)
-        )
-
-    return lines
-
-
 async def capture_snapshot(
     page,
     max_elements: int = 150,
@@ -144,24 +69,53 @@ async def capture_snapshot(
         SnapshotResult with formatted text, ref mapping, and element count.
     """
     try:
-        tree = await page.accessibility.snapshot()
+        raw = await page.locator(":root").aria_snapshot()
     except Exception as e:
-        logger.error("Failed to capture accessibility snapshot: %s", e)
+        logger.error("Failed to capture aria snapshot: %s", e)
         return SnapshotResult(text="[Error: Could not capture accessibility tree]")
 
-    if not tree:
+    if not raw:
         return SnapshotResult(text="[Empty page — no accessibility tree]")
 
+    # Strip unicode control chars that break encoding
+    raw = _UNICODE_JUNK_RE.sub("", raw)
+
+    # Parse lines, inject ref IDs on interactive elements
     ref_counter = [0]
     ref_map: dict[str, RefEntry] = {}
     role_counts: dict[tuple[str, str], int] = {}
+    annotated_lines: list[str] = []
 
-    lines = _format_node(
-        tree, ref_counter, ref_map, role_counts,
-        depth=0, max_depth=max_depth, max_elements=max_elements,
+    for line in raw.split("\n"):
+        stripped = line.strip()
+
+        # Skip /url: metadata lines (Playwright artifact)
+        if stripped.startswith("- /url:"):
+            continue
+
+        # Try to match "- role "name" ..."
+        m = _ROLE_NAME_RE.match(line)
+        if m and ref_counter[0] < max_elements:
+            prefix, role, name, rest = m.groups()
+            if role in INTERACTIVE_ROLES:
+                ref_counter[0] += 1
+                ref_id = f"e{ref_counter[0]}"
+
+                key = (role, name)
+                idx = role_counts.get(key, 0)
+                role_counts[key] = idx + 1
+                ref_map[ref_id] = RefEntry(role=role, name=name, index=idx)
+
+                # Inject ref marker after the name
+                line = f'{prefix}{role} "{name}" [ref={ref_id}]{rest}'
+
+        annotated_lines.append(line)
+
+    text = "\n".join(annotated_lines)
+    logger.debug(
+        "Snapshot: %d interactive refs, %d lines",
+        len(ref_map),
+        len(annotated_lines),
     )
-
-    text = "\n".join(lines)
-    logger.debug("Snapshot: %d elements, %d refs, %d lines", ref_counter[0], len(ref_map), len(lines))
 
     return SnapshotResult(text=text, ref_map=ref_map, element_count=ref_counter[0])

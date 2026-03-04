@@ -1,106 +1,76 @@
-"""Tests for Playwright accessibility tree snapshot formatting."""
+"""Tests for Playwright accessibility tree snapshot formatting.
+
+Tests the aria_snapshot()-based capture (Playwright 1.58+).
+"""
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, PropertyMock
 
 from alchemy.playwright.snapshot import (
     SnapshotResult,
     capture_snapshot,
-    _should_assign_ref,
-    _format_node,
     RefEntry,
+    INTERACTIVE_ROLES,
 )
 
 
 # --- Fixtures ---
 
-def _mock_page(tree: dict | None):
-    """Create a mock Playwright page with an accessibility snapshot."""
+def _mock_page(aria_text: str | None, *, raise_error: Exception | None = None):
+    """Create a mock Playwright page with an aria_snapshot() response."""
     page = AsyncMock()
-    page.accessibility = MagicMock()
-    page.accessibility.snapshot = AsyncMock(return_value=tree)
+    locator = AsyncMock()
+
+    if raise_error:
+        locator.aria_snapshot = AsyncMock(side_effect=raise_error)
+    else:
+        locator.aria_snapshot = AsyncMock(return_value=aria_text)
+
+    page.locator = MagicMock(return_value=locator)
     return page
 
 
-SIMPLE_TREE = {
-    "role": "WebArea",
-    "name": "Test Page",
-    "children": [
-        {"role": "heading", "name": "Welcome", "level": 1},
-        {
-            "role": "navigation",
-            "name": "Main",
-            "children": [
-                {"role": "link", "name": "Home"},
-                {"role": "link", "name": "About"},
-            ],
-        },
-        {"role": "textbox", "name": "Search"},
-        {"role": "button", "name": "Submit"},
-    ],
-}
+SIMPLE_TREE = """\
+- document:
+  - heading "Welcome" [level=1]
+  - navigation "Main":
+    - link "Home"
+    - link "About"
+  - textbox "Search"
+  - button "Submit"\
+"""
 
-SPOTIFY_TREE = {
-    "role": "WebArea",
-    "name": "Spotify",
-    "children": [
-        {"role": "heading", "name": "Good Evening", "level": 1},
-        {
-            "role": "navigation",
-            "name": "Main",
-            "children": [
-                {"role": "link", "name": "Home"},
-                {"role": "link", "name": "Search"},
-                {"role": "link", "name": "Your Library"},
-            ],
-        },
-        {
-            "role": "search",
-            "name": "Search Spotify",
-            "children": [
-                {"role": "textbox", "name": "What do you want to play?"},
-            ],
-        },
-        {
-            "role": "list",
-            "name": "Recently Played",
-            "children": [
-                {"role": "listitem", "name": "Daily Mix 1"},
-                {"role": "listitem", "name": "Discover Weekly"},
-            ],
-        },
-        {"role": "button", "name": "Play"},
-        {"role": "slider", "name": "Volume", "valuetext": "75"},
-    ],
-}
+SPOTIFY_TREE = """\
+- document:
+  - heading "Good Evening" [level=1]
+  - navigation "Main":
+    - link "Home"
+    - link "Search"
+    - link "Your Library"
+  - search "Search Spotify":
+    - textbox "What do you want to play?"
+  - list "Recently Played":
+    - listitem "Daily Mix 1"
+    - listitem "Discover Weekly"
+  - button "Play"
+  - slider "Volume" [valuetext=75]\
+"""
+
+GOOGLE_CONSENT = """\
+- document:
+  - dialog "Innan du fortsätter till Google Sök":
+    - img "Google"
+    - 'button "Språk: Svenska"': sv
+    - link "Logga in"
+    - heading "Innan du fortsätter till Google" [level=1]
+    - button "Avvisa alla"
+    - button "Godkänn alla"
+    - link "Fler alternativ":
+      - /url: https://example.com\
+"""
 
 
 # --- Tests ---
-
-class TestShouldAssignRef:
-    def test_interactive_roles_get_ref(self):
-        assert _should_assign_ref("button", "Submit") is True
-        assert _should_assign_ref("link", "Home") is True
-        assert _should_assign_ref("textbox", "Search") is True
-        assert _should_assign_ref("checkbox", "Agree") is True
-        assert _should_assign_ref("slider", "Volume") is True
-
-    def test_interactive_roles_get_ref_even_without_name(self):
-        assert _should_assign_ref("button", "") is True
-        assert _should_assign_ref("textbox", "") is True
-
-    def test_container_roles_no_ref(self):
-        assert _should_assign_ref("navigation", "Main") is False
-        assert _should_assign_ref("list", "Items") is False
-        assert _should_assign_ref("WebArea", "Page") is False
-
-    def test_named_display_elements_get_ref(self):
-        assert _should_assign_ref("heading", "Title") is True
-        assert _should_assign_ref("img", "Logo") is True
-
-    def test_unnamed_display_elements_no_ref(self):
-        assert _should_assign_ref("heading", "") is False
-
 
 class TestCaptureSnapshot:
     async def test_simple_tree(self):
@@ -114,25 +84,45 @@ class TestCaptureSnapshot:
         assert "button" in result.text
         assert "[ref=e" in result.text
 
-    async def test_refs_assigned_correctly(self):
+    async def test_refs_assigned_to_interactive_elements(self):
         page = _mock_page(SIMPLE_TREE)
         result = await capture_snapshot(page)
 
-        # heading "Welcome", link "Home", link "About", textbox "Search", button "Submit"
-        assert len(result.ref_map) == 5
-        assert "e1" in result.ref_map
-        assert result.ref_map["e1"].role == "heading"
-        assert result.ref_map["e1"].name == "Welcome"
+        # link "Home", link "About", textbox "Search", button "Submit" = 4
+        assert len(result.ref_map) == 4
+        assert result.ref_map["e1"].role == "link"
+        assert result.ref_map["e1"].name == "Home"
+        assert result.ref_map["e2"].role == "link"
+        assert result.ref_map["e2"].name == "About"
+        assert result.ref_map["e3"].role == "textbox"
+        assert result.ref_map["e3"].name == "Search"
+        assert result.ref_map["e4"].role == "button"
+        assert result.ref_map["e4"].name == "Submit"
 
     async def test_spotify_tree(self):
         page = _mock_page(SPOTIFY_TREE)
         result = await capture_snapshot(page)
 
-        # heading, 3 links, textbox, 2 listitems, button, slider = 9
-        assert len(result.ref_map) == 9
+        # 3 links + textbox + 2 listitems + button + slider = 8
+        assert len(result.ref_map) == 8
         assert "Play" in result.text
         assert "Volume" in result.text
         assert "[ref=e" in result.text
+
+    async def test_google_consent_dialog(self):
+        page = _mock_page(GOOGLE_CONSENT)
+        result = await capture_snapshot(page)
+
+        # button "Språk: Svenska", link "Logga in", button "Avvisa alla",
+        # button "Godkänn alla", link "Fler alternativ" = 5
+        assert len(result.ref_map) == 5
+        assert any(e.name == "Godkänn alla" for e in result.ref_map.values())
+        assert any(e.name == "Avvisa alla" for e in result.ref_map.values())
+
+    async def test_url_metadata_stripped(self):
+        page = _mock_page(GOOGLE_CONSENT)
+        result = await capture_snapshot(page)
+        assert "/url:" not in result.text
 
     async def test_empty_tree(self):
         page = _mock_page(None)
@@ -141,89 +131,72 @@ class TestCaptureSnapshot:
         assert "Empty page" in result.text
         assert len(result.ref_map) == 0
 
+    async def test_empty_string_tree(self):
+        page = _mock_page("")
+        result = await capture_snapshot(page)
+
+        assert "Empty page" in result.text
+        assert len(result.ref_map) == 0
+
     async def test_snapshot_error(self):
-        page = AsyncMock()
-        page.accessibility = MagicMock()
-        page.accessibility.snapshot = AsyncMock(side_effect=Exception("boom"))
+        page = _mock_page(None, raise_error=Exception("boom"))
         result = await capture_snapshot(page)
 
         assert "Error" in result.text
         assert len(result.ref_map) == 0
 
     async def test_max_elements_respected(self):
-        # Create a tree with many elements
-        children = [{"role": "button", "name": f"Btn {i}"} for i in range(200)]
-        tree = {"role": "WebArea", "name": "Big Page", "children": children}
-        page = _mock_page(tree)
+        lines = ["- document:"]
+        for i in range(200):
+            lines.append(f'  - button "Btn {i}"')
+        text = "\n".join(lines)
 
+        page = _mock_page(text)
         result = await capture_snapshot(page, max_elements=50)
-        assert result.element_count <= 51  # +1 for boundary
-
-    async def test_properties_included(self):
-        tree = {
-            "role": "WebArea",
-            "name": "Page",
-            "children": [
-                {"role": "checkbox", "name": "Agree", "checked": True},
-                {"role": "slider", "name": "Vol", "valuetext": "50"},
-            ],
-        }
-        page = _mock_page(tree)
-        result = await capture_snapshot(page)
-
-        assert "[checked=True]" in result.text
-        assert "[valuetext=50]" in result.text
-
-    async def test_indentation_depth(self):
-        tree = {
-            "role": "WebArea",
-            "name": "Page",
-            "children": [
-                {
-                    "role": "navigation",
-                    "name": "Nav",
-                    "children": [
-                        {"role": "link", "name": "Deep Link"},
-                    ],
-                },
-            ],
-        }
-        page = _mock_page(tree)
-        result = await capture_snapshot(page)
-
-        lines = result.text.strip().split("\n")
-        # Nav should be at depth 0, link at depth 1
-        assert any(line.startswith("  ") and "Deep Link" in line for line in lines)
-
-    async def test_long_name_truncated(self):
-        tree = {
-            "role": "WebArea",
-            "name": "Page",
-            "children": [
-                {"role": "heading", "name": "A" * 200},
-            ],
-        }
-        page = _mock_page(tree)
-        result = await capture_snapshot(page)
-
-        assert "..." in result.text
-        # Should not have the full 200 chars
-        assert "A" * 200 not in result.text
+        assert result.element_count <= 50
 
     async def test_duplicate_role_name_indexed(self):
-        tree = {
-            "role": "WebArea",
-            "name": "Page",
-            "children": [
-                {"role": "button", "name": "Delete"},
-                {"role": "button", "name": "Delete"},
-                {"role": "button", "name": "Delete"},
-            ],
-        }
-        page = _mock_page(tree)
+        text = """\
+- document:
+  - button "Delete"
+  - button "Delete"
+  - button "Delete"\
+"""
+        page = _mock_page(text)
         result = await capture_snapshot(page)
 
         assert len(result.ref_map) == 3
         assert result.ref_map["e1"].index == 0
         assert result.ref_map["e2"].index == 1
         assert result.ref_map["e3"].index == 2
+
+    async def test_ref_injection_format(self):
+        """Ref IDs should appear inline: - button "Submit" [ref=e1]"""
+        page = _mock_page(SIMPLE_TREE)
+        result = await capture_snapshot(page)
+
+        # Check that ref is injected after the name
+        assert 'button "Submit" [ref=e' in result.text
+        assert 'link "Home" [ref=e' in result.text
+
+    async def test_unicode_control_chars_stripped(self):
+        text = '- document:\n  - button "Click\u202ame"'
+        page = _mock_page(text)
+        result = await capture_snapshot(page)
+
+        assert "\u202a" not in result.text
+        assert "Clickme" in result.text
+
+    async def test_non_interactive_roles_no_ref(self):
+        text = """\
+- document:
+  - heading "Title" [level=1]
+  - navigation "Main":
+    - link "Home"\
+"""
+        page = _mock_page(text)
+        result = await capture_snapshot(page)
+
+        # Only link "Home" gets a ref (heading and navigation are not interactive)
+        assert len(result.ref_map) == 1
+        assert result.ref_map["e1"].role == "link"

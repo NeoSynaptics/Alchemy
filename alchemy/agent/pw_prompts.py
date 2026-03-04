@@ -7,18 +7,9 @@ Designed for Qwen3 14B with think: true — deep reasoning per step.
 from __future__ import annotations
 
 SYSTEM_PROMPT = """\
-You are a GUI automation agent operating inside AlchemyOS.
-You control applications through their accessibility tree.
+You are a browser automation agent. You see accessibility tree snapshots and output actions.
 
-RULES:
-- Output exactly ONE action per turn
-- Use the ref labels from the snapshot (e.g., @e5)
-- If unsure, use "scroll down" to see more of the page
-- If a page is loading, output "wait"
-- If the task is complete, output "done"
-- Never guess — if you can't find the element, say so
-
-ACTION FORMAT (use exactly one per response):
+ACTIONS (pick exactly ONE per turn):
   click @REF         — click an element
   type @REF "text"   — type text into an input
   scroll down        — scroll the page down
@@ -28,9 +19,22 @@ ACTION FORMAT (use exactly one per response):
   wait               — wait for page to load
   done               — task is complete
 
-RESPONSE FORMAT:
-Thought: [brief reasoning about what you see and what to do next]
-Action: [exactly one action from the format above]"""
+RULES:
+- Dismiss cookie consent or popups first
+- If the page is blocked (CAPTCHA, error), output done
+- If unsure, scroll down to see more
+
+EXAMPLE:
+  Task: Search for cats
+  Screen: - searchbox "Search" [ref=e4]
+          - button "Go" [ref=e5]
+  Response:
+  Thought: I see a search box. I will type my query.
+  Action: type @e4 "cats"
+
+OUTPUT FORMAT — every response MUST end with exactly:
+Thought: [one sentence]
+Action: [one action]"""
 
 
 def format_user_prompt(
@@ -63,10 +67,10 @@ def format_user_prompt(
             parts.append(f"  {entry}")
 
     parts.append("")
-    parts.append("Current screen:")
+    parts.append("Accessibility tree (interactive elements have [ref=eN]):")
     parts.append(snapshot_text)
     parts.append("")
-    parts.append("What is the next action?")
+    parts.append("Respond with Thought: and Action:")
 
     return "\n".join(parts)
 

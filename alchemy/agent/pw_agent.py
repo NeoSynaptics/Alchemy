@@ -279,8 +279,8 @@ class PlaywrightAgent:
             },
         }
 
-        if self._think:
-            payload["think"] = True
+        # Qwen3 defaults to thinking mode — must explicitly set think: false to disable
+        payload["think"] = self._think
 
         resp = await client.post("/api/chat", json=payload)
         resp.raise_for_status()

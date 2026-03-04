@@ -2,7 +2,14 @@
 
 import asyncio
 import logging
+import sys
 from contextlib import asynccontextmanager
+
+# Windows: Playwright requires ProactorEventLoop for subprocess support.
+# Must be set before any event loop is created (uvicorn --reload spawns a child
+# that imports this module, so module-level is the right place).
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
 from config.logging import setup_logging
 from fastapi import FastAPI

@@ -20,7 +20,7 @@ class TestSystemPrompt:
         assert "Action:" in SYSTEM_PROMPT
 
     def test_one_action_rule(self):
-        assert "ONE action per turn" in SYSTEM_PROMPT
+        assert "exactly ONE" in SYSTEM_PROMPT
 
 
 class TestFormatUserPrompt:
@@ -34,9 +34,9 @@ class TestFormatUserPrompt:
 
         assert "Task: Search for pole vault" in prompt
         assert "Step: 1" in prompt
-        assert "Current screen:" in prompt
+        assert "Accessibility tree" in prompt
         assert "[ref=e1]" in prompt
-        assert "What is the next action?" in prompt
+        assert "Thought:" in prompt
 
     def test_with_action_log(self):
         prompt = format_user_prompt(

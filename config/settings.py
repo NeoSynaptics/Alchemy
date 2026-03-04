@@ -59,13 +59,13 @@ class Settings(BaseSettings):
     # --- Playwright Agent (Tier 1) ---
     pw_enabled: bool = True
     pw_model: str = "qwen3:14b"
-    pw_think: bool = True  # Qwen3 deep reasoning mode
+    pw_think: bool = True  # Qwen3 needs think=true to follow agent instructions
     pw_temperature: float = 0.1  # Low temp for deterministic actions
-    pw_max_tokens: int = 300  # Actions are short
+    pw_max_tokens: int = 1024  # Room for thinking + Thought: + Action: output
     pw_max_steps: int = 50
     pw_settle_timeout: float = 5000  # ms to wait for page settle after action
     pw_headless: bool = True  # Run Chromium headless
-    pw_max_snapshot_elements: int = 150  # Max refs in accessibility tree
+    pw_max_snapshot_elements: int = 75  # Max refs — 150 overwhelms 14B models
     pw_approval_enabled: bool = True  # Pause on irreversible actions
 
 
