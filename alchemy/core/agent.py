@@ -13,7 +13,7 @@ from enum import Enum
 
 from alchemy.core.parser import ParseError, PlaywrightAction, parse_playwright_response
 from alchemy.core.prompts import SYSTEM_PROMPT, format_action_log_entry, format_user_prompt
-from alchemy.core.escalation import StuckDetector, VisionEscalation
+from alchemy.core.escalation import StuckDetector, VisionEscalation, extract_task_text
 from alchemy.core.executor import ExecutionError, execute_action
 from alchemy.core.snapshot import capture_snapshot
 from alchemy.core.trace import AgentTrace, make_trace_entry
@@ -133,6 +133,7 @@ class PlaywrightAgent:
                             "Step %d: pre-check escalation (%s, %d refs), skipping Qwen3",
                             step_num, pre_reason.value, ref_count,
                         )
+                        url_before = page.url
                         esc_result = await self._escalation.escalate(
                             page=page,
                             task=task,
@@ -159,7 +160,7 @@ class PlaywrightAgent:
                             # Don't reset stuck detector — let it keep tracking
                             consecutive_errors = 0
 
-                            # Reset click history after type (page likely navigated)
+                            # After type: reset clicks + check if task is done
                             if esc_result.action_type == "type":
                                 self._escalation.reset_clicks()
 
@@ -169,6 +170,19 @@ class PlaywrightAgent:
                                 )
                             except Exception:
                                 pass
+
+                            # --- Loop-back: check if navigation completed the task ---
+                            if esc_step.success and page.url != url_before:
+                                if await self._check_navigation_complete(page, task, url_before):
+                                    logger.info("Task completed after escalation (navigation matched)")
+                                    return AgentResult(
+                                        status=AgentStatus.COMPLETED,
+                                        steps=steps,
+                                        total_steps=step_num,
+                                        total_ms=(time.monotonic() - start) * 1000,
+                                        escalation_count=escalation_count,
+                                        trace=trace,
+                                    )
 
                             continue  # Next step
 
@@ -190,6 +204,7 @@ class PlaywrightAgent:
                             "Step %d: stuck detected (%s), escalating to vision",
                             step_num, reason.value,
                         )
+                        url_before = page.url
                         esc_result = await self._escalation.escalate(
                             page=page,
                             task=task,
@@ -226,6 +241,19 @@ class PlaywrightAgent:
                                 )
                             except Exception:
                                 pass
+
+                            # --- Loop-back: check if navigation completed the task ---
+                            if esc_step.success and page.url != url_before:
+                                if await self._check_navigation_complete(page, task, url_before):
+                                    logger.info("Task completed after escalation (navigation matched)")
+                                    return AgentResult(
+                                        status=AgentStatus.COMPLETED,
+                                        steps=steps,
+                                        total_steps=step_num,
+                                        total_ms=(time.monotonic() - start) * 1000,
+                                        escalation_count=escalation_count,
+                                        trace=trace,
+                                    )
 
                             continue
 
@@ -513,6 +541,79 @@ class PlaywrightAgent:
                 execution_ms=execution_ms,
                 escalated=True,
             )
+
+    async def _check_navigation_complete(
+        self, page, task: str, url_before: str,
+    ) -> bool:
+        """Check if a page navigation means the task is complete.
+
+        Two-stage check:
+        1. Fast: URL or title contains the search term (no LLM needed).
+        2. Slow: Ask Qwen3 with just title+URL if the task is done.
+
+        Returns True if the task should be marked as completed.
+        """
+        url_after = page.url
+        if url_after == url_before:
+            return False  # No navigation happened
+
+        # --- Stage 1: keyword match (instant) ---
+        search_text = extract_task_text(task)
+        if search_text:
+            # Normalize for comparison
+            keywords = search_text.lower().split()
+            url_lower = url_after.lower()
+            try:
+                title = await page.title()
+                title_lower = title.lower()
+            except Exception:
+                title_lower = ""
+
+            # If ALL keywords appear in URL or title, task is complete
+            url_match = all(k in url_lower for k in keywords)
+            title_match = all(k in title_lower for k in keywords)
+
+            if url_match or title_match:
+                logger.info(
+                    "Navigation complete: %s matches task keywords %r",
+                    url_after[:80], keywords,
+                )
+                return True
+
+        # --- Stage 2: ask Qwen3 (lightweight — ~1s) ---
+        try:
+            title = await page.title()
+            prompt = (
+                f"Task: {task}\n"
+                f"Current page: {title}\n"
+                f"URL: {url_after}\n\n"
+                f"Has the task been accomplished by navigating to this page? "
+                f"Answer ONLY 'yes' or 'no'."
+            )
+            raw = await self._infer_fast(prompt)
+            answer = raw.strip().lower()
+            is_done = answer.startswith("yes")
+            logger.info(
+                "Qwen3 completion check: %r → %s (url=%s)",
+                answer[:30], "DONE" if is_done else "continue", url_after[:60],
+            )
+            return is_done
+        except Exception as e:
+            logger.debug("Completion check failed: %s", e)
+            return False
+
+    async def _infer_fast(self, prompt: str) -> str:
+        """Quick Qwen3 call — think:false, low tokens, for yes/no questions."""
+        messages = [
+            {"role": "user", "content": prompt},
+        ]
+        result = await self._ollama.chat_think(
+            model=self._model,
+            messages=messages,
+            think=False,
+            options={"temperature": 0.0, "num_predict": 20},
+        )
+        return result["content"] or result["thinking"] or ""
 
     async def _infer(self, user_prompt: str) -> str:
         """Call Qwen3 14B via Ollama with think mode support."""
