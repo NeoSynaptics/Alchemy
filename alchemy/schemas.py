@@ -220,6 +220,7 @@ class PlaywrightStepInfo(BaseModel):
     error: str | None = None
     inference_ms: float = 0.0
     execution_ms: float = 0.0
+    escalated: bool = False  # True if handled by vision fallback (Tier 1.5)
 
 
 class PlaywrightTaskStatusResponse(BaseModel):
@@ -227,5 +228,50 @@ class PlaywrightTaskStatusResponse(BaseModel):
     status: TaskStatus
     current_step: int = 0
     steps: list[PlaywrightStepInfo] = []
+    total_ms: float = 0.0
+    error: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# Research (AlchemyBrowser)
+# ---------------------------------------------------------------------------
+
+class ResearchMode(str, Enum):
+    SEMANTIC = "semantic"  # Full pipeline: decompose -> search -> fetch -> synthesize
+    DIRECT = "direct"  # URLs given: fetch -> synthesize
+
+
+class ResearchTaskRequest(BaseModel):
+    query: str  # Natural language query OR synthesis prompt
+    mode: ResearchMode = ResearchMode.SEMANTIC
+    urls: list[str] = Field(default_factory=list)  # Only for mode=direct
+    callback_url: str = "http://localhost:8100"
+
+
+class ResearchTaskResponse(BaseModel):
+    task_id: UUID
+    status: TaskStatus = TaskStatus.PENDING
+    created_at: datetime
+
+
+class ResearchSource(BaseModel):
+    title: str
+    excerpt: str  # Brief excerpt from the source, NOT the raw URL
+
+
+class ResearchResult(BaseModel):
+    answer: str
+    sources: list[ResearchSource] = Field(default_factory=list)
+    pages_fetched: int = 0
+    pages_used: int = 0
+
+
+class ResearchTaskStatusResponse(BaseModel):
+    task_id: UUID
+    status: TaskStatus
+    result: ResearchResult | None = None
+    queries_generated: int = 0
+    pages_fetched: int = 0
+    pipeline_stage: str = "pending"
     total_ms: float = 0.0
     error: str | None = None

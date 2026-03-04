@@ -1,7 +1,7 @@
 """Playwright GUI Agent — main agent loop.
 
 Snapshot → Qwen3 14B (think: true) → action → execute → repeat.
-No vision, no screenshots, no coordinates. Pure structured data.
+When stuck, escalates to UI-TARS 7B vision fallback (Tier 1.5).
 """
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ from enum import Enum
 
 from alchemy.agent.pw_action_parser import ParseError, PlaywrightAction, parse_playwright_response
 from alchemy.agent.pw_prompts import SYSTEM_PROMPT, format_action_log_entry, format_user_prompt
+from alchemy.playwright.escalation import StuckDetector, VisionEscalation
 from alchemy.playwright.executor import ExecutionError, execute_action
 from alchemy.playwright.snapshot import capture_snapshot
 
@@ -37,6 +38,7 @@ class StepResult:
     snapshot_text: str = ""
     inference_ms: float = 0.0
     execution_ms: float = 0.0
+    escalated: bool = False  # Was this step handled by vision fallback?
 
 
 @dataclass
@@ -48,6 +50,7 @@ class AgentResult:
     total_steps: int = 0
     total_ms: float = 0.0
     error: str | None = None
+    escalation_count: int = 0  # How many times vision fallback was used
 
 
 class PlaywrightAgent:
@@ -62,6 +65,8 @@ class PlaywrightAgent:
         max_tokens: Max tokens per inference call.
         settle_timeout: Time to wait for page to settle after action (ms).
         approval_checker: Optional callback for irreversible action detection.
+        vision_escalation: Optional VisionEscalation for Tier 1.5 fallback.
+        stuck_detector: Optional StuckDetector (created automatically if escalation is set).
     """
 
     def __init__(
@@ -74,6 +79,8 @@ class PlaywrightAgent:
         max_tokens: int = 300,
         settle_timeout: float = 5000,
         approval_checker=None,
+        vision_escalation: VisionEscalation | None = None,
+        stuck_detector: StuckDetector | None = None,
     ):
         self._ollama = ollama_client
         self._model = model
@@ -83,6 +90,8 @@ class PlaywrightAgent:
         self._max_tokens = max_tokens
         self._settle_timeout = settle_timeout
         self._approval_checker = approval_checker
+        self._escalation = vision_escalation
+        self._stuck_detector = stuck_detector or (StuckDetector() if vision_escalation else None)
 
     async def run_task(self, task: str, page) -> AgentResult:
         """Execute a task using the Playwright agent loop.
@@ -99,12 +108,71 @@ class PlaywrightAgent:
         steps: list[StepResult] = []
         consecutive_errors = 0
         max_consecutive_errors = 3
+        escalation_count = 0
 
         logger.info("Starting task: %s", task)
 
         for step_num in range(1, self._max_steps + 1):
             try:
                 step_result = await self._run_step(task, page, action_log, step_num)
+
+                # --- Stuck detection + escalation ---
+                if self._stuck_detector and self._escalation:
+                    if step_result.success:
+                        sig = f"{step_result.action.type}@{step_result.action.ref or ''}"
+                        self._stuck_detector.record_success(sig)
+                    else:
+                        self._stuck_detector.record_parse_failure()
+
+                    # Check if stuck (also check ref count from snapshot)
+                    ref_count = step_result.snapshot_text.count("[ref=e")
+                    reason = self._stuck_detector.check(ref_count=ref_count)
+
+                    if reason and not step_result.success:
+                        # Escalate to vision model
+                        logger.info(
+                            "Step %d: stuck detected (%s), escalating to vision",
+                            step_num, reason.value,
+                        )
+                        esc_result = await self._escalation.escalate(
+                            page=page,
+                            task=task,
+                            recent_actions=action_log[-5:],
+                            reason=reason,
+                        )
+
+                        if esc_result.success:
+                            # Execute the vision-guided action
+                            esc_step = await self._execute_escalation(
+                                page, esc_result, step_num,
+                            )
+                            steps.append(esc_step)
+                            escalation_count += 1
+
+                            log_entry = format_action_log_entry(
+                                step=step_num,
+                                action_type=f"[VISION] {esc_result.action_type}",
+                                text=esc_result.thought[:50] if esc_result.thought else None,
+                                success=esc_step.success,
+                                error=esc_step.error,
+                            )
+                            action_log.append(log_entry)
+
+                            # Reset stuck detector after escalation
+                            self._stuck_detector.reset()
+                            consecutive_errors = 0
+
+                            # Settle after escalation action
+                            try:
+                                await page.wait_for_load_state(
+                                    "networkidle", timeout=self._settle_timeout,
+                                )
+                            except Exception:
+                                pass
+
+                            continue  # Next step — Qwen3 takes over again
+
+                # --- Normal flow (no escalation triggered) ---
                 steps.append(step_result)
 
                 # Update action log
@@ -126,6 +194,7 @@ class PlaywrightAgent:
                         steps=steps,
                         total_steps=step_num,
                         total_ms=(time.monotonic() - start) * 1000,
+                        escalation_count=escalation_count,
                     )
 
                 # Check approval gate
@@ -138,6 +207,7 @@ class PlaywrightAgent:
                             steps=steps,
                             total_steps=step_num,
                             total_ms=(time.monotonic() - start) * 1000,
+                            escalation_count=escalation_count,
                         )
 
                 # Track consecutive errors
@@ -152,6 +222,7 @@ class PlaywrightAgent:
                             total_steps=step_num,
                             total_ms=(time.monotonic() - start) * 1000,
                             error=f"Failed {max_consecutive_errors} consecutive steps",
+                            escalation_count=escalation_count,
                         )
 
                 # Wait for page to settle after action
@@ -182,6 +253,7 @@ class PlaywrightAgent:
             total_steps=len(steps),
             total_ms=(time.monotonic() - start) * 1000,
             error=f"Reached maximum steps ({self._max_steps})",
+            escalation_count=escalation_count,
         )
 
     async def _run_step(
@@ -257,6 +329,74 @@ class PlaywrightAgent:
                 snapshot_text=snapshot.text,
                 inference_ms=inference_ms,
                 execution_ms=execution_ms,
+            )
+
+    async def _execute_escalation(
+        self, page, esc_result, step_num: int,
+    ) -> StepResult:
+        """Execute a vision-guided escalation action on the Playwright page.
+
+        Maps UI-TARS output (pixel coordinates) to Playwright mouse actions.
+        """
+        from alchemy.playwright.escalation import EscalationResult
+
+        t0 = time.monotonic()
+        action_type = esc_result.action_type
+
+        try:
+            if action_type == "click" and esc_result.x is not None:
+                await page.mouse.click(esc_result.x, esc_result.y)
+                logger.info(
+                    "Step %d [VISION]: click(%d, %d) — %s",
+                    step_num, esc_result.x, esc_result.y, esc_result.thought[:80],
+                )
+            elif action_type == "double_click" and esc_result.x is not None:
+                await page.mouse.dblclick(esc_result.x, esc_result.y)
+            elif action_type == "type" and esc_result.text:
+                await page.keyboard.type(esc_result.text)
+                logger.info("Step %d [VISION]: type %r", step_num, esc_result.text[:50])
+            elif action_type == "scroll":
+                direction = esc_result.direction or "down"
+                delta = -300 if direction == "up" else 300
+                x = esc_result.x or 0
+                y = esc_result.y or 0
+                await page.mouse.move(x, y)
+                await page.mouse.wheel(0, delta)
+                logger.info("Step %d [VISION]: scroll %s", step_num, direction)
+            elif action_type in ("wait", "done"):
+                logger.info("Step %d [VISION]: %s", step_num, action_type)
+            else:
+                raise ExecutionError(
+                    f"Unsupported escalation action: {action_type}"
+                )
+
+            execution_ms = (time.monotonic() - t0) * 1000
+            return StepResult(
+                step=step_num,
+                action=PlaywrightAction(
+                    type=action_type,
+                    thought=f"[VISION] {esc_result.thought}",
+                ),
+                success=True,
+                inference_ms=esc_result.inference_ms,
+                execution_ms=execution_ms,
+                escalated=True,
+            )
+
+        except Exception as e:
+            execution_ms = (time.monotonic() - t0) * 1000
+            logger.error("Step %d [VISION] execution failed: %s", step_num, e)
+            return StepResult(
+                step=step_num,
+                action=PlaywrightAction(
+                    type=action_type,
+                    thought=f"[VISION] {esc_result.thought}",
+                ),
+                success=False,
+                error=str(e),
+                inference_ms=esc_result.inference_ms,
+                execution_ms=execution_ms,
+                escalated=True,
             )
 
     async def _infer(self, user_prompt: str) -> str:

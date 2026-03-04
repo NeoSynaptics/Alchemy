@@ -20,6 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from alchemy.agent.task_manager import TaskManager
 from alchemy.api import models_api, shadow, vision
 from alchemy.api import playwright_api
+from alchemy.api import research_api
 from alchemy.models.ollama_client import OllamaClient
 from alchemy.router.environment import EnvironmentDetector
 from alchemy.shadow.controller import ShadowDesktopController
@@ -92,6 +93,26 @@ async def lifespan(app: FastAPI):
             app.state.browser_manager = browser_mgr
 
             approval_gate = ApprovalGate(enabled=settings.pw_approval_enabled)
+
+            # Tier 1.5: Vision escalation (UI-TARS 7B fallback when stuck)
+            vision_escalation = None
+            stuck_detector = None
+            if settings.pw_escalation_enabled:
+                from alchemy.playwright.escalation import StuckDetector, VisionEscalation
+
+                vision_escalation = VisionEscalation(
+                    ollama_client=ollama,
+                    model=settings.pw_escalation_model,
+                    temperature=settings.pw_escalation_temperature,
+                    max_tokens=settings.pw_escalation_max_tokens,
+                )
+                stuck_detector = StuckDetector(
+                    max_parse_failures=settings.pw_escalation_parse_failures,
+                    max_repeated_actions=settings.pw_escalation_repeated_actions,
+                    complexity_threshold=settings.pw_escalation_complexity_threshold,
+                )
+                logger.info("Tier 1.5 escalation ready (model=%s)", settings.pw_escalation_model)
+
             pw_agent = PlaywrightAgent(
                 ollama_client=ollama,
                 model=settings.pw_model,
@@ -101,9 +122,12 @@ async def lifespan(app: FastAPI):
                 max_tokens=settings.pw_max_tokens,
                 settle_timeout=settings.pw_settle_timeout,
                 approval_checker=lambda action: approval_gate.needs_approval(action),
+                vision_escalation=vision_escalation,
+                stuck_detector=stuck_detector,
             )
             app.state.pw_agent = pw_agent
-            logger.info("Playwright agent ready (model=%s, think=%s)", settings.pw_model, settings.pw_think)
+            logger.info("Playwright agent ready (model=%s, think=%s, escalation=%s)",
+                        settings.pw_model, settings.pw_think, settings.pw_escalation_enabled)
 
         except ImportError as e:
             logger.warning("Playwright not installed — Tier 1 agent disabled: %s", e)
@@ -161,6 +185,7 @@ app.include_router(vision.router, prefix="/v1")
 app.include_router(shadow.router, prefix="/v1")
 app.include_router(models_api.router, prefix="/v1")
 app.include_router(playwright_api.router, prefix="/v1")
+app.include_router(research_api.router, prefix="/v1")
 
 
 @app.get("/health")
@@ -173,4 +198,5 @@ async def health():
         "status": "ok", "version": "0.3.0",
         "wsl_available": wsl_ok, "ollama_connected": ollama_ok,
         "playwright_agent": pw_ok, "browser_ready": browser_ok,
+        "research_enabled": settings.research_enabled,
     }

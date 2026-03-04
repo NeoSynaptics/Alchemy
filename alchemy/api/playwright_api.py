@@ -103,12 +103,15 @@ async def _run_task(task_id: str, req: PlaywrightTaskRequest, pw_agent, browser_
                 error=s.error,
                 inference_ms=s.inference_ms,
                 execution_ms=s.execution_ms,
+                escalated=s.escalated,
             )
             for s in result.steps
         ]
+        _tasks[task_id]["escalation_count"] = result.escalation_count
 
-        logger.info("Task %s finished: %s (%d steps, %.0fms)",
-                    task_id, result.status.value, result.total_steps, result.total_ms)
+        logger.info("Task %s finished: %s (%d steps, %d escalations, %.0fms)",
+                    task_id, result.status.value, result.total_steps,
+                    result.escalation_count, result.total_ms)
 
     except Exception as e:
         logger.error("Task %s failed: %s", task_id, e)

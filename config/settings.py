@@ -68,5 +68,26 @@ class Settings(BaseSettings):
     pw_max_snapshot_elements: int = 75  # Max refs — 150 overwhelms 14B models
     pw_approval_enabled: bool = True  # Pause on irreversible actions
 
+    # --- Playwright Escalation (Tier 1.5 — vision fallback) ---
+    pw_escalation_enabled: bool = True  # Enable UI-TARS 7B fallback when stuck
+    pw_escalation_model: str = "hf.co/Mungert/UI-TARS-1.5-7B-GGUF:Q4_K_M"  # Vision model
+    pw_escalation_temperature: float = 0.0
+    pw_escalation_max_tokens: int = 384
+    pw_escalation_parse_failures: int = 3  # Consecutive parse errors before escalating
+    pw_escalation_repeated_actions: int = 3  # Same action N times = loop
+    pw_escalation_complexity_threshold: int = 60  # Ref count that triggers escalation
+
+
+    # --- Research (AlchemyBrowser) ---
+    research_enabled: bool = True
+    research_model: str = "qwen3:14b"
+    research_think: bool = False  # think:false for speed — decomposition + synthesis
+    research_temperature: float = 0.3  # Slightly creative for synthesis, still focused
+    research_max_tokens: int = 2048  # Room for long synthesized answers
+    research_max_queries: int = 10  # Max sub-queries from decomposition
+    research_max_pages: int = 8  # Max pages to fetch in parallel
+    research_fetch_timeout: float = 15.0  # Seconds per page fetch
+    research_top_k: int = 5  # Top K pages after relevance scoring
+
 
 settings = Settings()
