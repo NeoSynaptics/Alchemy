@@ -125,6 +125,7 @@ class PlaywrightAgent:
                 if self._stuck_detector and self._escalation:
                     snapshot = await capture_snapshot(page)
                     ref_count = snapshot.text.count("[ref=e")
+                    logger.debug("Step %d: url=%s refs=%d", step_num, page.url[:80], ref_count)
                     pre_reason = self._stuck_detector.check(ref_count=ref_count)
 
                     if pre_reason:
@@ -431,10 +432,44 @@ class PlaywrightAgent:
             elif action_type == "double_click" and esc_result.x is not None:
                 await page.mouse.dblclick(esc_result.x, esc_result.y)
             elif action_type == "type" and esc_result.text:
-                await page.keyboard.type(esc_result.text)
-                # Auto-press Enter after typing (search boxes, forms)
-                await page.keyboard.press("Enter")
-                logger.info("Step %d [VISION]: type %r + Enter", step_num, esc_result.text[:50])
+                url_before = page.url
+
+                # Strategy 1: Find a search/text input by common selectors
+                typed = False
+                search_selectors = [
+                    'input[type="search"]',
+                    'input[name="search"]',
+                    'input[name="q"]',
+                    'input[role="searchbox"]',
+                    'textarea:focus',
+                    'input:focus',
+                ]
+                for sel in search_selectors:
+                    try:
+                        loc = page.locator(sel).first
+                        if await loc.count() > 0:
+                            await loc.fill(esc_result.text)
+                            await loc.press("Enter")
+                            typed = True
+                            logger.info("Step %d [VISION]: fill+Enter(%r) via %s", step_num, esc_result.text[:50], sel)
+                            break
+                    except Exception:
+                        continue
+
+                # Strategy 2: Fall back to keyboard
+                if not typed:
+                    await page.keyboard.type(esc_result.text, delay=20)
+                    await page.wait_for_timeout(300)
+                    await page.keyboard.press("Enter")
+                    logger.info("Step %d [VISION]: type+Enter %r (keyboard fallback)", step_num, esc_result.text[:50])
+
+                # Wait for page navigation
+                try:
+                    await page.wait_for_load_state("networkidle", timeout=8000)
+                except Exception:
+                    pass
+
+                logger.info("Step %d [VISION]: url %s → %s", step_num, url_before[:60], page.url[:60])
             elif action_type == "scroll":
                 direction = esc_result.direction or "down"
                 delta = -300 if direction == "up" else 300

@@ -348,7 +348,7 @@ def extract_task_text(task: str) -> str | None:
 
 
 _THOUGHT_RE = re.compile(r"Thought:\s*(.+?)(?=\nAction:|\Z)", re.DOTALL)
-_ACTION_RE = re.compile(r"Action:\s*(\w+)\((.*)\)\s*$", re.MULTILINE)
+_ACTION_RE = re.compile(r"Action:\s*(\w+)\((.*)\).*$", re.MULTILINE)
 _COORD_RE = re.compile(r"\(\s*(\d+)\s*,\s*(\d+)\s*\)")
 # Handle both single and double quotes: content='...' or content="..."
 _CONTENT_RE = re.compile(r"""content=['"]((?:[^'"\\]|\\.)*?)['"]""")
