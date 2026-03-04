@@ -4,11 +4,15 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 
+from config.logging import setup_logging
 from fastapi import FastAPI
+
+setup_logging()
 from fastapi.middleware.cors import CORSMiddleware
 
 from alchemy.agent.task_manager import TaskManager
 from alchemy.api import models_api, shadow, vision
+from alchemy.api import playwright_api
 from alchemy.models.ollama_client import OllamaClient
 from alchemy.router.environment import EnvironmentDetector
 from alchemy.shadow.controller import ShadowDesktopController
@@ -69,6 +73,43 @@ async def lifespan(app: FastAPI):
     app.state.ollama_client = ollama
     app.state.task_manager = TaskManager()
 
+    # --- Playwright Agent (Tier 1) ---
+    if settings.pw_enabled:
+        try:
+            from alchemy.agent.pw_agent import PlaywrightAgent
+            from alchemy.approval.gate import ApprovalGate
+            from alchemy.playwright.browser import BrowserManager
+
+            browser_mgr = BrowserManager(headless=settings.pw_headless)
+            await browser_mgr.start()
+            app.state.browser_manager = browser_mgr
+
+            approval_gate = ApprovalGate(enabled=settings.pw_approval_enabled)
+            pw_agent = PlaywrightAgent(
+                ollama_client=ollama,
+                model=settings.pw_model,
+                max_steps=settings.pw_max_steps,
+                think=settings.pw_think,
+                temperature=settings.pw_temperature,
+                max_tokens=settings.pw_max_tokens,
+                settle_timeout=settings.pw_settle_timeout,
+                approval_checker=lambda action: approval_gate.needs_approval(action),
+            )
+            app.state.pw_agent = pw_agent
+            logger.info("Playwright agent ready (model=%s, think=%s)", settings.pw_model, settings.pw_think)
+
+        except ImportError as e:
+            logger.warning("Playwright not installed — Tier 1 agent disabled: %s", e)
+            app.state.browser_manager = None
+            app.state.pw_agent = None
+        except Exception as e:
+            logger.warning("Playwright agent failed to start: %s", e)
+            app.state.browser_manager = None
+            app.state.pw_agent = None
+    else:
+        app.state.browser_manager = None
+        app.state.pw_agent = None
+
     # Detect environment for context router
     if settings.router_enabled:
         detector = EnvironmentDetector(wsl=wsl if wsl_ok else None)
@@ -84,6 +125,10 @@ async def lifespan(app: FastAPI):
     yield
 
     # Cleanup
+    if getattr(app.state, "browser_manager", None):
+        await app.state.browser_manager.close()
+        logger.info("Playwright browser closed")
+
     await ollama.close()
     if app.state.shadow_controller:
         logger.info("Shutting down shadow desktop...")
@@ -105,16 +150,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(vision.router)
-app.include_router(shadow.router)
-app.include_router(models_api.router)
+app.include_router(vision.router, prefix="/v1")
+app.include_router(shadow.router, prefix="/v1")
+app.include_router(models_api.router, prefix="/v1")
+app.include_router(playwright_api.router, prefix="/v1")
 
 
 @app.get("/health")
 async def health():
     wsl_ok = getattr(app.state, "shadow_controller", None) is not None
     ollama_ok = getattr(app.state, "ollama_client", None) is not None
+    pw_ok = getattr(app.state, "pw_agent", None) is not None
+    browser_ok = getattr(app.state, "browser_manager", None) is not None
     return {
-        "status": "ok", "version": "0.2.0",
+        "status": "ok", "version": "0.3.0",
         "wsl_available": wsl_ok, "ollama_connected": ollama_ok,
+        "playwright_agent": pw_ok, "browser_ready": browser_ok,
     }

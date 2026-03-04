@@ -21,6 +21,7 @@ dependencies = [
     "Pillow",
     "aiofiles",
     "psutil",
+    "playwright",
 ]
 
 [project.optional-dependencies]
@@ -28,6 +29,7 @@ dev = [
     "pytest",
     "pytest-asyncio",
     "ruff",
+    "pip-tools",
 ]
 
 [tool.pytest.ini_options]

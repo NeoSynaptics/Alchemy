@@ -191,3 +191,41 @@ class TaskUpdateRequest(BaseModel):
 
 class TaskUpdateAck(BaseModel):
     received: bool = True
+
+
+# ---------------------------------------------------------------------------
+# Playwright Agent (Tier 1)
+# ---------------------------------------------------------------------------
+
+class PlaywrightTaskRequest(BaseModel):
+    goal: str
+    url: str | None = None  # Optional start URL
+    cdp_endpoint: str | None = None  # Optional CDP endpoint for Electron apps
+    callback_url: str = "http://localhost:8100"
+
+
+class PlaywrightTaskResponse(BaseModel):
+    task_id: UUID
+    status: TaskStatus = TaskStatus.PENDING
+    created_at: datetime
+
+
+class PlaywrightStepInfo(BaseModel):
+    step: int
+    action_type: str
+    ref: str | None = None
+    text: str | None = None
+    thought: str = ""
+    success: bool = True
+    error: str | None = None
+    inference_ms: float = 0.0
+    execution_ms: float = 0.0
+
+
+class PlaywrightTaskStatusResponse(BaseModel):
+    task_id: UUID
+    status: TaskStatus
+    current_step: int = 0
+    steps: list[PlaywrightStepInfo] = []
+    total_ms: float = 0.0
+    error: str | None = None

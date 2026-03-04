@@ -1,9 +1,12 @@
-"""Visuomotor agent — screenshot → UI-TARS-72B → action → xdotool.
+"""Alchemy agent — two-tier GUI automation.
 
-The agent loop runs inside Alchemy (CPU side). It captures screenshots from
-the shadow desktop, sends them to UI-TARS-72B for analysis, and executes
-the resulting actions via xdotool in WSL2.
+Tier 1 (PRIMARY): Playwright accessibility tree → Qwen3 14B → ref-based actions.
+  No screenshots, no coordinates. Pure structured data. Fast + reliable.
+  Covers: Chrome, Electron apps (VS Code, Spotify, Slack, Discord, Notion).
 
-For APPROVE-tier actions, the agent pauses and requests approval from
-NEO-TX (the user-facing layer) before executing.
+Tier 2 (FALLBACK): Screenshot → UI-TARS-72B → coordinate-based actions → xdotool.
+  For native Win32 apps without DOM/accessibility tree access.
+
+For APPROVE-tier actions, the agent pauses and requests human confirmation
+before executing irreversible operations.
 """

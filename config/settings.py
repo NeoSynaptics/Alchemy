@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     # --- Server ---
     host: str = "0.0.0.0"
     port: int = 8000
+    log_level: str = "INFO"
 
     # --- Auth ---
     auth_token: str = ""
@@ -54,6 +55,18 @@ class Settings(BaseSettings):
     router_category_hints: bool = True
     router_recovery_nudges: bool = True
     router_completion_criteria: bool = True
+
+    # --- Playwright Agent (Tier 1) ---
+    pw_enabled: bool = True
+    pw_model: str = "qwen3:14b"
+    pw_think: bool = True  # Qwen3 deep reasoning mode
+    pw_temperature: float = 0.1  # Low temp for deterministic actions
+    pw_max_tokens: int = 300  # Actions are short
+    pw_max_steps: int = 50
+    pw_settle_timeout: float = 5000  # ms to wait for page settle after action
+    pw_headless: bool = True  # Run Chromium headless
+    pw_max_snapshot_elements: int = 150  # Max refs in accessibility tree
+    pw_approval_enabled: bool = True  # Pause on irreversible actions
 
 
 settings = Settings()
