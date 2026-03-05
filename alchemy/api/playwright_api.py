@@ -11,8 +11,9 @@ import logging
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 
+from alchemy.api.contract_guard import require_contract
 from alchemy.schemas import (
     PlaywrightStepInfo,
     PlaywrightTaskRequest,
@@ -22,7 +23,7 @@ from alchemy.schemas import (
 )
 
 logger = logging.getLogger(__name__)
-router = APIRouter(tags=["playwright"])
+router = APIRouter(tags=["playwright"], dependencies=[Depends(require_contract("core"))])
 
 # In-memory task store (same pattern as vision API)
 _tasks: dict[str, dict] = {}

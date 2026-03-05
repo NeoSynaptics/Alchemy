@@ -1,31 +1,197 @@
-"""Alchemy core configuration."""
+"""Alchemy core configuration.
 
+Settings are organized into nested groups (one per module). The flat fields
+are kept for backward compatibility -- new code should use the nested form:
+    settings.gate.enabled   (preferred)
+    settings.gate_enabled   (legacy, still works)
+
+Environment variables work both ways:
+    GATE__ENABLED=false     (nested, via env_nested_delimiter)
+    GATE_ENABLED=false      (flat, legacy)
+"""
+
+from pydantic import BaseModel
 from pydantic_settings import BaseSettings
 
 
-class Settings(BaseSettings):
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+# --- Nested settings groups (one per module) ---
 
-    # --- Ollama ---
-    ollama_host: str = "http://localhost:11434"
-    ollama_cpu_model: str = "rashakol/UI-TARS-72B-DPO"  # CPU — GUI visuomotor agent
-    ollama_fast_model: str = "hf.co/Mungert/UI-TARS-1.5-7B-GGUF:Q4_K_M"  # Fast dev/simple tasks
-    ollama_keep_alive: str = "10m"
-    ollama_temperature: float = 0.0  # Deterministic for GUI actions
-    ollama_max_tokens: int = 384  # Actions are short — save context budget
-    ollama_retry_attempts: int = 3
-    ollama_retry_delay: float = 1.0  # Seconds between retries (exponential)
+class OllamaSettings(BaseModel):
+    """Ollama LLM backend."""
+    host: str = "http://localhost:11434"
+    cpu_model: str = "rashakol/UI-TARS-72B-DPO"
+    fast_model: str = "hf.co/Mungert/UI-TARS-1.5-7B-GGUF:Q4_K_M"
+    keep_alive: str = "10m"
+    temperature: float = 0.0
+    max_tokens: int = 384
+    retry_attempts: int = 3
+    retry_delay: float = 1.0
 
-    # --- Server ---
+
+class ServerSettings(BaseModel):
+    """FastAPI server."""
     host: str = "0.0.0.0"
     port: int = 8000
     log_level: str = "INFO"
 
-    # --- Auth ---
+
+class AuthSettings(BaseModel):
+    """Authentication."""
+    token: str = ""
+    require: bool = False
+
+
+class ShadowSettings(BaseModel):
+    """Shadow desktop (WSL2)."""
+    wsl_distro: str = "Ubuntu"
+    wsl_repo_path: str = "/mnt/c/Users/info/GitHub/Alchemy"
+    display_num: int = 99
+    vnc_port: int = 5900
+    novnc_port: int = 6080
+    resolution: str = "1920x1080x24"
+
+
+class ScreenshotSettings(BaseModel):
+    """Screenshot capture."""
+    format: str = "jpeg"
+    jpeg_quality: int = 85
+    resize_width: int = 1280
+    resize_height: int = 720
+
+
+class AgentSettings(BaseModel):
+    """Agent loop behavior."""
+    max_steps: int = 50
+    screenshot_interval: float = 1.0
+    timeout: float = 300.0
+    approval_timeout: float = 60.0
+    history_window: int = 4
+    use_streaming: bool = True
+    model_routing: bool = True
+
+
+class RouterSettings(BaseModel):
+    """Context router."""
+    enabled: bool = True
+    detect_shadow_apps: bool = True
+    detect_windows_apps: bool = True
+    category_hints: bool = True
+    recovery_nudges: bool = True
+    completion_criteria: bool = True
+
+
+class PlaywrightSettings(BaseModel):
+    """Playwright agent (Tier 1)."""
+    enabled: bool = True
+    model: str = "qwen3:14b"
+    think: bool = True
+    temperature: float = 0.1
+    max_tokens: int = 1024
+    max_steps: int = 50
+    settle_timeout: float = 5000
+    headless: bool = True
+    max_snapshot_elements: int = 75
+    approval_enabled: bool = True
+
+
+class EscalationSettings(BaseModel):
+    """Playwright escalation (Tier 1.5 -- vision fallback)."""
+    enabled: bool = True
+    model: str = "qwen2.5vl:7b"
+    temperature: float = 0.0
+    max_tokens: int = 384
+    parse_failures: int = 3
+    repeated_actions: int = 3
+    complexity_threshold: int = 60
+
+
+class GUIActorSettings(BaseModel):
+    """GUI-Actor (future -- Microsoft attention-based grounding)."""
+    enabled: bool = False
+    host: str = "http://localhost:8200"
+    model: str = "microsoft/GUI-Actor-7B-Qwen2.5-VL"
+    timeout: float = 30.0
+
+
+class DesktopSettings(BaseModel):
+    """Desktop agent (native Windows automation)."""
+    enabled: bool = True
+    model: str = "qwen2.5vl:7b"
+    max_steps: int = 20
+    temperature: float = 0.0
+    max_tokens: int = 384
+    screenshot_width: int = 1280
+    screenshot_height: int = 720
+    screenshot_quality: int = 75
+    default_mode: str = "shadow"
+
+
+class GateSettings(BaseModel):
+    """Gate reviewer (Claude Code auto-approve)."""
+    enabled: bool = True
+    model: str = "qwen3:14b"
+    timeout: float = 5.0
+
+
+class ResearchSettings(BaseModel):
+    """AlchemyBrowser research."""
+    enabled: bool = True
+    model: str = "qwen3:14b"
+    think: bool = False
+    temperature: float = 0.3
+    max_tokens: int = 2048
+    max_queries: int = 10
+    max_pages: int = 8
+    fetch_timeout: float = 15.0
+    top_k: int = 5
+
+
+# --- Root settings (composes all groups) ---
+
+class Settings(BaseSettings):
+    model_config = {
+        "env_file": ".env",
+        "env_file_encoding": "utf-8",
+        "env_nested_delimiter": "__",
+    }
+
+    # === Nested groups (new canonical form) ===
+    ollama: OllamaSettings = OllamaSettings()
+    server: ServerSettings = ServerSettings()
+    auth: AuthSettings = AuthSettings()
+    shadow: ShadowSettings = ShadowSettings()
+    screenshot: ScreenshotSettings = ScreenshotSettings()
+    agent: AgentSettings = AgentSettings()
+    router: RouterSettings = RouterSettings()
+    pw: PlaywrightSettings = PlaywrightSettings()
+    pw_escalation: EscalationSettings = EscalationSettings()
+    gui_actor: GUIActorSettings = GUIActorSettings()
+    desktop: DesktopSettings = DesktopSettings()
+    gate: GateSettings = GateSettings()
+    research: ResearchSettings = ResearchSettings()
+
+    # === Flat fields (backward compat -- used by server.py and existing code) ===
+
+    # Ollama
+    ollama_host: str = "http://localhost:11434"
+    ollama_cpu_model: str = "rashakol/UI-TARS-72B-DPO"
+    ollama_fast_model: str = "hf.co/Mungert/UI-TARS-1.5-7B-GGUF:Q4_K_M"
+    ollama_keep_alive: str = "10m"
+    ollama_temperature: float = 0.0
+    ollama_max_tokens: int = 384
+    ollama_retry_attempts: int = 3
+    ollama_retry_delay: float = 1.0
+
+    # Server
+    host: str = "0.0.0.0"
+    port: int = 8000
+    log_level: str = "INFO"
+
+    # Auth
     auth_token: str = ""
     require_auth: bool = False
 
-    # --- Shadow Desktop (WSL2) ---
+    # Shadow Desktop (WSL2)
     wsl_distro: str = "Ubuntu"
     shadow_wsl_repo_path: str = "/mnt/c/Users/info/GitHub/Alchemy"
     display_num: int = 99
@@ -33,22 +199,22 @@ class Settings(BaseSettings):
     novnc_port: int = 6080
     resolution: str = "1920x1080x24"
 
-    # --- Screenshot ---
-    screenshot_format: str = "jpeg"  # jpeg or png — jpeg is ~5x smaller
-    screenshot_jpeg_quality: int = 85  # JPEG quality (0-100)
-    screenshot_resize_width: int = 1280  # Downscale to reduce visual tokens
-    screenshot_resize_height: int = 720  # 720p = ~40% fewer tokens than 1080p
+    # Screenshot
+    screenshot_format: str = "jpeg"
+    screenshot_jpeg_quality: int = 85
+    screenshot_resize_width: int = 1280
+    screenshot_resize_height: int = 720
 
-    # --- Agent ---
+    # Agent
     agent_max_steps: int = 50
     agent_screenshot_interval: float = 1.0
     agent_timeout: float = 300.0
     agent_approval_timeout: float = 60.0
-    agent_history_window: int = 4  # Text-only for older steps saves tokens
-    agent_use_streaming: bool = True  # Stream inference, stop on Action:
-    agent_model_routing: bool = True  # Use fast model for simple tasks
+    agent_history_window: int = 4
+    agent_use_streaming: bool = True
+    agent_model_routing: bool = True
 
-    # --- Router (context injection) ---
+    # Router
     router_enabled: bool = True
     router_detect_shadow_apps: bool = True
     router_detect_windows_apps: bool = True
@@ -56,43 +222,59 @@ class Settings(BaseSettings):
     router_recovery_nudges: bool = True
     router_completion_criteria: bool = True
 
-    # --- Playwright Agent (Tier 1) ---
+    # Playwright Agent (Tier 1)
     pw_enabled: bool = True
     pw_model: str = "qwen3:14b"
-    pw_think: bool = True  # Qwen3 needs think=true to follow agent instructions
-    pw_temperature: float = 0.1  # Low temp for deterministic actions
-    pw_max_tokens: int = 1024  # Room for thinking + Thought: + Action: output
+    pw_think: bool = True
+    pw_temperature: float = 0.1
+    pw_max_tokens: int = 1024
     pw_max_steps: int = 50
-    pw_settle_timeout: float = 5000  # ms to wait for page settle after action
-    pw_headless: bool = True  # Run Chromium headless
-    pw_max_snapshot_elements: int = 75  # Max refs — 150 overwhelms 14B models
-    pw_approval_enabled: bool = True  # Pause on irreversible actions
+    pw_settle_timeout: float = 5000
+    pw_headless: bool = True
+    pw_max_snapshot_elements: int = 75
+    pw_approval_enabled: bool = True
 
-    # --- Playwright Escalation (Tier 1.5 — vision fallback) ---
-    pw_escalation_enabled: bool = True  # Enable UI-TARS 7B fallback when stuck
-    pw_escalation_model: str = "minicpm-v"  # Vision model — pixel coordinate output
+    # Playwright Escalation (Tier 1.5)
+    pw_escalation_enabled: bool = True
+    pw_escalation_model: str = "qwen2.5vl:7b"
     pw_escalation_temperature: float = 0.0
     pw_escalation_max_tokens: int = 384
-    pw_escalation_parse_failures: int = 3  # Consecutive parse errors before escalating
-    pw_escalation_repeated_actions: int = 3  # Same action N times = loop
-    pw_escalation_complexity_threshold: int = 60  # Ref count that triggers escalation
+    pw_escalation_parse_failures: int = 3
+    pw_escalation_repeated_actions: int = 3
+    pw_escalation_complexity_threshold: int = 60
 
+    # GUI-Actor (future)
+    gui_actor_enabled: bool = False
+    gui_actor_host: str = "http://localhost:8200"
+    gui_actor_model: str = "microsoft/GUI-Actor-7B-Qwen2.5-VL"
+    gui_actor_timeout: float = 30.0
 
-    # --- Gate (Claude Code auto-approve) ---
+    # Desktop Agent
+    desktop_enabled: bool = True
+    desktop_model: str = "qwen2.5vl:7b"
+    desktop_max_steps: int = 20
+    desktop_temperature: float = 0.0
+    desktop_max_tokens: int = 384
+    desktop_screenshot_width: int = 1280
+    desktop_screenshot_height: int = 720
+    desktop_screenshot_quality: int = 75
+    desktop_default_mode: str = "shadow"
+
+    # Gate
     gate_enabled: bool = True
-    gate_model: str = "qwen3:14b"  # Same model, think:false mode for speed
-    gate_timeout: float = 5.0  # Max inference time (seconds)
+    gate_model: str = "qwen3:14b"
+    gate_timeout: float = 5.0
 
-    # --- Research (AlchemyBrowser) ---
+    # Research
     research_enabled: bool = True
     research_model: str = "qwen3:14b"
-    research_think: bool = False  # think:false for speed — decomposition + synthesis
-    research_temperature: float = 0.3  # Slightly creative for synthesis, still focused
-    research_max_tokens: int = 2048  # Room for long synthesized answers
-    research_max_queries: int = 10  # Max sub-queries from decomposition
-    research_max_pages: int = 8  # Max pages to fetch in parallel
-    research_fetch_timeout: float = 15.0  # Seconds per page fetch
-    research_top_k: int = 5  # Top K pages after relevance scoring
+    research_think: bool = False
+    research_temperature: float = 0.3
+    research_max_tokens: int = 2048
+    research_max_queries: int = 10
+    research_max_pages: int = 8
+    research_fetch_timeout: float = 15.0
+    research_top_k: int = 5
 
 
 settings = Settings()

@@ -24,6 +24,8 @@ dependencies = [
     "playwright",
     "duckduckgo-search>=7.0",
     "trafilatura>=2.0",
+    "pyyaml>=6.0",
+    "nvidia-ml-py>=12.0",
 ]
 
 [project.optional-dependencies]

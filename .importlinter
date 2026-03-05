@@ -27,3 +27,83 @@ forbidden_modules =
     alchemy.shadow
     alchemy.server
     alchemy.core
+
+[importlinter:contract:gpu-independence]
+name = GPU orchestrator never imports from feature modules
+type = forbidden
+source_modules =
+    alchemy.gpu
+forbidden_modules =
+    alchemy.api
+    alchemy.agent
+    alchemy.gate
+    alchemy.research
+    alchemy.router
+    alchemy.shadow
+    alchemy.desktop
+    alchemy.playwright
+    alchemy.server
+
+[importlinter:contract:models-independence]
+name = Models layer never imports from feature modules
+type = forbidden
+source_modules =
+    alchemy.models
+forbidden_modules =
+    alchemy.api
+    alchemy.agent
+    alchemy.gate
+    alchemy.research
+    alchemy.router
+    alchemy.shadow
+    alchemy.desktop
+    alchemy.server
+
+[importlinter:contract:gate-isolation]
+name = Gate does not import from other feature modules
+type = forbidden
+source_modules =
+    alchemy.gate
+forbidden_modules =
+    alchemy.research
+    alchemy.desktop
+    alchemy.shadow
+    alchemy.agent
+
+[importlinter:contract:research-isolation]
+name = Research does not import from other feature modules
+type = forbidden
+source_modules =
+    alchemy.research
+forbidden_modules =
+    alchemy.gate
+    alchemy.desktop
+    alchemy.shadow
+    alchemy.agent
+
+[importlinter:contract:desktop-isolation]
+name = Desktop does not import from other feature modules
+type = forbidden
+source_modules =
+    alchemy.desktop
+forbidden_modules =
+    alchemy.gate
+    alchemy.research
+    alchemy.shadow
+    alchemy.agent
+
+[importlinter:contract:registry-independence]
+name = Registry/manifest never imports from feature modules
+type = forbidden
+source_modules =
+    alchemy.manifest
+    alchemy.registry
+forbidden_modules =
+    alchemy.api
+    alchemy.agent
+    alchemy.gate
+    alchemy.research
+    alchemy.router
+    alchemy.shadow
+    alchemy.desktop
+    alchemy.server

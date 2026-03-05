@@ -124,7 +124,7 @@ Action: wait()"""
         assert result.action_type == "wait"
 
     def test_no_action_raises(self):
-        with pytest.raises(ValueError, match="No Action: found"):
+        with pytest.raises(ValueError, match="No Action:"):
             _parse_escalation_response("Just some random text", 1280, 720)
 
     def test_box_start_format(self):

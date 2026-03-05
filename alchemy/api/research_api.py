@@ -11,8 +11,9 @@ import logging
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 
+from alchemy.api.contract_guard import require_contract
 from alchemy.schemas import (
     ResearchMode,
     ResearchResult,
@@ -24,7 +25,7 @@ from alchemy.schemas import (
 )
 
 logger = logging.getLogger(__name__)
-router = APIRouter(tags=["research"])
+router = APIRouter(tags=["research"], dependencies=[Depends(require_contract("research"))])
 
 # In-memory task store (same pattern as playwright_api.py)
 _tasks: dict[str, dict] = {}

@@ -8,12 +8,14 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
+
+from alchemy.api.contract_guard import require_contract
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["gate"])
+router = APIRouter(tags=["gate"], dependencies=[Depends(require_contract("gate"))])
 
 
 class GateReviewRequest(BaseModel):

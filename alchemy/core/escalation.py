@@ -1,15 +1,21 @@
-"""Tier 1.5 escalation — UI-TARS 7B visual fallback for stuck Playwright agent.
+"""Tier 1.5 escalation — vision model fallback for stuck Playwright agent.
 
 When Qwen3 14B gets overwhelmed by a complex page (parse failures, action loops,
-too many refs), we take a screenshot and ask UI-TARS 7B to visually identify the
-next action. One shot, then hand control back to Qwen3.
+too many refs), we take a screenshot and ask the vision model (Qwen2.5-VL 7B)
+to visually identify the next action. One shot, then hand control back to Qwen3.
+
+Supports multiple vision model output formats:
+    - Standard: Thought: ... Action: click(start_box="(X,Y)")
+    - Qwen2.5-VL native: {"point_2d": [X, Y]} JSON format
+    - minicpm-v: click@(X,Y) format
 
 Flow:
-    Qwen3 stuck → screenshot → UI-TARS 7B → click(x, y) → Qwen3 resumes
+    Qwen3 stuck → screenshot → Qwen2.5-VL 7B → click(x, y) → Qwen3 resumes
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 import time
@@ -360,24 +366,41 @@ def _parse_escalation_response(
 ) -> EscalationResult:
     """Parse vision model response into an EscalationResult.
 
+    Tries multiple formats in order:
+        1. Standard: Thought: ... Action: click(start_box="(X,Y)")
+        2. Qwen2.5-VL native JSON: {"point_2d": [X, Y], "label": "..."}
+
     Coordinates are treated as raw pixel values (matching the viewport size).
 
     Raises:
-        ValueError: If no Action: line can be parsed.
+        ValueError: If no parseable action can be found.
     """
     thought = ""
     thought_match = _THOUGHT_RE.search(raw)
     if thought_match:
         thought = thought_match.group(1).strip()
 
+    # --- Try standard Action: format first ---
     action_match = _ACTION_RE.search(raw)
-    if not action_match:
-        raise ValueError(f"No Action: found in vision response: {raw[:200]!r}")
+    if action_match:
+        return _parse_standard_action(action_match, thought, screen_width, screen_height)
 
+    # --- Fallback: Qwen2.5-VL native JSON point format ---
+    json_result = _parse_qwen_vl_json(raw, thought, screen_width, screen_height)
+    if json_result:
+        return json_result
+
+    raise ValueError(f"No Action: or JSON point found in vision response: {raw[:200]!r}")
+
+
+def _parse_standard_action(
+    action_match: re.Match, thought: str,
+    screen_width: int, screen_height: int,
+) -> EscalationResult:
+    """Parse standard Thought/Action format."""
     action_type = action_match.group(1)
     args_str = action_match.group(2)
 
-    # Map action names
     action_map = {
         "click": "click", "left_double": "double_click",
         "scroll": "scroll", "type": "type",
@@ -385,7 +408,6 @@ def _parse_escalation_response(
     }
     mapped_type = action_map.get(action_type, action_type)
 
-    # Extract coordinates (raw pixel values — clamp to viewport)
     x, y = None, None
     coord_match = _COORD_RE.search(args_str)
     if coord_match:
@@ -394,24 +416,62 @@ def _parse_escalation_response(
         x = min(max(x, 0), screen_width)
         y = min(max(y, 0), screen_height)
 
-    # Extract text content
     text = None
     content_match = _CONTENT_RE.search(args_str)
     if content_match:
         text = content_match.group(1).replace("\\'", "'").replace('\\"', '"')
 
-    # Extract direction
     direction = None
     dir_match = _DIRECTION_RE.search(args_str)
     if dir_match:
         direction = dir_match.group(1)
 
     return EscalationResult(
-        success=True,
-        action_type=mapped_type,
-        x=x,
-        y=y,
-        text=text,
-        direction=direction,
-        thought=thought,
+        success=True, action_type=mapped_type,
+        x=x, y=y, text=text, direction=direction, thought=thought,
     )
+
+
+# Qwen2.5-VL JSON: {"point_2d": [452, 128], "label": "search button"}
+_POINT_JSON_RE = re.compile(r'\{[^{}]*"point_2d"\s*:\s*\[([^\]]+)\][^{}]*\}')
+
+
+def _parse_qwen_vl_json(
+    raw: str, thought: str,
+    screen_width: int, screen_height: int,
+) -> EscalationResult | None:
+    """Try to parse Qwen2.5-VL's native JSON point format.
+
+    Qwen2.5-VL outputs pixel coordinates (not normalized) in the actual
+    image size. Format: {"point_2d": [X, Y], "label": "description"}
+
+    Returns None if no JSON point found.
+    """
+    match = _POINT_JSON_RE.search(raw)
+    if not match:
+        return None
+
+    try:
+        # Extract full JSON object for label
+        json_str = match.group(0)
+        data = json.loads(json_str)
+        coords = data.get("point_2d", [])
+        label = data.get("label", "")
+
+        if len(coords) < 2:
+            return None
+
+        # Qwen2.5-VL uses pixel coords in the image size
+        x = int(float(coords[0]))
+        y = int(float(coords[1]))
+        x = min(max(x, 0), screen_width)
+        y = min(max(y, 0), screen_height)
+
+        return EscalationResult(
+            success=True,
+            action_type="click",
+            x=x, y=y,
+            thought=thought or f"[Qwen2.5-VL] {label}",
+        )
+    except (json.JSONDecodeError, ValueError, TypeError):
+        return None
