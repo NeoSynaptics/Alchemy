@@ -1,0 +1,1269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AlchemyWord</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Anybody:wght@300;400;600;800;900&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+/* === RESET + TOKENS === */
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --void:#08080e;--surface:#0e0e18;--panel:#12121c;--panel-edge:#1e1e32;
+  --amber:#d4893a;--amber-dim:#a06828;--amber-glow:rgba(212,137,58,.08);--amber-hot:#e6a04e;
+  --amber-matte:#c07a32;--amber-subtle:rgba(212,137,58,.05);
+  --green:#3cb371;--red:#cd5c5c;--cyan:#5ba4b5;
+  --text:#dcdce6;--text-mid:#8e8ea8;--text-dim:#555570;--text-muted:#2a2a40;
+  --glass:rgba(18,18,28,.7);--glass-border:rgba(212,137,58,.05);
+  --font-mono:'JetBrains Mono',monospace;
+  --font-display:'Anybody',sans-serif;
+  --font-body:'IBM Plex Sans',sans-serif;
+}
+html{font-size:15px;-webkit-font-smoothing:antialiased}
+body{
+  background:var(--void);color:var(--text);font-family:var(--font-body);
+  height:100vh;overflow:hidden;
+  background-image:
+    radial-gradient(ellipse 80% 50% at 50% -10%,rgba(212,137,58,.025),transparent),
+    linear-gradient(rgba(212,137,58,.008) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(212,137,58,.008) 1px,transparent 1px);
+  background-size:100% 100%,48px 48px,48px 48px;
+}
+::-webkit-scrollbar{width:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--panel-edge);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:var(--amber-dim)}
+
+/* === ANIMATIONS === */
+@keyframes glow-text{
+  0%,100%{text-shadow:0 0 8px rgba(212,137,58,.15)}
+  50%{text-shadow:0 0 18px rgba(212,137,58,.3),0 0 40px rgba(212,137,58,.08)}
+}
+@keyframes fade-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+@keyframes ghost-fade{from{opacity:0}to{opacity:.45}}
+@keyframes pulse-dot{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.8)}}
+@keyframes scan{0%{transform:translateY(-100%)}100%{transform:translateY(calc(100vh + 100%))}}
+@keyframes card-pop{from{opacity:0;transform:translateY(6px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes shimmer{0%{background-position:-200px 0}100%{background-position:200px 0}}
+@keyframes tooltip-in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(-2px)}}
+
+body::after{
+  content:'';position:fixed;top:0;left:0;width:100%;height:2px;
+  background:linear-gradient(90deg,transparent,rgba(212,137,58,.025),transparent);
+  z-index:9999;pointer-events:none;animation:scan 10s linear infinite;
+}
+
+/* === APP SHELL === */
+.app{display:flex;flex-direction:column;height:100vh;max-width:1400px;margin:0 auto;padding:0 20px}
+
+/* === MOCK BANNER === */
+.mock-banner{
+  display:none;padding:7px 16px;text-align:center;
+  background:linear-gradient(90deg,rgba(212,137,58,.06),rgba(212,137,58,.1),rgba(212,137,58,.06));
+  border-bottom:1px solid rgba(212,137,58,.1);
+  font-size:.68rem;font-family:var(--font-mono);color:var(--amber-matte);
+  letter-spacing:.02em;
+}
+.mock-banner.active{display:block}
+
+/* === TOP BAR === */
+.topbar{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:12px 0;border-bottom:1px solid var(--panel-edge);
+  flex-shrink:0;animation:fade-in .5s ease;
+}
+.brand{
+  font-family:var(--font-display);font-weight:900;font-size:1.1rem;
+  color:var(--amber);letter-spacing:-.01em;
+  animation:glow-text 5s ease-in-out infinite;cursor:default;
+}
+.brand-sub{font-weight:300;font-size:.6rem;color:var(--text-dim);margin-left:8px;letter-spacing:.06em;font-family:var(--font-mono)}
+.topbar-right{display:flex;align-items:center;gap:10px}
+.status-pill{
+  display:flex;align-items:center;gap:6px;
+  padding:4px 12px;border-radius:100px;
+  background:linear-gradient(135deg,var(--glass),rgba(14,14,24,.5));
+  border:1px solid var(--glass-border);
+  font-size:.62rem;font-family:var(--font-mono);color:var(--text-dim);
+  backdrop-filter:blur(6px);
+}
+.dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.dot.on{background:var(--green);box-shadow:0 0 6px rgba(60,179,113,.3);animation:pulse-dot 2.5s ease-in-out infinite}
+.dot.off{background:var(--red);box-shadow:0 0 6px rgba(205,92,92,.3)}
+
+/* === CONTROLS BAR === */
+.controls{
+  display:flex;align-items:center;gap:20px;
+  padding:12px 20px;border-bottom:1px solid var(--panel-edge);
+  flex-shrink:0;flex-wrap:wrap;
+  background:rgba(14,14,24,.5);
+  backdrop-filter:blur(8px);
+}
+.ctrl-group{display:flex;align-items:center;gap:10px}
+.ctrl-label{
+  font-size:.58rem;font-family:var(--font-mono);font-weight:600;
+  text-transform:uppercase;letter-spacing:.14em;color:var(--text-dim);
+}
+
+/* Slider */
+.slider-wrap{display:flex;flex-direction:column;align-items:center;gap:3px}
+input[type="range"]{
+  -webkit-appearance:none;width:160px;height:3px;
+  background:linear-gradient(90deg,var(--panel-edge),rgba(212,137,58,.15));
+  border-radius:2px;outline:none;cursor:pointer;
+}
+input[type="range"]::-webkit-slider-thumb{
+  -webkit-appearance:none;width:16px;height:16px;border-radius:50%;
+  background:radial-gradient(circle at 40% 35%,var(--amber-hot),var(--amber-matte));
+  cursor:pointer;border:2px solid rgba(18,18,28,.6);
+  box-shadow:0 0 10px rgba(212,137,58,.25),0 2px 6px rgba(0,0,0,.4);
+  transition:box-shadow .2s,transform .15s;
+}
+input[type="range"]::-webkit-slider-thumb:hover{
+  box-shadow:0 0 16px rgba(212,137,58,.35),0 2px 8px rgba(0,0,0,.5);
+  transform:scale(1.1);
+}
+.slider-ticks{
+  display:flex;justify-content:space-between;width:160px;
+  font-size:.5rem;font-family:var(--font-mono);color:var(--text-muted);
+}
+.slider-ticks span{transition:color .2s,transform .2s;padding:1px 2px}
+.slider-ticks span.active{color:var(--amber);font-weight:700;transform:scale(1.05)}
+
+/* Value badge */
+.ctrl-value{
+  padding:3px 10px;border-radius:6px;
+  background:var(--amber-subtle);
+  border:1px solid rgba(212,137,58,.1);
+  font-size:.62rem;font-family:var(--font-mono);font-weight:600;
+  color:var(--amber);min-width:60px;text-align:center;
+  text-transform:uppercase;letter-spacing:.04em;
+  backdrop-filter:blur(4px);
+}
+
+/* Select */
+.ctrl-select{
+  padding:7px 14px 7px 10px;border-radius:8px;
+  background:var(--surface);border:1px solid var(--panel-edge);
+  color:var(--text-mid);font-family:var(--font-mono);font-size:.72rem;
+  cursor:pointer;transition:all .2s;outline:none;
+  -webkit-appearance:none;appearance:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6' fill='%23555570'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 8px center;
+  padding-right:26px;
+}
+.ctrl-select:hover{border-color:var(--amber-dim);background:rgba(14,14,24,.8)}
+.ctrl-select:focus{border-color:var(--amber-matte);box-shadow:0 0 0 2px var(--amber-subtle)}
+.ctrl-select option{background:var(--panel);color:var(--text);padding:4px}
+
+/* Toggle pair */
+.toggle-pair{display:flex;border-radius:8px;overflow:hidden;border:1px solid var(--panel-edge);background:var(--surface)}
+.toggle-btn{
+  padding:7px 16px;border:none;
+  background:transparent;color:var(--text-dim);
+  font-family:var(--font-mono);font-size:.65rem;font-weight:500;
+  cursor:pointer;transition:all .2s;position:relative;
+}
+.toggle-btn.active{
+  background:linear-gradient(135deg,rgba(212,137,58,.1),rgba(212,137,58,.04));
+  color:var(--amber);font-weight:700;
+  box-shadow:inset 0 0 12px rgba(212,137,58,.06);
+}
+.toggle-btn.active::after{
+  content:'';position:absolute;bottom:0;left:20%;right:20%;height:2px;
+  background:var(--amber-matte);border-radius:1px;
+  box-shadow:0 0 6px rgba(212,137,58,.3);
+}
+.toggle-btn:hover:not(.active){color:var(--text-mid);background:rgba(255,255,255,.02)}
+
+/* Separator */
+.ctrl-sep{width:1px;height:24px;background:linear-gradient(180deg,transparent,var(--panel-edge),transparent);flex-shrink:0}
+
+/* === MAIN LAYOUT === */
+.main-layout{
+  display:flex;flex:1;min-height:0;overflow:hidden;
+}
+
+/* === EDITOR === */
+.editor-wrap{
+  flex:1;overflow-y:auto;padding:32px 40px;
+  min-width:0;
+}
+#editor{
+  min-height:300px;outline:none;
+  font-family:var(--font-body);font-size:1.05rem;
+  line-height:1.9;color:var(--text);font-weight:300;
+  letter-spacing:.01em;
+  caret-color:var(--amber);
+  max-width:720px;
+}
+#editor:empty::before{
+  content:'Start writing, or press Ctrl+Space for AI suggestions...';
+  color:var(--text-muted);font-weight:300;pointer-events:none;
+}
+#editor p{margin-bottom:14px}
+#editor h1,#editor h2,#editor h3{
+  font-family:var(--font-display);color:var(--text);
+  margin-bottom:10px;font-weight:700;
+}
+
+/* Ghost text */
+.ghost{
+  color:var(--amber-matte);opacity:.4;
+  font-style:italic;pointer-events:none;user-select:none;
+  animation:ghost-fade .25s ease;
+  letter-spacing:.005em;
+}
+
+/* Annotations */
+.annotated{
+  border-bottom:2px wavy var(--amber);
+  cursor:pointer;position:relative;
+  transition:background .15s;
+  border-radius:1px;
+}
+.annotated:hover{background:var(--amber-glow)}
+.annotated .ann-tooltip{
+  display:none;position:absolute;bottom:calc(100% + 8px);left:0;
+  background:linear-gradient(135deg,var(--panel),rgba(14,14,24,.95));
+  border:1px solid rgba(212,137,58,.15);
+  border-radius:10px;padding:10px 14px;z-index:100;
+  white-space:nowrap;pointer-events:none;
+  animation:tooltip-in .2s ease;
+  box-shadow:0 6px 24px rgba(0,0,0,.5),0 0 1px rgba(212,137,58,.1);
+  backdrop-filter:blur(8px);
+}
+.annotated:hover .ann-tooltip{display:block}
+.ann-tooltip-word{font-weight:600;color:var(--amber);font-size:.78rem}
+.ann-tooltip-reason{font-size:.65rem;color:var(--text-dim);margin-top:2px}
+.ann-tooltip-hint{font-size:.55rem;color:var(--text-muted);margin-top:4px;font-family:var(--font-mono)}
+
+/* === SIDEBAR === */
+.sidebar{
+  width:280px;flex-shrink:0;
+  border-left:1px solid var(--panel-edge);
+  display:flex;flex-direction:column;
+  overflow:hidden;transition:width .3s ease,opacity .3s ease;
+  background:rgba(13,13,22,.5);
+}
+.sidebar.hidden{width:0;opacity:0;padding:0;border:none}
+.sidebar-header{
+  padding:12px 16px;border-bottom:1px solid var(--panel-edge);
+  display:flex;align-items:center;justify-content:space-between;
+}
+.sidebar-title{
+  font-size:.6rem;font-family:var(--font-mono);font-weight:600;
+  text-transform:uppercase;letter-spacing:.14em;color:var(--text-dim);
+}
+.sidebar-count{
+  font-size:.6rem;font-family:var(--font-mono);color:var(--text-muted);
+}
+.sidebar-cards{
+  flex:1;overflow-y:auto;padding:12px;
+  display:flex;flex-direction:column;gap:10px;
+}
+.sidebar-empty{
+  text-align:center;padding:24px 12px;
+  font-size:.72rem;color:var(--text-muted);line-height:1.6;
+}
+
+/* Suggestion card */
+.sug-card{
+  background:linear-gradient(135deg,var(--glass),rgba(18,18,28,.5));
+  border:1px solid var(--glass-border);
+  border-radius:12px;padding:16px;
+  cursor:pointer;transition:all .25s cubic-bezier(.16,1,.3,1);
+  animation:card-pop .35s ease both;
+  position:relative;overflow:hidden;
+}
+.sug-card::before{
+  content:'';position:absolute;top:0;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent,rgba(212,137,58,.12),transparent);
+}
+.sug-card:nth-child(2){animation-delay:.08s}
+.sug-card:nth-child(3){animation-delay:.16s}
+.sug-card:hover{
+  border-color:rgba(212,137,58,.2);
+  transform:translateY(-2px);
+  box-shadow:0 6px 20px rgba(0,0,0,.35),0 0 1px rgba(212,137,58,.15);
+  background:linear-gradient(135deg,rgba(212,137,58,.04),rgba(18,18,28,.6));
+}
+.sug-card-label{
+  font-size:.52rem;font-family:var(--font-mono);font-weight:700;
+  text-transform:uppercase;letter-spacing:.14em;
+  color:var(--amber-dim);margin-bottom:8px;
+}
+.sug-card-text{
+  font-size:.82rem;line-height:1.7;color:var(--text-mid);font-weight:300;
+}
+.sug-card-insert{
+  margin-top:10px;padding:5px 14px;border-radius:6px;
+  background:linear-gradient(135deg,rgba(212,137,58,.1),rgba(212,137,58,.04));
+  border:1px solid rgba(212,137,58,.12);
+  color:var(--amber);font-family:var(--font-mono);font-size:.58rem;font-weight:600;
+  cursor:pointer;transition:all .2s;text-transform:uppercase;letter-spacing:.06em;
+}
+.sug-card-insert:hover{
+  background:linear-gradient(135deg,rgba(212,137,58,.18),rgba(212,137,58,.08));
+  border-color:rgba(212,137,58,.25);
+  box-shadow:0 2px 8px rgba(212,137,58,.1);
+}
+
+/* Loading state in sidebar */
+.sidebar-loading{
+  display:flex;flex-direction:column;align-items:center;gap:8px;
+  padding:20px;
+}
+.sidebar-loading-bar{
+  width:100%;height:2px;background:var(--panel-edge);border-radius:1px;overflow:hidden;
+}
+.sidebar-loading-fill{
+  width:60%;height:100%;background:var(--amber);
+  animation:shimmer 1.2s ease-in-out infinite;
+}
+.sidebar-loading-text{font-size:.65rem;font-family:var(--font-mono);color:var(--text-muted)}
+
+/* === STATUS BAR === */
+.statusbar{
+  display:flex;align-items:center;gap:16px;
+  padding:8px 20px;border-top:1px solid var(--panel-edge);
+  font-size:.6rem;font-family:var(--font-mono);color:var(--text-muted);
+  flex-shrink:0;flex-wrap:wrap;
+  background:rgba(14,14,24,.3);
+}
+.sb-val{color:var(--text-dim);font-weight:600}
+.sb-sep{color:var(--panel-edge);margin:0 2px}
+.sb-dot{width:5px;height:5px;border-radius:50%;display:inline-block;margin-right:4px}
+.sb-dot.on{background:var(--green)}
+.sb-dot.off{background:var(--red)}
+.sb-right{margin-left:auto;display:flex;align-items:center;gap:12px}
+
+/* Keyboard hints */
+.kb-hints{display:flex;gap:14px;margin-left:auto}
+.kb-hint{display:flex;align-items:center;gap:4px;color:var(--text-muted);font-size:.58rem;font-family:var(--font-mono)}
+.kb-key{
+  padding:2px 6px;border-radius:4px;
+  background:linear-gradient(180deg,var(--surface),rgba(10,10,16,.8));
+  border:1px solid var(--panel-edge);
+  border-bottom-width:2px;border-bottom-color:rgba(42,42,64,.6);
+  font-size:.55rem;font-weight:600;color:var(--text-dim);
+  font-family:var(--font-mono);
+}
+
+/* === RESPONSIVE === */
+@media(max-width:900px){
+  .sidebar{width:0;opacity:0;border:none;padding:0}
+  .editor-wrap{padding:20px}
+  .controls{gap:10px}
+}
+@media(max-width:600px){
+  .topbar{flex-direction:column;align-items:flex-start;gap:6px}
+  .controls{flex-direction:column;align-items:flex-start;gap:8px}
+  .editor-wrap{padding:16px}
+  #editor{font-size:.95rem}
+}
+</style>
+</head>
+<body>
+
+<!-- MOCK BANNER -->
+<div class="mock-banner" id="mockBanner">DEMO MODE — Set OLLAMA_ORIGINS=* environment variable and restart Ollama for live AI</div>
+
+<div class="app">
+
+  <!-- TOP BAR -->
+  <header class="topbar">
+    <div>
+      <span class="brand">ALCHEMYWORD<span class="brand-sub">v0.1</span></span>
+    </div>
+    <div class="topbar-right">
+      <div class="status-pill"><div class="dot on" id="dotOllama"></div><span id="statusModel">resolving...</span></div>
+      <div class="status-pill"><div class="dot on" id="dotConn"></div><span id="statusConn">Connected</span></div>
+    </div>
+  </header>
+
+  <!-- CONTROLS -->
+  <div class="controls">
+    <div class="ctrl-group">
+      <span class="ctrl-label">AI Assist</span>
+      <div class="slider-wrap">
+        <input type="range" id="assistSlider" min="0" max="4" step="1" value="2">
+        <div class="slider-ticks">
+          <span id="st0">Off</span><span id="st1">Word</span>
+          <span id="st2" class="active">Sent</span><span id="st3">Para</span><span id="st4">Page</span>
+        </div>
+      </div>
+      <span class="ctrl-value" id="assistValue">sentence</span>
+    </div>
+
+    <div class="ctrl-sep"></div>
+
+    <div class="ctrl-group">
+      <span class="ctrl-label">Style</span>
+      <select class="ctrl-select" id="styleSelect">
+        <option value="colloquial">Colloquial</option>
+        <option value="academic">Academic</option>
+        <option value="technical">Technical</option>
+        <option value="creative">Creative</option>
+      </select>
+    </div>
+
+    <div class="ctrl-sep"></div>
+
+    <div class="ctrl-group">
+      <span class="ctrl-label">Show</span>
+      <div class="toggle-pair">
+        <button class="toggle-btn active" id="togInline" onclick="setPlacement('inline')">Inline</button>
+        <button class="toggle-btn" id="togSidebar" onclick="setPlacement('sidebar')">Sidebar</button>
+      </div>
+    </div>
+
+    <div class="ctrl-sep"></div>
+
+    <div class="kb-hints">
+      <div class="kb-hint"><span class="kb-key">Tab</span> accept</div>
+      <div class="kb-hint"><span class="kb-key">Esc</span> dismiss</div>
+      <div class="kb-hint"><span class="kb-key">Ctrl</span>+<span class="kb-key">Space</span> suggest</div>
+    </div>
+  </div>
+
+  <!-- MAIN -->
+  <div class="main-layout">
+    <div class="editor-wrap">
+      <div id="editor" contenteditable="true" spellcheck="false"></div>
+    </div>
+
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <span class="sidebar-title">Suggestions</span>
+        <span class="sidebar-count" id="sidebarCount">0</span>
+      </div>
+      <div class="sidebar-cards" id="sidebarCards">
+        <div class="sidebar-empty">
+          Type some text and pause.<br>
+          AI suggestions will appear here when using<br>
+          <strong>Paragraph</strong> or <strong>Page</strong> mode,<br>
+          or <strong>Sidebar</strong> placement.
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- STATUS BAR -->
+  <div class="statusbar">
+    <span>Words: <span class="sb-val" id="sbWords">0</span></span>
+    <span class="sb-sep">|</span>
+    <span>Chars: <span class="sb-val" id="sbChars">0</span></span>
+    <span class="sb-sep">|</span>
+    <span><span class="sb-dot on" id="sbDot"></span><span id="sbModel">resolving...</span></span>
+    <span class="sb-sep">|</span>
+    <span>Last: <span class="sb-val" id="sbLastMs">—</span></span>
+    <div class="sb-right">
+      <span id="sbMode" style="color:var(--amber)">sentence / colloquial / inline</span>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ============================================================
+// ALCHEMYWORD — AI-Native Text Editor
+// ============================================================
+
+// === CONFIG ===
+const ALCHEMY_CORE = 'http://localhost:8000/v1';
+const OLLAMA_BASE = 'http://localhost:11434';
+let MODEL = 'qwen3:14b';  // default fallback -- overwritten by Core resolver
+const SUGGEST_DEBOUNCE = 350;    // ms pause before suggesting
+const ANNOTATE_DEBOUNCE = 4000;  // ms pause before annotating
+const TOKEN_BUFFER_MS = 30;      // buffer streaming tokens for smooth display
+
+const ASSIST_LEVELS = ['off', 'word', 'sentence', 'paragraph', 'page'];
+
+const GENERATION_CONFIG = {
+  word:      { maxTokens: 8,    instruction: 'Continue with exactly 1-3 words. Output 1-3 words only. STOP after 3 words maximum.', stop: ['.', '!', '?', '\n'] },
+  sentence:  { maxTokens: 60,   instruction: 'Continue with exactly ONE short sentence. STOP after the first period/question mark/exclamation. Do NOT write more than one sentence.', stop: ['\n'] },
+  paragraph: { maxTokens: 256,  instruction: 'Continue with one full paragraph.', stop: ['\n\n'] },
+  page:      { maxTokens: 1024, instruction: 'Continue with a full page of content.', stop: ['\n\n\n'] },
+};
+
+const STYLE_PROMPTS = {
+  colloquial: 'Write in a casual, conversational tone. Use natural language and a friendly voice.',
+  academic:   'Write in formal academic prose. Use precise terminology and objective tone.',
+  technical:  'Write in clear technical style. Be precise and use domain-specific terms.',
+  creative:   'Write with creative flair. Use vivid imagery, varied rhythm, and expressive language.',
+};
+
+// === STATE ===
+const state = {
+  assistLevel: 'sentence',
+  style: 'colloquial',
+  placement: 'inline',
+  ghostSpan: null,
+  ghostText: null,
+  annotations: [],
+  ollamaOk: false,
+  mockMode: false,
+  debounceTimer: null,
+  annotationTimer: null,
+  abortController: null,
+  lastMs: 0,
+  suggesting: false,
+};
+
+const editor = document.getElementById('editor');
+
+// === ALCHEMY CORE + OLLAMA CLIENT ===
+
+async function activateFromCore() {
+  // Ask Alchemy Core to resolve our manifest and load the model
+  try {
+    const r = await fetch(`${ALCHEMY_CORE}/gpu/app/word/activate-manifest`, {
+      method: 'POST',
+      signal: AbortSignal.timeout(5000),
+    });
+    if (r.ok) {
+      const data = await r.json();
+      if (data.success && data.loaded?.length > 0) {
+        MODEL = data.loaded[0];  // Core resolved our "reasoning" capability
+        console.log(`[AlchemyWord] Core resolved model: ${MODEL}`);
+        return true;
+      }
+      // Resolved but nothing loaded (e.g. model already active)
+      const resolved = data.resolved?.find(m => m.capability === 'reasoning');
+      if (resolved?.model_name) {
+        MODEL = resolved.model_name;
+        console.log(`[AlchemyWord] Core resolved (already active): ${MODEL}`);
+        return true;
+      }
+    } else if (r.status === 404) {
+      console.warn('[AlchemyWord] Module "word" not registered in Core. Using default model.');
+    } else if (r.status === 503) {
+      console.warn('[AlchemyWord] Core unavailable or contract unsatisfied.');
+    }
+  } catch (e) {
+    console.warn('[AlchemyWord] Core not reachable, falling back to direct Ollama.', e.message);
+  }
+  return false;
+}
+
+async function checkOllama() {
+  // Step 1: Try Alchemy Core first (contract-aware model resolution)
+  const coreOk = await activateFromCore();
+
+  // Step 2: Verify the model is available in Ollama
+  try {
+    const r = await fetch(`${OLLAMA_BASE}/api/tags`, { signal: AbortSignal.timeout(3000) });
+    if (r.ok) {
+      const data = await r.json();
+      const modelShort = MODEL.split(':')[0];
+      const has = data.models?.some(m => m.name.includes(modelShort));
+      state.ollamaOk = true;
+      state.mockMode = !has;
+      document.getElementById('statusModel').textContent = MODEL;
+      document.getElementById('sbModel').textContent = MODEL;
+      if (!has) {
+        document.getElementById('statusModel').textContent = `no ${MODEL} found`;
+        document.getElementById('mockBanner').classList.add('active');
+        document.getElementById('mockBanner').textContent = `DEMO MODE — ${MODEL} not found in Ollama. Run: ollama pull ${MODEL}`;
+      }
+      if (coreOk) {
+        document.getElementById('statusConn').textContent = 'Core';
+      }
+      updateStatus();
+      return;
+    }
+  } catch (e) { /* CORS or offline */ }
+  state.ollamaOk = false;
+  state.mockMode = true;
+  document.getElementById('dotOllama').classList.replace('on', 'off');
+  document.getElementById('dotConn').classList.replace('on', 'off');
+  document.getElementById('statusConn').textContent = 'Offline';
+  document.getElementById('mockBanner').classList.add('active');
+  updateStatus();
+}
+
+async function* ollamaStream(userText, systemPrompt, maxTokens, stopSeqs) {
+  const payload = {
+    model: MODEL,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userText },
+    ],
+    stream: true,
+    think: false,
+    options: { temperature: 0.7, num_predict: maxTokens, stop: stopSeqs || ['\n\n\n'] },
+  };
+
+  const resp = await fetch(`${OLLAMA_BASE}/api/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+    signal: state.abortController?.signal,
+  });
+  if (!resp.ok) throw new Error(`Ollama ${resp.status}`);
+
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    const lines = buf.split('\n');
+    buf = lines.pop();
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      try {
+        const chunk = JSON.parse(line);
+        const tok = chunk.message?.content || '';
+        if (tok) yield tok;
+        if (chunk.done) return;
+      } catch (e) { /* skip */ }
+    }
+  }
+}
+
+async function ollamaJSON(userText, systemPrompt, maxTokens = 1024) {
+  const payload = {
+    model: MODEL,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userText },
+    ],
+    stream: false,
+    think: false,
+    options: { temperature: 0.3, num_predict: maxTokens },
+  };
+  const r = await fetch(`${OLLAMA_BASE}/api/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+    signal: state.abortController?.signal,
+  });
+  if (!r.ok) throw new Error(`Ollama ${r.status}`);
+  const data = await r.json();
+  return data.message?.content || '';
+}
+
+// === PROMPT BUILDERS ===
+
+// Strip overlapping prefix — LLM sometimes regurgitates the last few words
+function stripOverlap(textBefore, generated) {
+  if (!textBefore || !generated) return generated;
+  const tail = textBefore.trimEnd().split(/\s+/).slice(-6).join(' ').toLowerCase();
+  const genLower = generated.trimStart().toLowerCase();
+  // Try progressively shorter tails (6 words down to 1)
+  const words = tail.split(/\s+/);
+  for (let len = words.length; len >= 1; len--) {
+    const suffix = words.slice(-len).join(' ');
+    if (genLower.startsWith(suffix)) {
+      return generated.trimStart().slice(suffix.length);
+    }
+  }
+  return generated;
+}
+
+function buildContinuePrompt(textBefore) {
+  const cfg = GENERATION_CONFIG[state.assistLevel];
+  const style = STYLE_PROMPTS[state.style];
+  const sys = [
+    'You are a text completion engine. You are NOT a chatbot. Do NOT greet, ask questions, or converse.',
+    'Your ONLY job: receive partial text and output the NEXT words that naturally continue it.',
+    cfg.instruction, style,
+    'Output ONLY the raw continuation. No explanations, no quotes, no markdown, no preamble, no "Sure!", no "Here is".',
+    'Do not repeat any existing text. Just the new words that come next.',
+  ].join(' ');
+  return { sys, user: 'Continue this text:\n\n' + textBefore.slice(-2000) };
+}
+
+function buildAlternativesPrompt(textBefore) {
+  const cfg = GENERATION_CONFIG[state.assistLevel];
+  const style = STYLE_PROMPTS[state.style];
+  const sys = [
+    'You are a writing assistant. Provide exactly 3 different ways to continue the user\'s text.',
+    cfg.instruction, style,
+    'Return a JSON array of 3 strings. Each string is a different continuation.',
+    'Example: ["first option", "second option", "third option"]',
+    'Output ONLY the JSON array. No markdown fences, no explanation.',
+  ].join(' ');
+  return { sys, user: textBefore.slice(-2000) };
+}
+
+function buildImprovePrompt(text) {
+  const sys = [
+    'You are an editor. Analyze this text for 3-5 word-level improvements.',
+    'Find weak words that could be replaced with stronger alternatives.',
+    'Return a JSON array: [{"word":"the weak word","suggestion":"better word","reason":"brief reason"}]',
+    'Only suggest meaningful improvements. Output ONLY the JSON array.',
+  ].join(' ');
+  return { sys, user: text.slice(-3000) };
+}
+
+// === EDITOR HELPERS ===
+
+function getDocumentText() {
+  const clone = editor.cloneNode(true);
+  clone.querySelectorAll('.ghost').forEach(el => el.remove());
+  // Strip annotation tooltips so we only get the actual words
+  clone.querySelectorAll('.ann-tooltip').forEach(el => el.remove());
+  return clone.innerText || '';
+}
+
+function getCursorContext() {
+  const sel = window.getSelection();
+  if (!sel.rangeCount || !editor.contains(sel.anchorNode)) return null;
+
+  const range = sel.getRangeAt(0);
+  const preRange = document.createRange();
+  preRange.selectNodeContents(editor);
+  preRange.setEnd(range.startContainer, range.startOffset);
+
+  const tempDiv = document.createElement('div');
+  tempDiv.appendChild(preRange.cloneContents());
+  tempDiv.querySelectorAll('.ghost').forEach(el => el.remove());
+  tempDiv.querySelectorAll('.ann-tooltip').forEach(el => el.remove());
+
+  return { textBefore: tempDiv.innerText || '', range };
+}
+
+function updateWordCount() {
+  const text = getDocumentText().trim();
+  const words = text ? text.split(/\s+/).length : 0;
+  document.getElementById('sbWords').textContent = words;
+  document.getElementById('sbChars').textContent = text.length;
+}
+
+// === GHOST TEXT SYSTEM ===
+
+function showGhostText(text) {
+  dismissGhostText();
+  if (!text || !text.trim()) return;
+
+  const sel = window.getSelection();
+  if (!sel.rangeCount) return;
+
+  const range = sel.getRangeAt(0);
+  const ghost = document.createElement('span');
+  ghost.className = 'ghost';
+  ghost.contentEditable = 'false';
+  ghost.textContent = text;
+
+  range.collapse(false);
+  range.insertNode(ghost);
+
+  // Keep cursor before ghost
+  range.setStartBefore(ghost);
+  range.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(range);
+
+  state.ghostSpan = ghost;
+  state.ghostText = text;
+}
+
+function updateGhostText(text) {
+  if (state.ghostSpan) {
+    state.ghostSpan.textContent = text;
+    state.ghostText = text;
+  } else {
+    showGhostText(text);
+  }
+}
+
+function dismissGhostText() {
+  if (state.ghostSpan && state.ghostSpan.parentNode) {
+    // Anchor cursor right before the ghost before removing it
+    const sel = window.getSelection();
+    if (sel.rangeCount) {
+      const range = document.createRange();
+      range.setStartBefore(state.ghostSpan);
+      range.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+    state.ghostSpan.remove();
+  }
+  state.ghostSpan = null;
+  state.ghostText = null;
+}
+
+function acceptGhostText() {
+  if (!state.ghostSpan || !state.ghostText) return;
+
+  const text = state.ghostText;
+  const ghost = state.ghostSpan;
+
+  // Replace ghost span with plain text node
+  const textNode = document.createTextNode(text);
+  ghost.parentNode.replaceChild(textNode, ghost);
+  state.ghostSpan = null;
+  state.ghostText = null;
+
+  // Normalize merges adjacent text nodes
+  editor.normalize();
+
+  // After normalize, textNode is merged — walk to find cursor position
+  // Use a marker approach: find the text node containing our text and set cursor at end
+  const sel = window.getSelection();
+  const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+  let lastNode = null;
+  while (walker.nextNode()) lastNode = walker.currentNode;
+  if (lastNode) {
+    const newRange = document.createRange();
+    newRange.setStart(lastNode, lastNode.textContent.length);
+    newRange.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(newRange);
+  }
+
+  updateWordCount();
+  resetDebounce();
+}
+
+// === SIDEBAR SYSTEM ===
+
+function renderSidebarCards(suggestions) {
+  const container = document.getElementById('sidebarCards');
+  container.innerHTML = '';
+  document.getElementById('sidebarCount').textContent = suggestions.length;
+
+  suggestions.forEach((text, i) => {
+    const card = document.createElement('div');
+    card.className = 'sug-card';
+    card.innerHTML = `
+      <div class="sug-card-label">Option ${String.fromCharCode(65 + i)}</div>
+      <div class="sug-card-text">${escapeHtml(text)}</div>
+      <button class="sug-card-insert" onclick="insertSuggestion(${i})">Insert</button>
+    `;
+    card.addEventListener('click', (e) => {
+      if (e.target.classList.contains('sug-card-insert')) return;
+      insertSuggestionText(text);
+    });
+    container.appendChild(card);
+  });
+  state._sidebarSuggestions = suggestions;
+}
+
+function insertSuggestion(index) {
+  const sugs = state._sidebarSuggestions;
+  if (sugs && sugs[index]) insertSuggestionText(sugs[index]);
+}
+
+function insertSuggestionText(text) {
+  editor.focus();
+  const sel = window.getSelection();
+  if (!sel.rangeCount) {
+    // Place at end
+    const range = document.createRange();
+    range.selectNodeContents(editor);
+    range.collapse(false);
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }
+  const range = sel.getRangeAt(0);
+  range.collapse(false);
+  const node = document.createTextNode(text);
+  range.insertNode(node);
+  range.setStartAfter(node);
+  range.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(range);
+  updateWordCount();
+}
+
+function showSidebarLoading() {
+  const container = document.getElementById('sidebarCards');
+  container.innerHTML = `
+    <div class="sidebar-loading">
+      <div class="sidebar-loading-bar"><div class="sidebar-loading-fill"></div></div>
+      <div class="sidebar-loading-text">Generating suggestions...</div>
+    </div>
+  `;
+}
+
+// === ANNOTATION SYSTEM ===
+
+function clearAnnotations() {
+  editor.querySelectorAll('.annotated').forEach(el => {
+    // Only grab the actual word (first text node), NOT tooltip text
+    const word = el.childNodes[0]?.nodeValue || '';
+    const node = document.createTextNode(word);
+    el.parentNode.replaceChild(node, el);
+  });
+  editor.normalize();
+}
+
+function applyAnnotations(annotations) {
+  clearAnnotations();
+  if (!annotations.length) return;
+
+  const text = getDocumentText();
+  const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT, {
+    acceptNode: (node) => {
+      if (node.parentElement?.classList.contains('ghost')) return NodeFilter.FILTER_REJECT;
+      return NodeFilter.FILTER_ACCEPT;
+    }
+  });
+
+  // Build a flat list of text nodes with their offsets
+  const textNodes = [];
+  let offset = 0;
+  let node;
+  while (node = walker.nextNode()) {
+    textNodes.push({ node, start: offset, end: offset + node.textContent.length });
+    offset += node.textContent.length;
+  }
+
+  // For each annotation, find the word in the text and wrap it
+  const sorted = [...annotations].sort((a, b) => {
+    const posA = text.toLowerCase().indexOf(a.word.toLowerCase());
+    const posB = text.toLowerCase().indexOf(b.word.toLowerCase());
+    return posB - posA; // Process from end to start to preserve offsets
+  });
+
+  for (const ann of sorted) {
+    const wordLower = ann.word.toLowerCase();
+    const pos = text.toLowerCase().indexOf(wordLower);
+    if (pos === -1) continue;
+
+    // Find the text node containing this position
+    for (const tn of textNodes) {
+      if (pos >= tn.start && pos < tn.end) {
+        const localOffset = pos - tn.start;
+        const nodeText = tn.node.textContent;
+        const actualWord = nodeText.slice(localOffset, localOffset + ann.word.length);
+
+        // Split: before | word | after
+        const before = nodeText.slice(0, localOffset);
+        const after = nodeText.slice(localOffset + ann.word.length);
+
+        const span = document.createElement('span');
+        span.className = 'annotated';
+        span.textContent = actualWord;
+        span.innerHTML = actualWord + `<span class="ann-tooltip">
+          <div class="ann-tooltip-word">${escapeHtml(ann.suggestion)}</div>
+          <div class="ann-tooltip-reason">${escapeHtml(ann.reason)}</div>
+          <div class="ann-tooltip-hint">click to replace</div>
+        </span>`;
+        // Only replace when user clicks the tooltip hint, not the word itself
+        span.addEventListener('click', (e) => {
+          // Check if tooltip is visible (hover state) and user intentionally clicked
+          const tooltip = span.querySelector('.ann-tooltip');
+          if (!tooltip) return;
+          // Show a confirmation state — first click shows "confirm?" tooltip, second click replaces
+          if (!span.dataset.confirmed) {
+            e.stopPropagation();
+            span.dataset.confirmed = 'true';
+            span.querySelector('.ann-tooltip-hint').textContent = 'click again to confirm';
+            span.querySelector('.ann-tooltip-hint').style.color = 'var(--amber)';
+            // Auto-dismiss confirmation after 3s
+            setTimeout(() => { if (span.parentNode) { delete span.dataset.confirmed; const h = span.querySelector('.ann-tooltip-hint'); if(h){h.textContent='click to replace';h.style.color='';} } }, 3000);
+            return;
+          }
+          const textNode = document.createTextNode(ann.suggestion);
+          span.parentNode.replaceChild(textNode, span);
+          editor.normalize();
+          updateWordCount();
+        });
+
+        const parent = tn.node.parentNode;
+        const frag = document.createDocumentFragment();
+        if (before) frag.appendChild(document.createTextNode(before));
+        frag.appendChild(span);
+        if (after) frag.appendChild(document.createTextNode(after));
+        parent.replaceChild(frag, tn.node);
+        break;
+      }
+    }
+  }
+}
+
+// === MOCK SUGGESTIONS ===
+
+const MOCK_GHOST = {
+  word: ['however', 'furthermore', 'specifically', 'consequently', 'notably', 'essentially', 'in particular'],
+  sentence: [
+    'This approach has shown promising results across multiple studies and continues to gain traction.',
+    'The implications extend far beyond what was initially anticipated by researchers.',
+    'Further investigation reveals a pattern that challenges conventional understanding.',
+    'Recent developments in this area suggest a fundamental shift in thinking.',
+  ],
+  paragraph: [
+    'The rapid advancement of artificial intelligence has fundamentally reshaped how we approach problem-solving in the modern era. What was once considered the domain of science fiction has become an everyday reality, with AI systems now capable of generating text, analyzing complex datasets, and even assisting in creative endeavors.',
+    'Looking at the broader implications, we can identify several key trends that are likely to shape the coming decade. First, the democratization of powerful tools means that smaller teams can achieve what previously required entire departments. Second, the focus on local-first computing signals a shift away from cloud dependency.',
+    'It is worth noting that these developments do not exist in isolation. Each breakthrough builds upon decades of research and countless incremental improvements. The current moment represents not a sudden leap, but rather the culmination of sustained effort across multiple disciplines.',
+  ],
+  page: [
+    'In the landscape of modern technology, few developments have captured the public imagination quite like artificial intelligence. From its humble beginnings in academic laboratories to its current status as a transformative force across industries, AI has undergone a remarkable evolution.\n\nThe current generation of language models represents a particularly significant milestone. These systems, trained on vast corpora of human text, have demonstrated capabilities that blur the line between human and machine-generated content. They can draft emails, write code, analyze legal documents, and even engage in creative writing with varying degrees of sophistication.\n\nHowever, it would be naive to suggest that these tools are without limitations. Issues of hallucination, bias, and the environmental cost of training large models remain active areas of concern. The responsible development of AI requires a careful balance between innovation and caution.\n\nLooking ahead, the trajectory seems clear: AI will become increasingly integrated into our daily workflows, not as a replacement for human judgment, but as a powerful augmentation of our cognitive capabilities. The organizations and individuals who learn to effectively collaborate with these tools will find themselves at a significant advantage.',
+  ],
+};
+
+const MOCK_ANNOTATIONS = [
+  { word: 'good', suggestion: 'excellent', reason: 'More precise and impactful' },
+  { word: 'very', suggestion: '(remove)', reason: 'Weakens the following word' },
+  { word: 'things', suggestion: 'factors', reason: 'More specific' },
+  { word: 'big', suggestion: 'significant', reason: 'More formal' },
+  { word: 'nice', suggestion: 'remarkable', reason: 'Stronger descriptor' },
+  { word: 'got', suggestion: 'obtained', reason: 'More precise verb' },
+  { word: 'stuff', suggestion: 'material', reason: 'More specific' },
+  { word: 'really', suggestion: '(remove)', reason: 'Filler word, weakens prose' },
+];
+
+async function mockGhostSuggestion(ctx) {
+  await new Promise(r => setTimeout(r, 200 + Math.random() * 300));
+  const level = state.assistLevel;
+  const pool = MOCK_GHOST[level] || MOCK_GHOST.word;
+  const text = pool[Math.floor(Math.random() * pool.length)];
+  return ' ' + text;
+}
+
+async function mockSidebarSuggestions() {
+  await new Promise(r => setTimeout(r, 400 + Math.random() * 400));
+  const level = state.assistLevel;
+  const pool = MOCK_GHOST[level] || MOCK_GHOST.paragraph;
+  const shuffled = [...pool].sort(() => Math.random() - 0.5);
+  return shuffled.slice(0, 3);
+}
+
+async function mockAnnotations(text) {
+  await new Promise(r => setTimeout(r, 500));
+  const textLower = text.toLowerCase();
+  return MOCK_ANNOTATIONS.filter(a => textLower.includes(a.word.toLowerCase()));
+}
+
+// === SUGGESTION ENGINE ===
+
+async function triggerSuggestion() {
+  if (state.assistLevel === 'off' || state.suggesting) return;
+
+  const ctx = getCursorContext();
+  if (!ctx || !ctx.textBefore.trim()) return;
+
+  if (state.abortController) state.abortController.abort();
+  state.abortController = new AbortController();
+  state.suggesting = true;
+
+  const t0 = performance.now();
+  const useSidebar = state.placement === 'sidebar' ||
+    state.assistLevel === 'paragraph' || state.assistLevel === 'page';
+
+  try {
+    if (state.mockMode) {
+      if (useSidebar) {
+        showSidebarLoading();
+        const sugs = await mockSidebarSuggestions();
+        renderSidebarCards(sugs);
+        ensureSidebarVisible();
+      } else {
+        const text = await mockGhostSuggestion(ctx);
+        showGhostText(text);
+      }
+    } else if (useSidebar && state.placement === 'sidebar') {
+      showSidebarLoading();
+      ensureSidebarVisible();
+      const { sys, user } = buildAlternativesPrompt(ctx.textBefore);
+      const raw = await ollamaJSON(user, sys, GENERATION_CONFIG[state.assistLevel].maxTokens);
+      const sugs = parseJSONArray(raw);
+      if (sugs.length) renderSidebarCards(sugs);
+      else renderSidebarCards([cleanLLMOutput(raw)]);
+    } else {
+      const { sys, user } = buildContinuePrompt(ctx.textBefore);
+      const textBefore = ctx.textBefore;
+      const cfg = GENERATION_CONFIG[state.assistLevel];
+      let accumulated = '';
+      let lastUpdate = 0;
+
+      for await (const token of ollamaStream(user, sys, cfg.maxTokens, cfg.stop)) {
+        accumulated += token;
+        const now = performance.now();
+        if (now - lastUpdate > TOKEN_BUFFER_MS) {
+          const cleaned = stripOverlap(textBefore, cleanLLMOutput(accumulated));
+          if (cleaned.trim()) updateGhostText(' ' + cleaned);
+          lastUpdate = now;
+        }
+      }
+      if (accumulated) {
+        let cleaned = stripOverlap(textBefore, cleanLLMOutput(accumulated));
+        // Enforce level limits post-generation
+        if (state.assistLevel === 'word') {
+          cleaned = cleaned.trim().split(/\s+/).slice(0, 3).join(' ');
+        } else if (state.assistLevel === 'sentence') {
+          // Keep only the first sentence
+          const sentEnd = cleaned.search(/[.!?]/);
+          if (sentEnd > 0) cleaned = cleaned.slice(0, sentEnd + 1);
+        }
+        if (cleaned.trim()) updateGhostText(' ' + cleaned);
+      }
+    }
+
+    state.lastMs = Math.round(performance.now() - t0);
+    document.getElementById('sbLastMs').textContent = state.lastMs + 'ms';
+  } catch (e) {
+    if (e.name === 'AbortError') { /* expected */ }
+    else console.warn('Suggestion error:', e);
+  }
+  state.suggesting = false;
+}
+
+async function triggerAnnotations() {
+  if (state.assistLevel === 'off') return;
+  const text = getDocumentText();
+  if (text.length < 20) return;
+
+  try {
+    let annotations;
+    if (state.mockMode) {
+      annotations = await mockAnnotations(text);
+    } else {
+      if (state.abortController) state.abortController.abort();
+      state.abortController = new AbortController();
+      const { sys, user } = buildImprovePrompt(text);
+      const raw = await ollamaJSON(user, sys, 512);
+      annotations = parseJSONArray(raw);
+    }
+    if (annotations && annotations.length) {
+      applyAnnotations(annotations);
+    }
+  } catch (e) {
+    if (e.name !== 'AbortError') console.warn('Annotation error:', e);
+  }
+}
+
+// === DEBOUNCE ===
+
+function resetDebounce() {
+  if (state.debounceTimer) clearTimeout(state.debounceTimer);
+  if (state.annotationTimer) clearTimeout(state.annotationTimer);
+  if (state.abortController) state.abortController.abort();
+
+  if (state.assistLevel === 'off') return;
+
+  state.debounceTimer = setTimeout(() => triggerSuggestion(), SUGGEST_DEBOUNCE);
+  state.annotationTimer = setTimeout(() => triggerAnnotations(), ANNOTATE_DEBOUNCE);
+}
+
+// === HELPERS ===
+
+function escapeHtml(str) {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function cleanLLMOutput(text) {
+  return text
+    .replace(/^["'\s]+/, '')
+    .replace(/["'\s]+$/, '')
+    .replace(/^(Here is|Here's|Sure|Certainly|Of course)[^:]*:\s*/i, '')
+    .replace(/^```[\s\S]*?```$/gm, '')
+    .trim();
+}
+
+function parseJSONArray(raw) {
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return parsed;
+  } catch (e) { /* try regex */ }
+  // Regex fallback
+  const match = raw.match(/\[[\s\S]*\]/);
+  if (match) {
+    try { return JSON.parse(match[0]); } catch (e) { /* give up */ }
+  }
+  return [];
+}
+
+// === KEYBOARD HANDLER ===
+
+editor.addEventListener('keydown', (e) => {
+  if (e.key === 'Tab' && state.ghostSpan) {
+    e.preventDefault();
+    acceptGhostText();
+    return;
+  }
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    dismissGhostText();
+    return;
+  }
+  if (e.key === ' ' && e.ctrlKey) {
+    e.preventDefault();
+    dismissGhostText();
+    triggerSuggestion();
+    return;
+  }
+  // Any typing character dismisses ghost
+  if (state.ghostSpan && !e.ctrlKey && !e.metaKey && !e.altKey && e.key.length === 1) {
+    dismissGhostText();
+  }
+});
+
+editor.addEventListener('input', () => {
+  dismissGhostText();
+  updateWordCount();
+  resetDebounce();
+});
+
+// === CONTROLS WIRING ===
+
+document.getElementById('assistSlider').addEventListener('input', (e) => {
+  state.assistLevel = ASSIST_LEVELS[e.target.value];
+  document.getElementById('assistValue').textContent = state.assistLevel;
+
+  // Kill any in-flight request from the previous level
+  if (state.abortController) state.abortController.abort();
+  if (state.debounceTimer) clearTimeout(state.debounceTimer);
+  if (state.annotationTimer) clearTimeout(state.annotationTimer);
+  state.suggesting = false;
+  dismissGhostText();
+
+  // Update tick highlights
+  for (let i = 0; i <= 4; i++) {
+    document.getElementById('st' + i).classList.toggle('active', i === +e.target.value);
+  }
+
+  // Auto-show sidebar for para/page
+  if (state.assistLevel === 'paragraph' || state.assistLevel === 'page') {
+    ensureSidebarVisible();
+  } else if (state.placement === 'inline') {
+    document.getElementById('sidebar').classList.add('hidden');
+  }
+  updateStatus();
+});
+
+document.getElementById('styleSelect').addEventListener('change', (e) => {
+  state.style = e.target.value;
+  updateStatus();
+});
+
+function setPlacement(p) {
+  state.placement = p;
+  document.getElementById('togInline').classList.toggle('active', p === 'inline');
+  document.getElementById('togSidebar').classList.toggle('active', p === 'sidebar');
+
+  if (p === 'sidebar') {
+    ensureSidebarVisible();
+  } else if (state.assistLevel !== 'paragraph' && state.assistLevel !== 'page') {
+    document.getElementById('sidebar').classList.add('hidden');
+  }
+  dismissGhostText();
+  updateStatus();
+}
+
+function ensureSidebarVisible() {
+  document.getElementById('sidebar').classList.remove('hidden');
+}
+
+function updateStatus() {
+  const mode = `${state.assistLevel} / ${state.style} / ${state.placement}`;
+  document.getElementById('sbMode').textContent = mode;
+}
+
+// === INIT ===
+checkOllama();
+updateWordCount();
+updateStatus();
+editor.focus();
+</script>
+</body>
+</html>

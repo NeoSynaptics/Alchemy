@@ -146,6 +146,15 @@ class ResearchSettings(BaseModel):
     top_k: int = 5
 
 
+class WordSettings(BaseModel):
+    """AlchemyWord AI text editor."""
+    enabled: bool = True
+    temperature: float = 0.7
+    max_tokens: int = 1024
+    suggest_debounce_ms: int = 350
+    annotate_debounce_ms: int = 4000
+
+
 # --- Root settings (composes all groups) ---
 
 class Settings(BaseSettings):
@@ -169,6 +178,7 @@ class Settings(BaseSettings):
     desktop: DesktopSettings = DesktopSettings()
     gate: GateSettings = GateSettings()
     research: ResearchSettings = ResearchSettings()
+    word: WordSettings = WordSettings()
 
     # === Flat fields (backward compat -- used by server.py and existing code) ===
 
