@@ -296,6 +296,36 @@ class StackOrchestrator:
             )
         return LoadResult(success=True)
 
+    async def app_activate_manifest(self, app_name: str, manifest) -> LoadResult:
+        """Activate models for an app using its manifest -- auto-resolves capabilities.
+
+        This is the preferred way to activate an app. The resolver reads the
+        manifest's ModelRequirement tags and picks the best models from the fleet.
+
+        Args:
+            app_name: Unique app identifier (e.g. "alchemy-word")
+            manifest: A ModuleManifest with models=[ModelRequirement(...)]
+
+        Returns:
+            LoadResult with success status and any errors.
+        """
+        from alchemy.gpu.resolver import ModelResolver
+
+        resolver = ModelResolver(self._registry)
+        resolution = resolver.resolve_manifest(manifest)
+
+        if not resolution.model_names:
+            missing = resolution.missing
+            if missing:
+                return LoadResult(
+                    success=False,
+                    error=f"No models available for required capabilities: {missing}",
+                )
+            return LoadResult(success=True)  # No model requirements
+
+        return await self.app_activate(app_name, resolution.model_names)
+
+
     async def app_deactivate(self, app_name: str) -> list[str]:
         """Deactivate an app. Demote its models back to WARM (not cold)."""
         model_names = self._app_models.pop(app_name, [])

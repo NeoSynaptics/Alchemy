@@ -77,6 +77,21 @@ class DemotedResponse(BaseModel):
     demoted: list[str] = []
 
 
+class ResolvedModelInfo(BaseModel):
+    capability: str
+    model_name: str | None = None
+    resolution: str  # "pinned" | "combo" | "single_tag" | "fallback" | "unresolved"
+    available: bool = False
+    candidates: list[str] = []
+
+
+class ManifestActivateResponse(BaseModel):
+    success: bool
+    resolved: list[ResolvedModelInfo] = []
+    loaded: list[str] = []
+    error: str | None = None
+
+
 # --- Helpers ---
 
 
@@ -243,6 +258,93 @@ async def app_activate(request: Request, app_name: str, body: AppActivateRequest
         success=result.success,
         error=result.error,
     )
+
+
+@router.post("/app/{app_name}/activate-manifest", response_model=ManifestActivateResponse)
+async def app_activate_manifest(request: Request, app_name: str) -> ManifestActivateResponse:
+    """Activate models for an app using its registered manifest.
+
+    Reads the app's manifest from the module registry, resolves capability
+    tags to actual model names via the internal model table, then loads
+    them to VRAM.
+
+    This is the preferred activation path — apps don't need to know model names.
+    """
+    from alchemy.registry import get as get_manifest
+    from alchemy.gpu.resolver import ModelResolver
+
+    manifest = get_manifest(app_name)
+    if manifest is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Module '{app_name}' not found in registry. Add a manifest.py first.",
+        )
+
+    orch = _get_orchestrator(request)
+    resolver = ModelResolver(orch._registry)
+    resolution = resolver.resolve_manifest(manifest)
+
+    # Show what was resolved
+    resolved_details = [
+        ResolvedModelInfo(
+            capability=r.requirement.capability,
+            model_name=r.model_name,
+            resolution=r.resolution,
+            available=r.available,
+            candidates=r.candidates,
+        )
+        for r in resolution.models
+    ]
+
+    if not resolution.model_names:
+        missing = resolution.missing
+        if missing:
+            return ManifestActivateResponse(
+                success=False,
+                resolved=resolved_details,
+                error=f"No models for required capabilities: {missing}",
+            )
+        return ManifestActivateResponse(success=True, resolved=resolved_details)
+
+    result = await orch.app_activate(app_name, resolution.model_names)
+    return ManifestActivateResponse(
+        success=result.success,
+        resolved=resolved_details,
+        loaded=resolution.model_names,
+        error=result.error,
+    )
+
+
+@router.post("/resolve/{module_id}", response_model=list[ResolvedModelInfo])
+async def resolve_models(request: Request, module_id: str) -> list[ResolvedModelInfo]:
+    """Dry-run: resolve a module's capabilities to model names without loading.
+
+    Use this to preview what models would be picked for an app.
+    """
+    from alchemy.registry import get as get_manifest
+    from alchemy.gpu.resolver import ModelResolver
+
+    manifest = get_manifest(module_id)
+    if manifest is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Module '{module_id}' not found in registry",
+        )
+
+    orch = _get_orchestrator(request)
+    resolver = ModelResolver(orch._registry)
+    resolution = resolver.resolve_manifest(manifest)
+
+    return [
+        ResolvedModelInfo(
+            capability=r.requirement.capability,
+            model_name=r.model_name,
+            resolution=r.resolution,
+            available=r.available,
+            candidates=r.candidates,
+        )
+        for r in resolution.models
+    ]
 
 
 @router.post("/app/{app_name}/deactivate", response_model=DemotedResponse)
