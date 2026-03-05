@@ -155,6 +155,16 @@ class WordSettings(BaseModel):
     annotate_debounce_ms: int = 4000
 
 
+class VoiceSettings(BaseModel):
+    """Voice pipeline (STT + TTS)."""
+    enabled: bool = True
+    stt_model: str = "whisper-large-v3"
+    tts_model: str = "fish-speech-s1"
+    wake_word: str = "neo"
+    vad_threshold: float = 0.5
+    silence_timeout_ms: int = 1500
+
+
 # --- Root settings (composes all groups) ---
 
 class Settings(BaseSettings):
@@ -179,6 +189,7 @@ class Settings(BaseSettings):
     gate: GateSettings = GateSettings()
     research: ResearchSettings = ResearchSettings()
     word: WordSettings = WordSettings()
+    voice: VoiceSettings = VoiceSettings()
 
     # === Flat fields (backward compat -- used by server.py and existing code) ===
 

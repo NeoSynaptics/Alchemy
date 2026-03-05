@@ -306,7 +306,7 @@ async def app_activate_manifest(request: Request, app_name: str) -> ManifestActi
             )
         return ManifestActivateResponse(success=True, resolved=resolved_details)
 
-    result = await orch.app_activate(app_name, resolution.model_names)
+    result = await orch.app_activate(app_name, resolution.model_names, module_tier=manifest.tier)
     return ManifestActivateResponse(
         success=result.success,
         resolved=resolved_details,

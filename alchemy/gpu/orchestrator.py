@@ -266,8 +266,16 @@ class StackOrchestrator:
 
     # --- App Contract ---
 
-    async def app_activate(self, app_name: str, models: list[str]) -> LoadResult:
-        """Activate models for an app. Marks them P1 USER_ACTIVE and promotes to VRAM."""
+    async def app_activate(
+        self, app_name: str, models: list[str], module_tier: str = "app",
+    ) -> LoadResult:
+        """Activate models for an app. Tier-aware priority:
+
+        - core  -> RESIDENT (P0, never evicted)
+        - infra -> USER_ACTIVE (P1)
+        - app   -> USER_ACTIVE (P1, evictable by core)
+        """
+        target_tier = ModelTier.RESIDENT if module_tier == "core" else ModelTier.USER_ACTIVE
         loaded: list[str] = []
         errors: list[str] = []
 
@@ -279,9 +287,9 @@ class StackOrchestrator:
 
             result = await self.ensure_loaded(model_name)
             if result.success:
-                # Upgrade tier to USER_ACTIVE (unless it's already RESIDENT)
-                if card.current_tier != ModelTier.RESIDENT:
-                    card.current_tier = ModelTier.USER_ACTIVE
+                # Set tier based on module priority (never downgrade RESIDENT)
+                if card.current_tier.priority > target_tier.priority:
+                    card.current_tier = target_tier
                 card.owner_app = app_name
                 loaded.append(model_name)
             else:
@@ -323,8 +331,9 @@ class StackOrchestrator:
                 )
             return LoadResult(success=True)  # No model requirements
 
-        return await self.app_activate(app_name, resolution.model_names)
-
+        return await self.app_activate(
+            app_name, resolution.model_names, module_tier=manifest.tier,
+        )
 
     async def app_deactivate(self, app_name: str) -> list[str]:
         """Deactivate an app. Demote its models back to WARM (not cold)."""

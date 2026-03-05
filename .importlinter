@@ -104,6 +104,19 @@ forbidden_modules =
     alchemy.shadow
     alchemy.agent
 
+[importlinter:contract:voice-isolation]
+name = Voice does not import from other feature modules
+type = forbidden
+source_modules =
+    alchemy.voice
+forbidden_modules =
+    alchemy.gate
+    alchemy.research
+    alchemy.desktop
+    alchemy.shadow
+    alchemy.agent
+    alchemy.word
+
 [importlinter:contract:registry-independence]
 name = Registry/manifest never imports from feature modules
 type = forbidden
