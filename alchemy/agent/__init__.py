@@ -10,3 +10,7 @@ Tier 2 (FALLBACK): Screenshot → UI-TARS-72B → coordinate-based actions → x
 For APPROVE-tier actions, the agent pauses and requests human confirmation
 before executing irreversible operations.
 """
+
+from alchemy.agent.manifest import MANIFEST
+
+__all__ = ["MANIFEST"]

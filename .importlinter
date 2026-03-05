@@ -117,6 +117,18 @@ forbidden_modules =
     alchemy.agent
     alchemy.word
 
+[importlinter:contract:agent-isolation]
+name = Agent does not import from other feature modules
+type = forbidden
+source_modules =
+    alchemy.agent
+forbidden_modules =
+    alchemy.gate
+    alchemy.research
+    alchemy.desktop
+    alchemy.word
+    alchemy.voice
+
 [importlinter:contract:registry-independence]
 name = Registry/manifest never imports from feature modules
 type = forbidden

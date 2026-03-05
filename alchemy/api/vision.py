@@ -12,7 +12,9 @@ import logging
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
+
+from alchemy.api.contract_guard import require_contract
 
 from alchemy.agent.task_manager import TaskManager
 from alchemy.agent.vision_agent import VisionAgent
@@ -33,7 +35,11 @@ from alchemy.shadow.controller import ShadowDesktopController
 from config.settings import settings
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/vision", tags=["vision"])
+router = APIRouter(
+    prefix="/vision",
+    tags=["vision"],
+    dependencies=[Depends(require_contract("agent"))],
+)
 
 
 def _get_deps(request: Request):

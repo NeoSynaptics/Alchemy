@@ -6,8 +6,12 @@ MANIFEST = ModuleManifest(
     id="agent",
     name="GUI Agent",
     description="Two-tier GUI automation: Playwright a11y tree + Qwen2.5-VL vision fallback.",
+    settings_prefix="agent_",
+    enabled_key="agent_enabled",
     requires=["adapters", "core"],
-    tier="app",
+    tier="core",
+    api_prefix="/v1",
+    api_tags=["vision"],
     models=[
         ModelRequirement(
             capability="reasoning",
@@ -16,8 +20,8 @@ MANIFEST = ModuleManifest(
             min_tier="warm",
         ),
         ModelRequirement(
-            capability="vision",
-            required=False,
+            capability="vision+clicking",
+            required=True,
             preferred_model="qwen2.5vl:7b",
             min_tier="warm",
             context_tokens=2048,
