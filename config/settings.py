@@ -59,8 +59,8 @@ class ScreenshotSettings(BaseModel):
     resize_height: int = 720
 
 
-class AgentSettings(BaseModel):
-    """Agent loop behavior."""
+class ClickSettings(BaseModel):
+    """AlchemyClick agent loop behavior."""
     max_steps: int = 50
     screenshot_interval: float = 1.0
     timeout: float = 300.0
@@ -180,7 +180,7 @@ class Settings(BaseSettings):
     auth: AuthSettings = AuthSettings()
     shadow: ShadowSettings = ShadowSettings()
     screenshot: ScreenshotSettings = ScreenshotSettings()
-    agent: AgentSettings = AgentSettings()
+    click: ClickSettings = ClickSettings()
     router: RouterSettings = RouterSettings()
     pw: PlaywrightSettings = PlaywrightSettings()
     pw_escalation: EscalationSettings = EscalationSettings()
@@ -226,14 +226,14 @@ class Settings(BaseSettings):
     screenshot_resize_width: int = 1280
     screenshot_resize_height: int = 720
 
-    # Agent
-    agent_max_steps: int = 50
-    agent_screenshot_interval: float = 1.0
-    agent_timeout: float = 300.0
-    agent_approval_timeout: float = 60.0
-    agent_history_window: int = 4
-    agent_use_streaming: bool = True
-    agent_model_routing: bool = True
+    # AlchemyClick (legacy: agent_*)
+    click_max_steps: int = 50
+    click_screenshot_interval: float = 1.0
+    click_timeout: float = 300.0
+    click_approval_timeout: float = 60.0
+    click_history_window: int = 4
+    click_use_streaming: bool = True
+    click_model_routing: bool = True
 
     # Router
     router_enabled: bool = True

@@ -3,7 +3,7 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from alchemy.agent.pw_agent import PlaywrightAgent, AgentResult, AgentStatus
+from alchemy.click.pw_agent import PlaywrightAgent, AgentResult, AgentStatus
 
 
 # --- Mock helpers ---

@@ -19,7 +19,7 @@ setup_logging()
 from fastapi.middleware.cors import CORSMiddleware
 
 from alchemy.adapters import OllamaClient
-from alchemy.agent.task_manager import TaskManager
+from alchemy.click.task_manager import TaskManager
 from alchemy.api import models_api, shadow, vision
 from alchemy.api import playwright_api
 from alchemy.api import research_api

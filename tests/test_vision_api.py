@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from alchemy.agent.task_manager import TaskManager
+from alchemy.click.task_manager import TaskManager
 from alchemy.models.ollama_client import OllamaClient
 from alchemy.schemas import ShadowStatus
 from alchemy.server import app

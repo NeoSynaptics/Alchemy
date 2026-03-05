@@ -16,8 +16,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from alchemy.api.contract_guard import require_contract
 
-from alchemy.agent.task_manager import TaskManager
-from alchemy.agent.vision_agent import VisionAgent
+from alchemy.click.task_manager import TaskManager
+from alchemy.click.vision_agent import VisionAgent
 from alchemy.clients.neotx_client import NeoTXClient
 from alchemy.models.ollama_client import OllamaClient
 from alchemy.router.context_builder import ContextBuilder
@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(
     prefix="/vision",
     tags=["vision"],
-    dependencies=[Depends(require_contract("agent"))],
+    dependencies=[Depends(require_contract("click"))],
 )
 
 
@@ -81,17 +81,17 @@ def _make_agent(
         neotx=neotx,
         task_manager=task_manager,
         model=settings.ollama_cpu_model,
-        fast_model=settings.ollama_fast_model if settings.agent_model_routing else None,
-        max_steps=settings.agent_max_steps,
-        timeout=settings.agent_timeout,
-        screenshot_interval=settings.agent_screenshot_interval,
-        approval_timeout=settings.agent_approval_timeout,
-        history_window=settings.agent_history_window,
+        fast_model=settings.ollama_fast_model if settings.click_model_routing else None,
+        max_steps=settings.click_max_steps,
+        timeout=settings.click_timeout,
+        screenshot_interval=settings.click_screenshot_interval,
+        approval_timeout=settings.click_approval_timeout,
+        history_window=settings.click_history_window,
         screen_width=width,
         screen_height=height,
         context_builder=context_builder,
-        use_streaming=settings.agent_use_streaming,
-        model_routing=settings.agent_model_routing,
+        use_streaming=settings.click_use_streaming,
+        model_routing=settings.click_model_routing,
         temperature=settings.ollama_temperature,
         max_tokens=settings.ollama_max_tokens,
     )

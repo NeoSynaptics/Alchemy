@@ -35,7 +35,7 @@ source_modules =
     alchemy.gpu
 forbidden_modules =
     alchemy.api
-    alchemy.agent
+    alchemy.click
     alchemy.gate
     alchemy.research
     alchemy.router
@@ -51,7 +51,7 @@ source_modules =
     alchemy.models
 forbidden_modules =
     alchemy.api
-    alchemy.agent
+    alchemy.click
     alchemy.gate
     alchemy.research
     alchemy.router
@@ -68,7 +68,7 @@ forbidden_modules =
     alchemy.research
     alchemy.desktop
     alchemy.shadow
-    alchemy.agent
+    alchemy.click
 
 [importlinter:contract:research-isolation]
 name = Research does not import from other feature modules
@@ -79,7 +79,7 @@ forbidden_modules =
     alchemy.gate
     alchemy.desktop
     alchemy.shadow
-    alchemy.agent
+    alchemy.click
 
 [importlinter:contract:desktop-isolation]
 name = Desktop does not import from other feature modules
@@ -90,7 +90,7 @@ forbidden_modules =
     alchemy.gate
     alchemy.research
     alchemy.shadow
-    alchemy.agent
+    alchemy.click
 
 [importlinter:contract:word-isolation]
 name = Word does not import from other feature modules
@@ -102,7 +102,7 @@ forbidden_modules =
     alchemy.research
     alchemy.desktop
     alchemy.shadow
-    alchemy.agent
+    alchemy.click
 
 [importlinter:contract:voice-isolation]
 name = Voice does not import from other feature modules
@@ -114,14 +114,14 @@ forbidden_modules =
     alchemy.research
     alchemy.desktop
     alchemy.shadow
-    alchemy.agent
+    alchemy.click
     alchemy.word
 
-[importlinter:contract:agent-isolation]
-name = Agent does not import from other feature modules
+[importlinter:contract:click-isolation]
+name = AlchemyClick does not import from other feature modules
 type = forbidden
 source_modules =
-    alchemy.agent
+    alchemy.click
 forbidden_modules =
     alchemy.gate
     alchemy.research
@@ -137,7 +137,7 @@ source_modules =
     alchemy.registry
 forbidden_modules =
     alchemy.api
-    alchemy.agent
+    alchemy.click
     alchemy.gate
     alchemy.research
     alchemy.router

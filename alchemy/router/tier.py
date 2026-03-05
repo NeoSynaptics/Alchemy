@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 
-from alchemy.agent.action_parser import classify_tier
+from alchemy.click.action_parser import classify_tier
 from alchemy.router.categories import TaskCategory
 from alchemy.schemas import ActionTier, VisionAction
 

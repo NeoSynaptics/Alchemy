@@ -1,6 +1,6 @@
 """Tests for Playwright agent prompts and formatting."""
 
-from alchemy.agent.pw_prompts import (
+from alchemy.click.pw_prompts import (
     SYSTEM_PROMPT,
     format_user_prompt,
     format_action_log_entry,

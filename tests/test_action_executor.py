@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from alchemy.agent.action_executor import ActionExecutor
+from alchemy.click.action_executor import ActionExecutor
 from alchemy.schemas import VisionAction
 
 

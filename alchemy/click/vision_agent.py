@@ -1,4 +1,4 @@
-"""Vision Agent — the core screenshot->infer->execute loop.
+"""AlchemyClick Vision Agent — the core screenshot->infer->execute loop.
 
 Uses the official UI-TARS COMPUTER_USE prompt template from ByteDance.
 Supports dual-model routing (fast 7B on GPU vs full 72B on CPU),
@@ -13,15 +13,15 @@ import logging
 import time
 from uuid import UUID
 
-from alchemy.agent.action_executor import ActionExecutor
-from alchemy.agent.action_parser import (
+from alchemy.click.action_executor import ActionExecutor
+from alchemy.click.action_parser import (
     CoordMode,
     classify_tier,
     parse_uitars_response,
     smart_resize_dimensions,
     to_vision_action,
 )
-from alchemy.agent.task_manager import TaskManager
+from alchemy.click.task_manager import TaskManager
 from alchemy.clients.neotx_client import NeoTXClient
 from alchemy.models.ollama_client import OllamaClient
 from alchemy.router.categories import TaskCategory, classify_task

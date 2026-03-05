@@ -190,12 +190,12 @@ class StackOrchestrator:
     # --- Smart Placement ---
 
     async def ensure_loaded(self, name: str) -> LoadResult:
-        """THE key method. Ensure a model is on a GPU before inference.
+        """Ensure a model is on a GPU before inference.
 
         1. Already on GPU? → done (touch LRU)
         2. Find target GPU (preferred or any with space)
         3. Enough free VRAM? → load directly
-        4. Not enough? → evict lowest-priority (never P0)
+        4. Not enough? → evict lowest-priority (app first, core last)
         5. Still not enough? → try other GPU
         6. No GPU works? → fail
         """

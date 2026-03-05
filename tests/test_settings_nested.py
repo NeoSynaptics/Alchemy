@@ -45,8 +45,8 @@ class TestNestedSettings:
         s = Settings()
         for name in [
             "ollama", "server", "auth", "shadow", "screenshot",
-            "agent", "router", "pw", "pw_escalation", "gui_actor",
-            "desktop", "gate", "research",
+            "click", "router", "pw", "pw_escalation", "gui_actor",
+            "desktop", "gate", "research", "word", "voice",
         ]:
             group = getattr(s, name)
             assert group is not None, f"Nested group {name} is None"

@@ -2,7 +2,7 @@
 
 import pytest
 
-from alchemy.agent.action_parser import (
+from alchemy.click.action_parser import (
     CoordMode,
     ParsedAction,
     parse_uitars_response,

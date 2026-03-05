@@ -5,8 +5,8 @@ from uuid import uuid4
 
 import pytest
 
-from alchemy.agent.task_manager import TaskManager
-from alchemy.agent.vision_agent import VisionAgent
+from alchemy.click.task_manager import TaskManager
+from alchemy.click.vision_agent import VisionAgent
 from alchemy.models.ollama_client import OllamaClient
 from alchemy.schemas import TaskStatus
 

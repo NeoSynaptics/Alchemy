@@ -2,7 +2,7 @@
 
 import pytest
 
-from alchemy.agent.pw_action_parser import (
+from alchemy.click.pw_action_parser import (
     PlaywrightAction,
     ParseError,
     parse_playwright_response,

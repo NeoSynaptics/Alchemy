@@ -5,7 +5,7 @@ from uuid import uuid4
 
 import pytest
 
-from alchemy.agent.task_manager import TaskManager
+from alchemy.click.task_manager import TaskManager
 from alchemy.schemas import TaskStatus
 
 

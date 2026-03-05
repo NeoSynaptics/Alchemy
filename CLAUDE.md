@@ -1,34 +1,53 @@
 # Alchemy — Claude Session Guide
 
 ## What This Is
-Core engine — CPU-side heavy lifting. Runs UI-TARS-72B for GUI interaction on a hidden shadow desktop (WSL2 + Xvfb). NEO-TX (the user-facing layer) delegates heavy work here via API.
+Core engine for the NEO stack. GPU/CPU orchestrator, click agent, voice pipeline, research browser, and more. NEO-TX (the user-facing layer) delegates heavy work here via API.
 
 ## Key Paths
-- Config: `config/settings.py`
+- Config: `config/settings.py` (nested BaseModel groups per module)
 - Server: `alchemy/server.py` (FastAPI, port 8000)
+- AlchemyClick: `alchemy/click/` (two-tier GUI automation: Playwright + vision fallback)
 - Shadow Desktop: `alchemy/shadow/` (WSL2 bridge, controller, health)
-- Vision Agent: `alchemy/agent/` (screenshot → UI-TARS → action → xdotool loop)
+- GPU Orchestrator: `alchemy/gpu/` (VRAM/RAM fleet management, model placement)
 - Models: `alchemy/models/` (CPU model lifecycle)
-- Router: `alchemy/router/` (request classification)
+- Router: `alchemy/router/` (request classification + context routing)
+- Core: `alchemy/core/` (Playwright agent, browser manager, approval gate)
 - Auth: `alchemy/security/` (bearer tokens)
 - WSL Scripts: `wsl/` (setup, start, stop, health)
 
-## Model
-- **UI-TARS-72B** → CPU (128GB RAM) → GUI visuomotor agent (~42GB, 3-5 tok/s)
+## Module Registry (13 modules)
 
-## What Alchemy Does NOT Own
-- Voice (STT/TTS) → NEO-TX (GPU)
-- User conversation → NEO-TX (14B conversational model on GPU)
-- Tray widget → NEO-TX
-- Approval gates → NEO-TX
-- GPU models → NEO-TX
+| Module | ID | Tier | Path |
+|--------|----|------|------|
+| Agent Kernel | `core` | core | `alchemy/core/` |
+| AlchemyClick | `click` | core | `alchemy/click/` |
+| Voice Pipeline | `voice` | core | `alchemy/voice/` |
+| GPU Orchestrator | `gpu` | infra | `alchemy/gpu/` |
+| LLM Adapters | `adapters` | infra | `alchemy/adapters/` |
+| Shadow Desktop | `shadow` | infra | `alchemy/shadow/` |
+| Context Router | `router` | infra | `alchemy/router/` |
+| Cloud AI Bridge | `cloud` | infra | `alchemy/cloud/` |
+| Desktop Agent | `desktop` | app | `alchemy/desktop/` |
+| Gate Reviewer | `gate` | app | `alchemy/gate/` |
+| AlchemyBrowser | `research` | app | `alchemy/research/` |
+| AlchemyWord | `word` | app | `alchemy/word/` |
+
+## GPU Fleet & Eviction
+
+- **No model is immune.** All models can be evicted from VRAM.
+- **Eviction order:** app models first → infra → core last.
+- **Evicted models go to RAM (warm)**, not disk. Fast reload when needed.
+- `module_tier` field on ModelCard controls eviction ordering.
+- `ModelTier` enum: RESIDENT(P0) > USER_ACTIVE(P1) > AGENT(P2) > WARM(P3) > COLD(P4)
 
 ## API
-- `POST /vision/analyze` → screenshot → UI-TARS → action JSON
+- `POST /vision/analyze` → screenshot → VLM → action JSON
 - `POST /vision/task` → submit multi-step GUI task
 - `POST /shadow/start|stop` → control shadow desktop
 - `GET /shadow/health` → service status
-- `GET /models` → model status + RAM usage
+- `GET /v1/modules` → module discovery + contract status
+- `POST /v1/gpu/app/{name}/activate-manifest` → resolve model contracts
+- `GET /v1/gpu/status` → GPU/RAM status
 
 ## Commands
 ```bash
@@ -41,7 +60,7 @@ make test            # Run pytest
 ```
 
 ## NEO-TX Integration
-NEO-TX (port 8100) sends GUI tasks to Alchemy. For APPROVE-tier actions, the agent loop pauses and sends an approval request back to NEO-TX before executing.
+NEO-TX (port 8100) sends GUI tasks to Alchemy. For APPROVE-tier actions, the click agent loop pauses and sends an approval request back to NEO-TX before executing.
 
 ## Module Conventions (MANDATORY)
 

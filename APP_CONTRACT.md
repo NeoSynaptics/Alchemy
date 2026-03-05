@@ -187,7 +187,7 @@ Response includes:
 | Desktop Agent | `desktop` | vision | — |
 | Gate Reviewer | `gate` | reasoning | — |
 | AlchemyBrowser | `research` | reasoning | embedding |
-| GUI Agent | `agent` | reasoning | vision |
+| AlchemyClick | `click` | reasoning | vision+clicking |
 | Context Router | `router` | — | classification |
 | Cloud AI Bridge | `cloud` | — | — (env_keys only) |
 | Shadow Desktop | `shadow` | — | — |

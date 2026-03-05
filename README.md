@@ -1,8 +1,8 @@
 # Alchemy
 
-**Core engine — CPU-side heavy lifting, shadow desktop, UI-TARS vision agent.**
+**Core engine — GPU/CPU orchestrator, AlchemyClick (GUI automation), voice pipeline, and more.**
 
-Alchemy is the slow, smart backend. It runs UI-TARS-72B on CPU (128GB RAM) for GUI interaction — analyzing screenshots, deciding where to click, executing actions on a hidden virtual desktop. NEO-TX (the user-facing layer) delegates heavy work here.
+Alchemy is the core backend for the NEO stack. It manages GPU/CPU model fleets, runs AlchemyClick for GUI automation (Playwright + vision fallback), and hosts modular AI apps. NEO-TX (the user-facing layer) delegates heavy work here via API.
 
 ## Design Principles
 
@@ -15,8 +15,8 @@ Alchemy is the slow, smart backend. It runs UI-TARS-72B on CPU (128GB RAM) for G
 | Responsibility | Detail |
 |----------------|--------|
 | **Shadow Desktop** | WSL2 + Xvfb + Fluxbox + x11vnc + noVNC — hidden virtual desktop |
-| **Vision Agent** | UI-TARS-72B analyzes screenshots → outputs action JSON |
-| **Agent Loop** | screenshot → UI-TARS → parse action → xdotool → repeat |
+| **AlchemyClick** | Two-tier GUI automation: Playwright a11y tree + Qwen2.5-VL vision fallback |
+| **Click Loop** | screenshot → VLM → parse action → xdotool → repeat |
 | **Model Management** | CPU model lifecycle (load/unload/health) |
 | **API** | FastAPI on port 8000 — NEO-TX connects here |
 | **Auth** | Bearer tokens |
@@ -37,7 +37,7 @@ Alchemy is the slow, smart backend. It runs UI-TARS-72B on CPU (128GB RAM) for G
 |-------|------|----------|-------|---------|
 | **UI-TARS-72B** (Q4_K_M) | ~42GB | CPU (128GB RAM) | 3-5 tok/s | GUI agent — screenshot in, click/type out |
 
-UI-TARS (ByteDance, open-weight) is purpose-built for computer use. 72B is slow on CPU but accurate — each output is a short action JSON, not a novel. The 128GB RAM is the moat.
+PW/VLM (ByteDance, open-weight) is purpose-built for computer use. 72B is slow on CPU but accurate — each output is a short action JSON, not a novel. The 128GB RAM is the moat.
 
 ## Architecture
 
@@ -47,10 +47,10 @@ UI-TARS (ByteDance, open-weight) is purpose-built for computer use. 72B is slow 
 │                 port 8000                     │
 │                                               │
 │  ┌──────────┐  ┌──────────┐  ┌────────────┐  │
-│  │  Shadow  │  │  Vision  │  │   Model    │  │
-│  │  Desktop │  │  Agent   │  │   Manager  │  │
+│  │  Shadow  │  │  Alchemy │  │   Model    │  │
+│  │  Desktop │  │  Click   │  │   Manager  │  │
 │  │          │  │          │  │            │  │
-│  │  WSL2    │  │  UI-TARS │  │  load      │  │
+│  │  WSL2    │  │  PW/VLM │  │  load      │  │
 │  │  Xvfb    │  │  loop    │  │  unload    │  │
 │  │  xdotool │  │  actions │  │  health    │  │
 │  └────┬─────┘  └────┬─────┘  └─────┬──────┘  │
@@ -72,9 +72,9 @@ UI-TARS (ByteDance, open-weight) is purpose-built for computer use. 72B is slow 
 # Health
 GET  /health                    → {"status": "ok", "model": "ui-tars:72b"}
 
-# Vision Agent
-POST /vision/analyze            → Send screenshot, get action JSON from UI-TARS
-POST /vision/task               → Submit a full GUI task (multi-step agent loop)
+# AlchemyClick
+POST /vision/analyze            → Send screenshot, get action JSON
+POST /vision/task               → Submit a full GUI task (multi-step click loop)
 GET  /vision/task/{id}/status   → Check task progress
 
 # Shadow Desktop

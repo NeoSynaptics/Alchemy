@@ -2,7 +2,7 @@
 
 import pytest
 
-from alchemy.agent.pw_action_parser import PlaywrightAction
+from alchemy.click.pw_action_parser import PlaywrightAction
 from alchemy.approval.gate import ApprovalGate, is_irreversible
 
 
