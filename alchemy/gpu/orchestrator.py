@@ -159,10 +159,6 @@ class StackOrchestrator:
         if card is None:
             return False
 
-        if card.current_tier == ModelTier.RESIDENT:
-            logger.warning("Refusing to unload P0 resident model: %s", name)
-            return False
-
         if card.current_location.is_gpu:
             await self._backend_unload(card)
 
@@ -179,9 +175,7 @@ class StackOrchestrator:
         if card is None:
             return False
 
-        if card.current_tier == ModelTier.RESIDENT:
-            logger.warning("Refusing to demote P0 resident model: %s", name)
-            return False
+        # All models can be demoted — core models reload fast from RAM
 
         if card.current_location.is_gpu:
             await self._backend_unload(card)
@@ -269,13 +263,14 @@ class StackOrchestrator:
     async def app_activate(
         self, app_name: str, models: list[str], module_tier: str = "app",
     ) -> LoadResult:
-        """Activate models for an app. Tier-aware priority:
+        """Activate models for an app. All modules get USER_ACTIVE (P1).
 
-        - core  -> RESIDENT (P0, never evicted)
-        - infra -> USER_ACTIVE (P1)
-        - app   -> USER_ACTIVE (P1, evictable by core)
+        Module tier affects eviction ORDER, not eviction immunity:
+        - core models are evicted last among P1 peers
+        - app models are evicted first
+        - All models CAN be evicted when VRAM is needed
+        - Evicted models go to RAM (warm), not disk -- fast reload
         """
-        target_tier = ModelTier.RESIDENT if module_tier == "core" else ModelTier.USER_ACTIVE
         loaded: list[str] = []
         errors: list[str] = []
 
@@ -287,10 +282,11 @@ class StackOrchestrator:
 
             result = await self.ensure_loaded(model_name)
             if result.success:
-                # Set tier based on module priority (never downgrade RESIDENT)
-                if card.current_tier.priority > target_tier.priority:
-                    card.current_tier = target_tier
+                # All activated models get USER_ACTIVE (unless already RESIDENT by fleet config)
+                if card.current_tier != ModelTier.RESIDENT:
+                    card.current_tier = ModelTier.USER_ACTIVE
                 card.owner_app = app_name
+                card.module_tier = module_tier  # used for eviction ordering
                 loaded.append(model_name)
             else:
                 errors.append(f"{model_name}: {result.error}")
@@ -343,10 +339,6 @@ class StackOrchestrator:
         for name in model_names:
             card = self._registry.get(name)
             if card is None:
-                continue
-
-            # Don't demote P0 residents
-            if card.default_tier == ModelTier.RESIDENT:
                 continue
 
             card.owner_app = None
@@ -402,7 +394,12 @@ class StackOrchestrator:
     async def _make_room(
         self, gpu_index: int, needed_mb: int, requester_tier: ModelTier
     ) -> list[str] | None:
-        """Evict models from GPU until needed_mb is free. Returns evicted names, or None if impossible."""
+        """Evict models from GPU until needed_mb is free.
+
+        No model is immune. Eviction order from eviction_candidates():
+        app models first, then infra, then core. Within each: LRU first.
+        Evicted models go to RAM (warm) for fast reload, not disk.
+        """
         snap = await self._monitor.snapshot()
         gpu = next((g for g in snap.gpus if g.index == gpu_index), None)
         if gpu is None:
@@ -417,8 +414,8 @@ class StackOrchestrator:
         evicted: list[str] = []
         candidates = self._registry.eviction_candidates(gpu_index)
 
+        # Pass 1: evict lower-priority models first
         for candidate in candidates:
-            # Only evict models with lower priority (higher tier number) than the requester
             if candidate.current_tier.priority <= requester_tier.priority:
                 continue
 
@@ -432,14 +429,11 @@ class StackOrchestrator:
             if available >= needed_mb:
                 return evicted
 
-        # Still not enough — check if evicting same-tier (except P0) works
+        # Pass 2: evict same-tier and higher-priority models if still short
+        # (candidates already sorted: app before core, LRU first)
         for candidate in candidates:
             if candidate.name in evicted:
                 continue
-            if candidate.current_tier == ModelTier.RESIDENT:
-                continue  # NEVER evict P0
-            if candidate.current_tier.priority < requester_tier.priority:
-                continue  # Don't evict higher-priority models
 
             await self._backend_unload(candidate)
             self._registry.update_location(
@@ -451,7 +445,7 @@ class StackOrchestrator:
             if available >= needed_mb:
                 return evicted
 
-        return None  # Impossible
+        return None  # Impossible — not enough total VRAM
 
     async def _backend_load(self, card: ModelCard, gpu_index: int) -> bool:
         """Actually load a model via its backend."""

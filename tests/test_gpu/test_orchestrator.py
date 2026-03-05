@@ -126,14 +126,15 @@ async def test_unload_model():
 
 
 @pytest.mark.asyncio
-async def test_unload_refuses_resident():
-    """P0 RESIDENT models cannot be unloaded."""
+async def test_unload_allows_resident():
+    """No model is immune — even RESIDENT can be unloaded."""
     card = _card("voice", tier=ModelTier.RESIDENT, location=ModelLocation.GPU_0)
     orch = await _make_orchestrator(cards=[card], auto_start=True)
 
     ok = await orch.unload_model("voice")
-    assert not ok
-    assert card.current_location == ModelLocation.GPU_0  # Unchanged
+    assert ok
+    assert card.current_location == ModelLocation.DISK
+    assert card.current_tier == ModelTier.COLD
 
 
 @pytest.mark.asyncio
@@ -149,14 +150,15 @@ async def test_demote_to_warm():
 
 
 @pytest.mark.asyncio
-async def test_demote_refuses_resident():
-    """P0 RESIDENT models cannot be demoted."""
+async def test_demote_allows_resident():
+    """No model is immune — even RESIDENT can be demoted to RAM."""
     card = _card("core", tier=ModelTier.RESIDENT, location=ModelLocation.GPU_1)
     orch = await _make_orchestrator(cards=[card], auto_start=True)
 
     ok = await orch.demote("core")
-    assert not ok
-    assert card.current_location == ModelLocation.GPU_1
+    assert ok
+    assert card.current_location == ModelLocation.CPU_RAM
+    assert card.current_tier == ModelTier.WARM
 
 
 @pytest.mark.asyncio
@@ -200,8 +202,8 @@ async def test_ensure_loaded_evicts_lower_priority():
 
 
 @pytest.mark.asyncio
-async def test_ensure_loaded_refuses_to_evict_resident():
-    """Cannot evict P0 RESIDENT even if no other room."""
+async def test_ensure_loaded_can_evict_resident():
+    """No model is immune — RESIDENT can be evicted to make room."""
     # GPU 0 full with resident model
     resident = _card("voice", vram=11000, tier=ModelTier.RESIDENT,
                      location=ModelLocation.GPU_0)
@@ -210,24 +212,24 @@ async def test_ensure_loaded_refuses_to_evict_resident():
     orch = await _make_orchestrator(cards=[resident, newcomer], auto_start=True)
     result = await orch.load_model("newcomer", gpu=0)
 
-    assert not result.success
-    assert resident.current_location == ModelLocation.GPU_0  # Still there
+    assert result.success
+    # Resident evicted to RAM (warm), not disk
+    assert resident.current_location == ModelLocation.CPU_RAM
+    assert resident.current_tier == ModelTier.WARM
 
 
 @pytest.mark.asyncio
 async def test_ensure_loaded_tries_other_gpu():
-    """If preferred GPU is full, tries the other GPU."""
-    # GPU 1 is full with resident
-    resident = _card("brain", vram=15000, tier=ModelTier.RESIDENT,
-                     location=ModelLocation.GPU_1)
-    newcomer = _card("coder", vram=4000, tier=ModelTier.AGENT, gpu=1)
+    """If model exceeds preferred GPU's total capacity, falls back to the other."""
+    # GPU 0 = 12288MB total. Model prefers GPU 0 but needs 13000MB — doesn't fit.
+    # GPU 1 = 16384MB total — fits fine.
+    newcomer = _card("bigmodel", vram=13000, tier=ModelTier.AGENT, gpu=0)
 
-    orch = await _make_orchestrator(cards=[resident, newcomer], auto_start=True)
-    result = await orch.ensure_loaded("coder")
+    orch = await _make_orchestrator(cards=[newcomer], auto_start=True)
+    result = await orch.ensure_loaded("bigmodel")
 
     assert result.success
-    # Should have fallen back to GPU 0 which has room
-    assert result.location == ModelLocation.GPU_0
+    assert result.location == ModelLocation.GPU_1  # Fell back to GPU 1
 
 
 @pytest.mark.asyncio
@@ -259,16 +261,17 @@ async def test_app_deactivate():
 
 
 @pytest.mark.asyncio
-async def test_app_deactivate_preserves_residents():
-    """Deactivating an app doesn't demote P0 resident models."""
+async def test_app_deactivate_demotes_all_models():
+    """Deactivating an app demotes ALL models, including former residents."""
     card = _card("voice", tier=ModelTier.RESIDENT, location=ModelLocation.GPU_0)
     card.owner_app = "core"
     orch = await _make_orchestrator(cards=[card], auto_start=True)
     orch._app_models["core"] = ["voice"]
 
     demoted = await orch.app_deactivate("core")
-    assert "voice" not in demoted
-    assert card.current_location == ModelLocation.GPU_0
+    assert "voice" in demoted
+    assert card.current_location == ModelLocation.CPU_RAM
+    assert card.current_tier == ModelTier.WARM
 
 
 @pytest.mark.asyncio

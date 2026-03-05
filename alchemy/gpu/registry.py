@@ -62,6 +62,9 @@ class ModelBackend(str, Enum):
     SUBPROCESS = "subprocess"
 
 
+_MODULE_TIER_EVICTION_ORDER = {"app": 0, "infra": 1, "core": 2}
+
+
 class ModelCard(BaseModel):
     """A model in the fleet with its placement and priority metadata."""
 
@@ -78,6 +81,7 @@ class ModelCard(BaseModel):
     capabilities: list[str] = Field(default_factory=list)
     last_used: datetime | None = None
     owner_app: str | None = None
+    module_tier: str = "app"  # "core" | "infra" | "app" — affects eviction order, not immunity
 
     def touch(self) -> None:
         """Update last_used timestamp."""
@@ -131,14 +135,22 @@ class ModelRegistry:
         return [m for m in self._models.values() if capability in m.capabilities]
 
     def eviction_candidates(self, gpu_index: int) -> list[ModelCard]:
-        """Models on this GPU sorted for eviction: highest tier priority (most evictable) first,
-        then least-recently-used within same tier. P0 RESIDENT models are excluded."""
+        """Models on this GPU sorted for eviction. No model is immune.
+
+        Eviction order (first evicted → last evicted):
+        1. Higher tier number first (WARM > AGENT > USER_ACTIVE > RESIDENT)
+        2. Within same tier: app models before infra before core
+        3. Within same module tier: least-recently-used first
+
+        Core models are evicted LAST, but they CAN be evicted.
+        Evicted models go to RAM (warm), not disk -- fast reload.
+        """
         on_gpu = self.models_on_gpu(gpu_index)
-        evictable = [m for m in on_gpu if m.current_tier != ModelTier.RESIDENT]
         return sorted(
-            evictable,
+            on_gpu,
             key=lambda m: (
-                -m.current_tier.priority,  # Higher priority number = more evictable = first
+                -m.current_tier.priority,  # Higher number = more evictable = first
+                _MODULE_TIER_EVICTION_ORDER.get(m.module_tier, 0),  # app=0, core=2
                 m.last_used or datetime.min.replace(tzinfo=timezone.utc),  # Older = first
             ),
         )

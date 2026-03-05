@@ -137,8 +137,8 @@ def test_find_by_capability():
     assert len(clicking) == 1
 
 
-def test_eviction_candidates_excludes_residents():
-    """P0 RESIDENT models are never eviction candidates."""
+def test_eviction_candidates_includes_all_models():
+    """All models are eviction candidates — no immunity. Ordered by priority."""
     reg = ModelRegistry()
     reg.register(_card("resident", tier=ModelTier.RESIDENT, location=ModelLocation.GPU_0))
     reg.register(_card("agent", tier=ModelTier.AGENT, location=ModelLocation.GPU_0))
@@ -146,9 +146,11 @@ def test_eviction_candidates_excludes_residents():
 
     candidates = reg.eviction_candidates(0)
     names = [c.name for c in candidates]
-    assert "resident" not in names
+    assert "resident" in names
     assert "agent" in names
     assert "user" in names
+    # RESIDENT should be last (evicted last)
+    assert names.index("resident") > names.index("agent")
 
 
 def test_eviction_candidates_sorted_by_tier():
