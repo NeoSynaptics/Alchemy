@@ -78,6 +78,11 @@ class Settings(BaseSettings):
     pw_escalation_complexity_threshold: int = 60  # Ref count that triggers escalation
 
 
+    # --- Gate (Claude Code auto-approve) ---
+    gate_enabled: bool = True
+    gate_model: str = "qwen3:14b"  # Same model, think:false mode for speed
+    gate_timeout: float = 5.0  # Max inference time (seconds)
+
     # --- Research (AlchemyBrowser) ---
     research_enabled: bool = True
     research_model: str = "qwen3:14b"

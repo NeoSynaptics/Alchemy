@@ -22,6 +22,7 @@ from alchemy.agent.task_manager import TaskManager
 from alchemy.api import models_api, shadow, vision
 from alchemy.api import playwright_api
 from alchemy.api import research_api
+from alchemy.api import gate_api
 from alchemy.router.environment import EnvironmentDetector
 from alchemy.shadow.controller import ShadowDesktopController
 from alchemy.shadow.wsl import WslRunner
@@ -139,6 +140,19 @@ async def lifespan(app: FastAPI):
         app.state.browser_manager = None
         app.state.pw_agent = None
 
+    # --- Gate (Claude Code auto-approve) ---
+    if settings.gate_enabled:
+        from alchemy.gate import GateReviewer
+
+        app.state.gate_reviewer = GateReviewer(
+            ollama_client=ollama,
+            model=settings.gate_model,
+            timeout=settings.gate_timeout,
+        )
+        logger.info("Gate reviewer ready (model=%s)", settings.gate_model)
+    else:
+        app.state.gate_reviewer = None
+
     # Detect environment for context router
     if settings.router_enabled:
         detector = EnvironmentDetector(wsl=wsl if wsl_ok else None)
@@ -184,6 +198,7 @@ app.include_router(shadow.router, prefix="/v1")
 app.include_router(models_api.router, prefix="/v1")
 app.include_router(playwright_api.router, prefix="/v1")
 app.include_router(research_api.router, prefix="/v1")
+app.include_router(gate_api.router, prefix="/gate")
 
 
 @app.get("/health")
@@ -192,9 +207,11 @@ async def health():
     ollama_ok = getattr(app.state, "ollama_client", None) is not None
     pw_ok = getattr(app.state, "pw_agent", None) is not None
     browser_ok = getattr(app.state, "browser_manager", None) is not None
+    gate_ok = getattr(app.state, "gate_reviewer", None) is not None
     return {
         "status": "ok", "version": "0.3.0",
         "wsl_available": wsl_ok, "ollama_connected": ollama_ok,
         "playwright_agent": pw_ok, "browser_ready": browser_ok,
         "research_enabled": settings.research_enabled,
+        "gate_enabled": gate_ok,
     }
