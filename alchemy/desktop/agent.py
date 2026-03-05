@@ -2,14 +2,22 @@
 
 Screenshot → Qwen2.5-VL 7B → action → repeat.
 
-Uses the same vision model prompt format as the Tier 1.5 escalation system.
-Supports both text-based Action: format and Qwen2.5-VL native JSON point format.
+PROVEN WORKING (2026-03-05). Do NOT change the coordinate system or prompt
+format without re-testing end-to-end on a live desktop.
+
+Key facts (hard-won through debugging):
+    - Qwen2.5-VL outputs IMAGE PIXEL coordinates, NOT 0-1000 normalized.
+    - Coordinates are scaled: screen_x = point_x / image_width * screen_width
+    - Must use SINGLE user message (Ollama VLMs crash with system role + images).
+    - Short prompts give better coordinate accuracy than long UI-TARS templates.
+    - Screenshot at 1280x720 for speed; scaling to real screen (1920x1080) is automatic.
+    - num_ctx=8192 minimum (2048 causes garbage output with images).
 
 Flow:
-    1. pyautogui.screenshot() → JPEG bytes
-    2. OllamaClient.chat(images=[bytes]) → "Thought: ... Action: click(start_box='(X,Y)')"
-    3. Parse response → scale coordinates (resized → screen)
-    4. SendInput click(x, y)
+    1. pyautogui.screenshot() → JPEG bytes (1280x720)
+    2. OllamaClient.chat(images=[bytes]) → 'Thought: ... Action: click {"point_2d": [x, y]}'
+    3. Parse response → scale image pixel coords → screen pixels
+    4. SendInput click(x, y) via ghost cursor
     5. Repeat until done or max_steps
 """
 
@@ -29,32 +37,20 @@ logger = logging.getLogger(__name__)
 
 # --- Prompt ---
 
-_DESKTOP_PROMPT = """\
-You are a desktop automation agent. You see a screenshot of a Windows desktop and perform actions.
+# Minimal prompt for Qwen2.5-VL native grounding.
+# Keep it short — long prompts degrade coordinate accuracy at 7B.
+_SYSTEM_PROMPT = """\
+You are a GUI agent. Look at the screenshot and perform the requested action.
+Output format: Thought: <reasoning> Action: <action>
+For clicks, output: Action: click {"point_2d": [x, y]}
+For typing, output: Action: type "text"
+For hotkeys, output: Action: hotkey key1+key2
+For scrolling, output: Action: scroll up/down
+When done, output: Action: done"""
 
-Task: {task}
+_USER_PROMPT = """\
 {context}
-The screenshot is {width}x{height} pixels.
-
-IMPORTANT RULES:
-- Click precisely on buttons, links, or input fields you can see.
-- After clicking an input field, use type() to enter text.
-- Do NOT repeat the same action. If you already clicked something, do something different next.
-- When the task is complete, use finished().
-
-Action Space:
-click(start_box="(X,Y)")  — click an element at pixel position
-type(content="text to type")  — type text into the focused element
-scroll(start_box="(X,Y)", direction="down or up")  — scroll
-hotkey(key="ctrl+c")  — press a key combination
-wait()  — wait for something to load
-finished(content="done")  — task is complete
-
-Where X is horizontal pixel (0-{width}) and Y is vertical pixel (0-{height}).
-
-Reply with exactly:
-Thought: [what you see, what to do next]
-Action: [one action]"""
+Task: {task}"""
 
 
 # --- Response Parsing ---
@@ -116,10 +112,11 @@ class DesktopAgent:
         self,
         ollama_client,
         controller: DesktopController,
-        model: str = "minicpm-v",
+        model: str = "qwen2.5vl:7b",
         max_steps: int = 20,
         temperature: float = 0.0,
         max_tokens: int = 384,
+        num_ctx: int = 8192,
     ):
         self._ollama = ollama_client
         self._controller = controller
@@ -127,6 +124,7 @@ class DesktopAgent:
         self._max_steps = max_steps
         self._temperature = temperature
         self._max_tokens = max_tokens
+        self._num_ctx = num_ctx
 
     async def run(self, task: str) -> DesktopTaskResult:
         """Execute a desktop automation task.
@@ -154,27 +152,26 @@ class DesktopAgent:
                     error=f"Screenshot failed: {e}",
                 )
 
-            # 2. Build prompt
+            # 2. Build prompt — MUST be single user message (VLMs crash with system+image)
             context_parts = []
             if recent_actions:
-                context_parts.append("Recent actions (do NOT repeat these):")
+                context_parts.append("## Action History")
                 for a in recent_actions[-5:]:
-                    context_parts.append(f"  - {a}")
+                    context_parts.append(f"- {a}")
             context = "\n".join(context_parts)
-            if context:
-                context = f"\n{context}\n"
 
-            img_w = self._controller.image_width
-            img_h = self._controller.image_height
-            prompt = _DESKTOP_PROMPT.format(
+            user_prompt = _USER_PROMPT.format(
                 task=task,
                 context=context,
-                width=img_w,
-                height=img_h,
             )
 
-            # 3. Inference
-            messages = [{"role": "user", "content": prompt}]
+            # Merge system + user into one message (Ollama VLMs crash with system role + images)
+            full_prompt = _SYSTEM_PROMPT + "\n\n" + user_prompt
+
+            # 3. Inference — single user message with screenshot attached
+            messages = [
+                {"role": "user", "content": full_prompt},
+            ]
             t_infer = time.monotonic()
 
             try:
@@ -185,7 +182,7 @@ class DesktopAgent:
                     options={
                         "temperature": self._temperature,
                         "num_predict": self._max_tokens,
-                        "num_ctx": 2048,
+                        "num_ctx": self._num_ctx,
                     },
                 )
             except Exception as e:
@@ -233,8 +230,11 @@ class DesktopAgent:
                     total_ms=(time.monotonic() - t0) * 1000,
                 )
 
-            # 6. Scale coordinates from image space → actual screen
+            # 6. Scale coordinates from image pixels → actual screen pixels
+            #    Qwen2.5-VL outputs coords in image pixel space, not 0-1000.
             screen = self._controller.screen
+            img_w = self._controller.image_width
+            img_h = self._controller.image_height
             scaled_x, scaled_y = None, None
             if x is not None and y is not None:
                 scaled_x = round(x / img_w * screen.width)
@@ -251,8 +251,8 @@ class DesktopAgent:
                 exec_ms = (time.monotonic() - t_exec) * 1000
 
                 action_sig = f"{action_type}"
-                if scaled_x is not None:
-                    action_sig += f"@({scaled_x},{scaled_y})"
+                if x is not None and y is not None:
+                    action_sig += f" at ({x},{y})"
                 if text:
                     action_sig += f" '{text[:30]}'"
                 recent_actions.append(action_sig)
@@ -337,7 +337,13 @@ def _parse_response(raw: str) -> tuple[str, int | None, int | None, str | None, 
     if thought_match:
         thought = thought_match.group(1).strip()
 
-    # Try standard format first: Action: click(start_box="(X,Y)")
+    # Try Qwen2.5-VL native JSON point format FIRST: {"point_2d": [X, Y]}
+    # This is the most accurate format for Qwen2.5-VL.
+    json_result = _parse_qwen_vl_json(raw, thought)
+    if json_result:
+        return json_result
+
+    # Try standard format: Action: click(start_box="(X,Y)")
     action_match = _ACTION_RE.search(raw)
 
     # Try alternate format: Action: click@(X,Y) — minicpm-v sometimes uses this
@@ -354,11 +360,6 @@ def _parse_response(raw: str) -> tuple[str, int | None, int | None, str | None, 
                 "wait": "wait", "finished": "done",
             }
             return action_map.get(action_type_raw, action_type_raw), at_x, at_y, None, None, thought
-
-        # Try Qwen2.5-VL native JSON point format: {"point_2d": [X, Y]}
-        json_result = _parse_qwen_vl_json(raw, thought)
-        if json_result:
-            return json_result
 
         raise ValueError(f"No Action: found in: {raw[:200]!r}")
 
@@ -406,13 +407,49 @@ def _parse_response(raw: str) -> tuple[str, int | None, int | None, str | None, 
 _POINT_JSON_RE = re.compile(r'\{[^{}]*"point_2d"\s*:\s*\[([^\]]+)\][^{}]*\}')
 
 
+# Parse "Action: click/double_click/etc" before JSON or other content
+_ACTION_NAME_RE = re.compile(r"Action:\s*(\w+)")
+# Parse "Action: type "text"" or "Action: type 'text'"
+_ACTION_TYPE_TEXT_RE = re.compile(r'Action:\s*type\s+["\'](.+?)["\']', re.MULTILINE)
+# Parse "Action: hotkey key1+key2"
+_ACTION_HOTKEY_RE = re.compile(r"Action:\s*hotkey\s+(.+?)$", re.MULTILINE)
+# Parse "Action: scroll up/down"
+_ACTION_SCROLL_RE = re.compile(r"Action:\s*scroll\s+(up|down|left|right)", re.MULTILINE)
+
+
 def _parse_qwen_vl_json(
     raw: str, thought: str,
-) -> tuple[str, int, int, None, None, str] | None:
+) -> tuple[str, int | None, int | None, str | None, str | None, str] | None:
     """Try to parse Qwen2.5-VL's native JSON point format.
 
     Returns (action_type, x, y, text, direction, thought) or None.
     """
+    # Check for non-coordinate actions first
+    action_name_match = _ACTION_NAME_RE.search(raw)
+    action_name = action_name_match.group(1) if action_name_match else None
+
+    # Handle "done" / "wait" (no coordinates needed)
+    if action_name in ("done", "finished"):
+        return "done", None, None, None, None, thought
+    if action_name == "wait":
+        return "wait", None, None, None, None, thought
+
+    # Handle "type" with text
+    type_match = _ACTION_TYPE_TEXT_RE.search(raw)
+    if type_match:
+        return "type", None, None, type_match.group(1), None, thought
+
+    # Handle "hotkey"
+    hotkey_match = _ACTION_HOTKEY_RE.search(raw)
+    if hotkey_match:
+        return "hotkey", None, None, hotkey_match.group(1).strip(), None, thought
+
+    # Handle "scroll"
+    scroll_match = _ACTION_SCROLL_RE.search(raw)
+    if scroll_match:
+        return "scroll", None, None, None, scroll_match.group(1), thought
+
+    # Try point_2d JSON
     match = _POINT_JSON_RE.search(raw)
     if not match:
         return None
@@ -428,6 +465,14 @@ def _parse_qwen_vl_json(
 
         x = int(float(coords[0]))
         y = int(float(coords[1]))
-        return "click", x, y, None, None, thought or f"[Qwen2.5-VL] {label}"
+
+        # Determine action type from Action: line
+        action_map = {
+            "click": "click", "double_click": "double_click",
+            "right_click": "right_click", "left_double": "double_click",
+            "right_single": "right_click",
+        }
+        act = action_map.get(action_name, "click") if action_name else "click"
+        return act, x, y, None, None, thought or f"[Qwen2.5-VL] {label}"
     except (json.JSONDecodeError, ValueError, TypeError):
         return None
