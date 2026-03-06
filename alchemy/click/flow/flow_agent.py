@@ -21,11 +21,9 @@ from alchemy.click.flow.action_executor import ActionExecutor
 from alchemy.click.flow.action_parser import (
     CoordMode,
     classify_tier,
-    parse_uitars_response,
-    smart_resize_dimensions,
+    parse_response,
     to_vision_action,
 )
-from alchemy.click.flow.omniparser import OmniParser, ParseResult
 from alchemy.schemas import ActionTier, VisionAction, VisionAnalyzeResponse
 
 logger = logging.getLogger(__name__)
@@ -73,11 +71,11 @@ class FlowAgent:
         model: str = "qwen2.5vl:7b",
         screen_width: int = 1920,
         screen_height: int = 1080,
-        coord_mode: CoordMode = CoordMode.NORMALIZED,
+        image_width: int = 1280,
+        image_height: int = 720,
         use_streaming: bool = True,
         temperature: float = 0.0,
-        max_tokens: int = 384,
-        omniparser: OmniParser | None = None,
+        max_tokens: int = 512,
     ) -> None:
         self._ollama = ollama
         self._screen = screen
@@ -85,22 +83,14 @@ class FlowAgent:
         self._model = model
         self._screen_width = screen_width
         self._screen_height = screen_height
-        self._coord_mode = coord_mode
+        self._image_width = image_width
+        self._image_height = image_height
         self._use_streaming = use_streaming
         self._temperature = temperature
         self._max_tokens = max_tokens
-        self._omniparser = omniparser
-        self._last_parse: ParseResult | None = None
-
-        # Pre-compute resized dimensions for absolute mode
-        self._resized_w, self._resized_h = 0, 0
-        if coord_mode == CoordMode.ABSOLUTE:
-            self._resized_w, self._resized_h = smart_resize_dimensions(
-                screen_width, screen_height,
-            )
 
     def _get_options(self) -> dict:
-        opts: dict = {}
+        opts: dict = {"num_ctx": 8192}
         if self._temperature is not None:
             opts["temperature"] = self._temperature
         if self._max_tokens:
@@ -114,13 +104,7 @@ class FlowAgent:
         messages: list[dict] | None = None,
         screenshot: bytes | None = None,
     ) -> tuple[VisionAction, str, float]:
-        """Screenshot → OmniParser (fast) → VLM (fallback) → parsed action.
-
-        If OmniParser is enabled:
-        1. Run YOLO+OCR detection (~200-500ms)
-        2. Try to match goal directly to a detected element (fast path)
-        3. If no match, inject element map as context for VLM
-        4. Optionally verify VLM output against detected elements
+        """Screenshot → VLM → parsed action.
 
         Returns (action, raw_response, inference_ms).
         """
@@ -129,78 +113,22 @@ class FlowAgent:
 
         start = time.monotonic()
 
-        # OmniParser fast perception pass
-        omni_context = ""
-        if self._omniparser is not None:
-            parse_result = await self._omniparser.parse(screenshot)
-            self._last_parse = parse_result
-
-            # Fast path: direct element match
-            matched = self._omniparser.match_goal(parse_result.elements, goal)
-            if matched is not None:
-                elapsed_ms = (time.monotonic() - start) * 1000
-                action = VisionAction(
-                    action="click",
-                    x=matched.center_x,
-                    y=matched.center_y,
-                    reasoning=f"OmniParser direct match: \"{matched.label}\" "
-                    f"({matched.element_type}, conf={matched.confidence:.2f})",
-                    tier=ActionTier.AUTO,
-                )
-                raw_text = (
-                    f"Thought: OmniParser detected element \"{matched.label}\" "
-                    f"matching goal. Clicking directly.\n"
-                    f"Action: click(start_box='({matched.center_x},{matched.center_y})')"
-                )
-                logger.info(
-                    "OmniParser fast path: %r → (%d, %d) in %.0fms",
-                    matched.label, matched.center_x, matched.center_y, elapsed_ms,
-                )
-                return action, raw_text, elapsed_ms
-
-            # No direct match — enrich VLM context with element map
-            omni_context = self._omniparser.to_prompt_context(parse_result.elements)
-
-        # VLM inference (standard path, optionally context-enriched)
+        # VLM inference
         if messages is None:
-            if omni_context:
-                messages = [{"role": "user", "content": f"{goal}\n\n{omni_context}"}]
-            else:
-                messages = [{"role": "user", "content": goal}]
+            messages = [{"role": "user", "content": goal}]
 
         options = self._get_options()
         raw_text = await self._infer(messages, screenshot, options)
         elapsed_ms = (time.monotonic() - start) * 1000
 
-        parsed = parse_uitars_response(raw_text)
+        parsed = parse_response(raw_text)
         action = to_vision_action(
             parsed, self._screen_width, self._screen_height,
-            coord_mode=self._coord_mode,
-            resized_width=self._resized_w,
-            resized_height=self._resized_h,
+            coord_mode=CoordMode.IMAGE_PIXEL,
+            image_width=self._image_width,
+            image_height=self._image_height,
         )
         action.tier = classify_tier(action)
-
-        # Post-VLM verification: check if VLM coords land on a known element
-        if (
-            self._omniparser is not None
-            and self._last_parse is not None
-            and action.x is not None
-            and action.y is not None
-        ):
-            verified = self._omniparser.verify_action(
-                self._last_parse.elements, action.x, action.y,
-            )
-            if verified:
-                logger.debug(
-                    "OmniParser verified: VLM click (%d,%d) → %r",
-                    action.x, action.y, verified.label,
-                )
-            else:
-                logger.debug(
-                    "OmniParser: VLM click (%d,%d) on empty space (no detected element)",
-                    action.x, action.y,
-                )
 
         return action, raw_text, elapsed_ms
 

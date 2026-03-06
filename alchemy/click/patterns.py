@@ -132,9 +132,10 @@ OMNIPARSER_PERCEPTION = Pattern(
         "Three modes: (1) Fast path — direct element match skips VLM entirely. "
         "(2) Context enrichment — detected element map injected into VLM prompt. "
         "(3) Post-VLM verification — checks if VLM coordinates land on a real element. "
-        "Uses Microsoft OmniParser v2 (MIT). ~1-2GB VRAM."
+        "Uses Microsoft OmniParser v2 (MIT). ~1-2GB VRAM. "
+        "SHELVED: disconnected from pipeline, file kept on disk for future use."
     ),
-    status=PatternStatus.BUILT,
+    status=PatternStatus.PLANNED,
     scope="flow",
     components=(
         "alchemy/click/flow/omniparser.py",

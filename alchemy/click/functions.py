@@ -217,14 +217,15 @@ async def dispatch_flow(
 
     # Resolve dependencies from app_state or create fresh
     ollama = _get_or_raise(app_state, "ollama_client", OllamaClient)
-    controller = getattr(app_state, "shadow_controller", None) if app_state else None
+    desktop_agent = getattr(app_state, "desktop_agent", None) if app_state else None
+    controller = desktop_agent._controller if desktop_agent else None
     task_manager = _get_or_create(app_state, "task_manager", TaskManager)
 
     voice_cb = VoiceCallbackClient(base_url=req.callback_url)
     task_manager.create_task(task_id, req.goal)
 
-    parts = settings.resolution.split("x")
-    width, height = int(parts[0]), int(parts[1])
+    width = settings.desktop_screenshot_width or 1920
+    height = settings.desktop_screenshot_height or 1080
 
     agent = VisionAgent(
         ollama=ollama,
@@ -232,7 +233,6 @@ async def dispatch_flow(
         voice_cb=voice_cb,
         task_manager=task_manager,
         model=settings.ollama_cpu_model,
-        fast_model=settings.ollama_fast_model if settings.click_model_routing else None,
         max_steps=settings.click_max_steps,
         timeout=settings.click_timeout,
         screenshot_interval=settings.click_screenshot_interval,
@@ -241,7 +241,6 @@ async def dispatch_flow(
         screen_width=width,
         screen_height=height,
         use_streaming=settings.click_use_streaming,
-        model_routing=settings.click_model_routing,
         temperature=settings.ollama_temperature,
         max_tokens=settings.ollama_max_tokens,
     )
