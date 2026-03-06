@@ -1,6 +1,6 @@
 """Vision API — task submission, analysis, and approval flow.
 
-NEO-TX calls these endpoints to delegate GUI work to Alchemy.
+AlchemyVoice calls these endpoints to delegate GUI work to Alchemy.
 Phase 4: optimized inference (streaming, dual-model, adaptive timeouts).
 """
 
@@ -18,7 +18,7 @@ from alchemy.api.contract_guard import require_contract
 
 from alchemy.click.task_manager import TaskManager
 from alchemy.click.vision_agent import VisionAgent
-from alchemy.clients.neotx_client import NeoTXClient
+from alchemy.clients.voice_callback import VoiceCallbackClient
 from alchemy.models.ollama_client import OllamaClient
 from alchemy.router.context_builder import ContextBuilder
 from alchemy.schemas import (
@@ -68,7 +68,7 @@ def _make_agent(
     ollama: OllamaClient,
     controller: ShadowDesktopController | None,
     task_manager: TaskManager,
-    neotx: NeoTXClient,
+    voice_cb: VoiceCallbackClient,
     context_builder: ContextBuilder | None,
 ) -> VisionAgent:
     """Create a VisionAgent with all current settings wired in."""
@@ -78,7 +78,7 @@ def _make_agent(
     return VisionAgent(
         ollama=ollama,
         controller=controller,
-        neotx=neotx,
+        voice_cb=voice_cb,
         task_manager=task_manager,
         model=settings.ollama_cpu_model,
         fast_model=settings.ollama_fast_model if settings.click_model_routing else None,
@@ -111,14 +111,14 @@ async def create_task(req: VisionTaskRequest, request: Request) -> VisionTaskRes
     now = datetime.now(timezone.utc)
     task_manager.create_task(task_id, req.goal)
 
-    neotx = NeoTXClient(base_url=req.callback_url)
-    agent = _make_agent(ollama, controller, task_manager, neotx, _get_context_builder(request))
+    voice_cb = VoiceCallbackClient(base_url=req.callback_url)
+    agent = _make_agent(ollama, controller, task_manager, voice_cb, _get_context_builder(request))
 
     async def _run_and_close():
         try:
             return await agent.run_task(task_id, req.goal)
         finally:
-            await neotx.close()
+            await voice_cb.close()
 
     async_task = asyncio.create_task(_run_and_close())
     task_manager.register_agent_task(task_id, async_task)
@@ -134,15 +134,15 @@ async def analyze(req: VisionAnalyzeRequest, request: Request) -> VisionAnalyzeR
     if not ollama:
         raise HTTPException(status_code=503, detail="Ollama not available")
 
-    neotx = NeoTXClient()
+    voice_cb = VoiceCallbackClient()
     task_manager = TaskManager()
-    agent = _make_agent(ollama, controller, task_manager, neotx, _get_context_builder(request))
+    agent = _make_agent(ollama, controller, task_manager, voice_cb, _get_context_builder(request))
 
     try:
         screenshot = base64.b64decode(req.screenshot_b64)
         return await agent.analyze_single(screenshot, req.goal)
     finally:
-        await neotx.close()
+        await voice_cb.close()
 
 
 @router.get("/task/{task_id}/status", response_model=TaskStatusResponse)

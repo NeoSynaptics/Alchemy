@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AlchemyBrowser</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Anybody:wght@300;400;600;800;900&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --void:#07070d;--surface:#0d0d16;--panel:#111119;--panel-edge:#1c1c2e;
+  --amber:#f59e0b;--amber-dim:#b47308;--amber-glow:rgba(245,158,11,.12);--amber-hot:#fbbf24;
+  --green:#22c55e;--red:#ef4444;
+  --text:#e4e4ec;--text-mid:#9d9db5;--text-dim:#5a5a72;--text-muted:#2e2e42;
+  --glass:rgba(17,17,25,.75);--glass-border:rgba(245,158,11,.06);
+  --font-mono:'JetBrains Mono',monospace;
+  --font-display:'Anybody',sans-serif;
+  --font-body:'IBM Plex Sans',sans-serif;
+}
+html{font-size:15px;-webkit-font-smoothing:antialiased;scroll-behavior:smooth}
+body{
+  background:var(--void);color:var(--text);font-family:var(--font-body);
+  min-height:100vh;overflow-x:hidden;
+  background-image:
+    radial-gradient(ellipse 80% 50% at 50% -10%,rgba(245,158,11,.04),transparent),
+    linear-gradient(rgba(245,158,11,.015) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(245,158,11,.015) 1px,transparent 1px);
+  background-size:100% 100%,48px 48px,48px 48px;
+}
+::-webkit-scrollbar{width:6px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--panel-edge);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:var(--amber-dim)}
+
+/* === ANIMATIONS === */
+@keyframes glow-text{
+  0%,100%{text-shadow:0 0 10px rgba(245,158,11,.25)}
+  50%{text-shadow:0 0 25px rgba(245,158,11,.5),0 0 50px rgba(245,158,11,.15)}
+}
+@keyframes fade-up{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+@keyframes fade-in{from{opacity:0}to{opacity:1}}
+@keyframes shimmer{
+  0%{background-position:-400px 0}
+  100%{background-position:400px 0}
+}
+@keyframes pulse-ring{
+  0%{transform:scale(.95);opacity:.6}
+  50%{transform:scale(1.02);opacity:1}
+  100%{transform:scale(.95);opacity:.6}
+}
+@keyframes typing-dots{
+  0%,20%{opacity:.2}
+  40%{opacity:1}
+  60%,100%{opacity:.2}
+}
+@keyframes scan{
+  0%{transform:translateY(-100%)}
+  100%{transform:translateY(calc(100vh + 100%))}
+}
+@keyframes source-pop{
+  from{opacity:0;transform:translateY(8px) scale(.97)}
+  to{opacity:1;transform:translateY(0) scale(1)}
+}
+@keyframes bar-fill{from{width:0}to{width:100%}}
+
+/* scan line */
+body::after{
+  content:'';position:fixed;top:0;left:0;width:100%;height:2px;
+  background:linear-gradient(90deg,transparent,rgba(245,158,11,.04),transparent);
+  z-index:9999;pointer-events:none;animation:scan 10s linear infinite;
+}
+
+/* === APP SHELL === */
+.app{max-width:900px;margin:0 auto;padding:0 24px;min-height:100vh;display:flex;flex-direction:column}
+
+/* === TOP BAR === */
+.topbar{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:16px 0;opacity:0;animation:fade-in .5s ease .1s forwards;
+}
+.brand{
+  font-family:var(--font-display);font-weight:900;font-size:1.15rem;
+  color:var(--amber);letter-spacing:-.01em;
+  animation:glow-text 5s ease-in-out infinite;
+  cursor:default;
+}
+.brand-sub{font-weight:300;font-size:.65rem;color:var(--text-dim);margin-left:8px;letter-spacing:.06em;font-family:var(--font-mono)}
+.topbar-right{display:flex;align-items:center;gap:12px}
+.status-pill{
+  display:flex;align-items:center;gap:5px;
+  padding:3px 10px;border-radius:100px;
+  background:var(--glass);border:1px solid var(--glass-border);
+  font-size:.65rem;font-family:var(--font-mono);color:var(--text-dim);
+}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--green);flex-shrink:0}
+
+/* === SEARCH HERO === */
+.search-hero{
+  flex:0 0 auto;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;padding:80px 0 40px;
+  transition:padding .5s cubic-bezier(.16,1,.3,1);
+}
+.search-hero.compact{padding:24px 0 20px}
+.search-hero.compact .hero-title{font-size:1rem;margin-bottom:14px}
+.search-hero.compact .hero-subtitle{display:none}
+
+.hero-title{
+  font-family:var(--font-display);font-weight:800;font-size:2.4rem;
+  color:var(--text);text-align:center;margin-bottom:8px;
+  letter-spacing:-.03em;line-height:1.1;
+  opacity:0;animation:fade-up .6s ease .2s forwards;
+}
+.hero-title em{font-style:normal;color:var(--amber);font-weight:900}
+.hero-subtitle{
+  font-size:.85rem;color:var(--text-dim);text-align:center;margin-bottom:32px;
+  opacity:0;animation:fade-up .6s ease .35s forwards;
+  font-weight:300;letter-spacing:.02em;
+}
+
+/* Search box */
+.search-box{
+  width:100%;max-width:680px;position:relative;
+  opacity:0;animation:fade-up .6s ease .4s forwards;
+}
+.search-wrap{
+  display:flex;align-items:center;gap:0;
+  background:var(--surface);border:1.5px solid var(--panel-edge);
+  border-radius:14px;padding:4px;
+  transition:border-color .25s,box-shadow .25s;
+}
+.search-wrap:focus-within{
+  border-color:rgba(245,158,11,.35);
+  box-shadow:0 0 0 4px rgba(245,158,11,.06),0 8px 32px rgba(0,0,0,.3);
+}
+.search-input{
+  flex:1;padding:14px 18px;
+  background:transparent;border:none;
+  color:var(--text);font-family:var(--font-body);font-size:1rem;
+  font-weight:400;letter-spacing:.01em;
+}
+.search-input:focus{outline:none}
+.search-input::placeholder{color:var(--text-muted);font-weight:300}
+.search-btn{
+  padding:10px 22px;margin:0;
+  background:linear-gradient(135deg,var(--amber),var(--amber-dim));
+  border:none;border-radius:10px;
+  color:var(--void);font-family:var(--font-mono);font-weight:700;font-size:.8rem;
+  letter-spacing:.04em;text-transform:uppercase;cursor:pointer;
+  transition:all .2s;white-space:nowrap;
+}
+.search-btn:hover{box-shadow:0 4px 20px rgba(245,158,11,.3);transform:translateY(-1px)}
+.search-btn:active{transform:translateY(0)}
+.search-btn:disabled{opacity:.5;pointer-events:none}
+.search-hint{
+  display:flex;gap:16px;justify-content:center;margin-top:14px;
+  font-size:.7rem;color:var(--text-muted);font-family:var(--font-mono);
+}
+.search-hint span{cursor:pointer;transition:color .15s;padding:3px 8px;border-radius:4px}
+.search-hint span:hover{color:var(--amber);background:var(--amber-glow)}
+
+/* === LOADING STATE === */
+.loading-state{
+  display:none;flex-direction:column;align-items:center;gap:16px;
+  padding:40px 0 20px;
+}
+.loading-state.active{display:flex}
+.loading-bar-track{
+  width:100%;max-width:400px;height:3px;
+  background:var(--surface);border-radius:2px;overflow:hidden;
+}
+.loading-bar-fill{
+  height:100%;border-radius:2px;width:0;
+  background:linear-gradient(90deg,var(--amber),var(--amber-hot));
+  box-shadow:0 0 10px var(--amber);
+  transition:width .3s ease;
+}
+.loading-steps{
+  display:flex;gap:24px;font-size:.72rem;font-family:var(--font-mono);
+  color:var(--text-dim);
+}
+.loading-step{display:flex;align-items:center;gap:6px;transition:color .3s}
+.loading-step.active{color:var(--amber)}
+.loading-step.done{color:var(--green)}
+.loading-step-dot{width:5px;height:5px;border-radius:50%;background:currentColor;flex-shrink:0}
+.loading-step.active .loading-step-dot{animation:pulse-ring 1.2s ease-in-out infinite}
+.typing-indicator{
+  display:flex;gap:4px;align-items:center;padding:8px 0;
+}
+.typing-indicator span{
+  width:5px;height:5px;border-radius:50%;background:var(--amber);
+  animation:typing-dots 1.2s infinite;
+}
+.typing-indicator span:nth-child(2){animation-delay:.2s}
+.typing-indicator span:nth-child(3){animation-delay:.4s}
+
+/* === RESULT AREA === */
+.result-area{
+  display:none;flex:1;padding-bottom:60px;
+}
+.result-area.active{display:block}
+
+/* Semantic chips */
+.semantic-chips{
+  display:flex;flex-wrap:wrap;gap:6px;margin-bottom:20px;
+  opacity:0;animation:fade-up .4s ease forwards;
+}
+.semantic-chip{
+  padding:4px 12px;border-radius:100px;
+  font-size:.68rem;font-family:var(--font-mono);font-weight:500;
+  background:var(--amber-glow);color:var(--amber);
+  border:1px solid rgba(245,158,11,.15);
+  letter-spacing:.03em;
+}
+
+/* Answer block */
+.answer-block{
+  background:var(--glass);border:1px solid var(--glass-border);
+  border-radius:14px;padding:28px 32px;margin-bottom:20px;
+  backdrop-filter:blur(12px);
+  opacity:0;animation:fade-up .5s ease .1s forwards;
+}
+.answer-text{
+  font-size:.95rem;line-height:1.85;color:var(--text);
+  font-weight:300;letter-spacing:.01em;
+}
+.answer-text strong{color:var(--amber);font-weight:600}
+.answer-text .highlight{
+  background:linear-gradient(135deg,rgba(245,158,11,.12),rgba(245,158,11,.04));
+  padding:2px 6px;border-radius:4px;color:var(--amber-hot);
+  font-family:var(--font-mono);font-size:.85rem;font-weight:500;
+}
+.answer-text p{margin-bottom:14px}
+.answer-text p:last-child{margin-bottom:0}
+.answer-text ul{margin:10px 0 14px 20px}
+.answer-text li{margin-bottom:6px;color:var(--text-mid)}
+.answer-text li strong{color:var(--text)}
+
+/* Images row */
+.images-row{
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));
+  gap:10px;margin-bottom:20px;
+}
+.img-card{
+  border-radius:10px;overflow:hidden;
+  background:var(--surface);border:1px solid var(--panel-edge);
+  transition:all .2s;cursor:pointer;
+  opacity:0;animation:source-pop .4s ease forwards;
+}
+.img-card:hover{border-color:rgba(245,158,11,.25);transform:translateY(-2px);box-shadow:0 8px 24px rgba(0,0,0,.3)}
+.img-card img{width:100%;aspect-ratio:16/10;object-fit:cover;display:block}
+.img-card-caption{
+  padding:8px 10px;font-size:.65rem;color:var(--text-dim);
+  font-family:var(--font-mono);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+
+/* Sources */
+.sources-block{
+  background:var(--surface);border:1px solid var(--panel-edge);
+  border-radius:10px;padding:16px 20px;margin-bottom:20px;
+  opacity:0;animation:fade-up .4s ease .3s forwards;
+}
+.sources-title{
+  font-size:.6rem;font-family:var(--font-mono);font-weight:600;
+  text-transform:uppercase;letter-spacing:.14em;color:var(--text-dim);
+  margin-bottom:10px;
+}
+.source-item{
+  display:flex;align-items:center;gap:10px;
+  padding:7px 0;border-bottom:1px solid rgba(28,28,46,.5);
+  font-size:.78rem;transition:color .15s;
+}
+.source-item:last-child{border:none}
+.source-item:hover{color:var(--amber)}
+.source-favicon{
+  width:16px;height:16px;border-radius:3px;
+  background:var(--panel-edge);flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+  font-size:.55rem;font-weight:700;color:var(--text-dim);font-family:var(--font-mono);
+}
+.source-url{color:var(--text-mid);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.source-domain{color:var(--text-muted);font-size:.65rem;font-family:var(--font-mono)}
+
+/* Timing bar */
+.timing-bar{
+  display:flex;align-items:center;gap:16px;
+  padding:10px 0;font-size:.65rem;font-family:var(--font-mono);color:var(--text-muted);
+  opacity:0;animation:fade-up .4s ease .4s forwards;
+}
+.timing-bar .tb-val{color:var(--text-dim);font-weight:600}
+.timing-bar .tb-sep{color:var(--panel-edge)}
+
+/* Clear button */
+.clear-btn{
+  display:none;align-items:center;justify-content:center;gap:6px;
+  margin:10px auto 0;padding:10px 28px;
+  background:transparent;border:1px solid var(--panel-edge);border-radius:8px;
+  color:var(--text-dim);font-family:var(--font-mono);font-size:.78rem;font-weight:500;
+  cursor:pointer;transition:all .2s;letter-spacing:.03em;
+}
+.clear-btn:hover{border-color:var(--amber-dim);color:var(--amber);background:var(--amber-glow)}
+.clear-btn.active{display:inline-flex}
+
+/* === FOOTER === */
+.footer{
+  padding:12px 0;border-top:1px solid var(--panel-edge);
+  display:flex;align-items:center;justify-content:space-between;
+  font-size:.6rem;font-family:var(--font-mono);color:var(--text-muted);
+  margin-top:auto;
+}
+.footer-left{display:flex;align-items:center;gap:12px}
+.footer-model{
+  padding:2px 8px;border-radius:3px;
+  background:var(--surface);border:1px solid var(--panel-edge);
+  color:var(--amber);font-weight:500;
+}
+
+/* === RESPONSIVE === */
+@media(max-width:640px){
+  .hero-title{font-size:1.6rem}
+  .search-hero{padding:50px 0 30px}
+  .answer-block{padding:20px}
+  .images-row{grid-template-columns:1fr 1fr}
+  .loading-steps{flex-direction:column;gap:8px}
+  .topbar{flex-direction:column;gap:6px;align-items:flex-start}
+}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- TOP BAR -->
+  <header class="topbar">
+    <div class="brand">ALCHEMYBROWSER<span class="brand-sub">v0.2</span></div>
+    <div class="topbar-right">
+      <div class="status-pill"><div class="dot"></div> Qwen3 14B</div>
+      <div class="status-pill"><div class="dot"></div> :8000</div>
+    </div>
+  </header>
+
+  <!-- SEARCH HERO -->
+  <section class="search-hero" id="searchHero">
+    <h1 class="hero-title">Search with <em>Alchemy</em></h1>
+    <p class="hero-subtitle">Ask anything. The model decomposes, fetches, and synthesizes — text and images — into one answer.</p>
+    <div class="search-box">
+      <div class="search-wrap">
+        <input class="search-input" id="searchInput" type="text"
+          placeholder="Who is Duplantis and what record does he have?"
+          autofocus />
+        <button class="search-btn" id="searchBtn" onclick="doSearch()">Search</button>
+      </div>
+      <div class="search-hint" id="searchHints">
+        <span onclick="quickSearch('Who is Duplantis and what record does he have?')">Duplantis</span>
+        <span onclick="quickSearch('Latest breakthroughs in quantum computing 2026')">Quantum 2026</span>
+        <span onclick="quickSearch('Compare RTX 5060 Ti vs RTX 4070')">GPU Compare</span>
+        <span onclick="quickSearch('Best local LLMs for coding in March 2026')">Local LLMs</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- LOADING STATE -->
+  <div class="loading-state" id="loadingState">
+    <div class="loading-bar-track"><div class="loading-bar-fill" id="loadingBar"></div></div>
+    <div class="loading-steps">
+      <div class="loading-step" id="ls-parse"><div class="loading-step-dot"></div> Parsing query</div>
+      <div class="loading-step" id="ls-fetch"><div class="loading-step-dot"></div> Fetching sources</div>
+      <div class="loading-step" id="ls-synth"><div class="loading-step-dot"></div> Synthesizing</div>
+    </div>
+    <div class="typing-indicator" id="typingDots" style="display:none">
+      <span></span><span></span><span></span>
+    </div>
+  </div>
+
+  <!-- RESULT -->
+  <section class="result-area" id="resultArea"></section>
+
+  <!-- CLEAR BUTTON -->
+  <button class="clear-btn" id="clearBtn" onclick="clearAll()">Clear &amp; Search Again</button>
+
+  <!-- FOOTER -->
+  <footer class="footer">
+    <div class="footer-left">
+      <span>NeoSynaptics</span>
+      <span class="footer-model">qwen3:14b</span>
+    </div>
+    <span>Local-first. No cloud.</span>
+  </footer>
+
+</div>
+
+<script>
+// === MOCK RESULTS DATABASE ===
+const RESULTS = {
+  duplantis: {
+    query: 'Who is Duplantis and what record does he have?',
+    semantics: ['Mondo Duplantis', 'pole vault', 'world record', 'athletics'],
+    answer: `
+      <p><strong>Armand "Mondo" Duplantis</strong> is a Swedish-American pole vaulter, widely regarded as the greatest pole vaulter of all time. Born on November 10, 1999, in Lafayette, Louisiana, he competes internationally for <strong>Sweden</strong>.</p>
+      <p>Duplantis holds the <strong>outdoor world record</strong> of <span class="highlight">6.26 m</span> set at the Silesia Diamond League on August 25, 2024, breaking his own previous record. He also holds the <strong>indoor world record</strong> of <span class="highlight">6.22 m</span>.</p>
+      <p>Key achievements:</p>
+      <ul>
+        <li><strong>Olympic Gold</strong> — Tokyo 2020 and Paris 2024</li>
+        <li><strong>World Champion</strong> — Budapest 2023, Eugene 2022</li>
+        <li><strong>European Champion</strong> — Munich 2022</li>
+        <li>Has broken the world record <strong>10+ times</strong> since February 2020</li>
+        <li>First to clear <strong>6.25 m</strong> (Paris Olympics final, August 2024)</li>
+      </ul>
+      <p>Duplantis trains under his father Greg Duplantis, a former pole vaulter who cleared 5.80 m. Mondo began vaulting at age 3 and set age-group world records throughout his youth, clearing 6.05 m at just 20 years old.</p>
+    `,
+    images: [
+      {src:'https://images.unsplash.com/photo-1461896836934-bd45ba8920c7?w=400&h=250&fit=crop',caption:'Pole vault athletics competition'},
+      {src:'https://images.unsplash.com/photo-1587280501635-68a0e82cd5ff?w=400&h=250&fit=crop',caption:'Track and field stadium'},
+      {src:'https://images.unsplash.com/photo-1541534741688-6078c6bfb5c5?w=400&h=250&fit=crop',caption:'Olympic athletics event'},
+      {src:'https://images.unsplash.com/photo-1594882645126-14020914d58d?w=400&h=250&fit=crop',caption:'World championship athletics'},
+    ],
+    sources: [
+      {name:'Wikipedia',domain:'en.wikipedia.org',path:'/wiki/Mondo_Duplantis'},
+      {name:'World Athletics',domain:'worldathletics.org',path:'/athletes/sweden/armand-duplantis'},
+      {name:'Olympics',domain:'olympics.com',path:'/athletes/armand-duplantis'},
+      {name:'BBC Sport',domain:'bbc.com',path:'/sport/athletics/mondo-duplantis'},
+    ],
+    timing:{parse:120,fetch:890,synth:1340,total:2.35,sources:12}
+  },
+  quantum: {
+    query: 'Latest breakthroughs in quantum computing 2026',
+    semantics: ['quantum computing', '2026 breakthroughs', 'qubits', 'error correction'],
+    answer: `
+      <p>The quantum computing landscape in early <strong>2026</strong> has seen several major breakthroughs pushing the field closer to practical quantum advantage:</p>
+      <p><strong>Google's Willow chip</strong> achieved below-threshold quantum error correction with <span class="highlight">105 qubits</span>, demonstrating that adding more qubits actually reduces errors — a critical milestone for scalable quantum computing.</p>
+      <ul>
+        <li><strong>IBM Condor</strong> — 1,121-qubit processor now available via cloud access for research</li>
+        <li><strong>Microsoft's topological qubits</strong> — First demonstration of Majorana-based qubits with inherent error resistance</li>
+        <li><strong>Atom Computing</strong> — Neutral-atom system reached 1,180 qubits with record coherence times</li>
+        <li><strong>PsiQuantum</strong> — Photonic approach targets 1M+ qubits using existing chip fabs</li>
+      </ul>
+      <p>The most significant practical development is the shift from "noisy" to <strong>"fault-tolerant"</strong> quantum computing, with Google and IBM both demonstrating logical qubits with error rates below the threshold needed for useful computation.</p>
+    `,
+    images: [
+      {src:'https://images.unsplash.com/photo-1635070041078-e363dbe005cb?w=400&h=250&fit=crop',caption:'Quantum processor chip'},
+      {src:'https://images.unsplash.com/photo-1518770660439-4636190af475?w=400&h=250&fit=crop',caption:'Advanced computing hardware'},
+      {src:'https://images.unsplash.com/photo-1558494949-ef010cbdcc31?w=400&h=250&fit=crop',caption:'Data center technology'},
+    ],
+    sources: [
+      {name:'Nature',domain:'nature.com',path:'/articles/quantum-error-2026'},
+      {name:'MIT Tech Review',domain:'technologyreview.com',path:'/quantum-computing-2026'},
+      {name:'Google AI Blog',domain:'blog.google',path:'/quantum/willow-below-threshold'},
+    ],
+    timing:{parse:95,fetch:720,synth:1180,total:2.0,sources:9}
+  },
+  gpu: {
+    query: 'Compare RTX 5060 Ti vs RTX 4070',
+    semantics: ['RTX 5060 Ti', 'RTX 4070', 'GPU comparison', 'VRAM', 'performance'],
+    answer: `
+      <p>Here's a direct comparison between the <strong>NVIDIA RTX 5060 Ti</strong> (16GB) and the <strong>RTX 4070</strong> (12GB) — two GPUs in a similar price segment but different generations:</p>
+      <ul>
+        <li><strong>VRAM:</strong> RTX 5060 Ti wins with <span class="highlight">16 GB GDDR7</span> vs 12 GB GDDR6X on the 4070</li>
+        <li><strong>Architecture:</strong> Blackwell (5060 Ti) vs Ada Lovelace (4070)</li>
+        <li><strong>Rasterization:</strong> The 5060 Ti is roughly <strong>15-20% faster</strong> in raw rasterization</li>
+        <li><strong>Ray Tracing:</strong> ~<strong>25% faster</strong> on the 5060 Ti due to improved RT cores</li>
+        <li><strong>AI/ML inference:</strong> 5060 Ti has 5th-gen Tensor cores, significantly faster for local LLM workloads</li>
+        <li><strong>Power:</strong> 5060 Ti draws ~180W vs 200W for the 4070 (more efficient)</li>
+        <li><strong>Price (Sweden):</strong> ~4,500 kr (5060 Ti) vs ~5,500 kr used (4070)</li>
+      </ul>
+      <p>For <strong>local AI workloads</strong>, the 5060 Ti's 16 GB VRAM is the key advantage — it can hold larger models like Qwen3-14B more comfortably with room for KV cache. The 4070's 12 GB is tight for 14B-parameter models.</p>
+      <p><strong>Verdict:</strong> If buying new, the 5060 Ti is the better value. If you already own a 4070, keep it as a second GPU rather than replacing it.</p>
+    `,
+    images: [
+      {src:'https://images.unsplash.com/photo-1591488320449-011701bb6704?w=400&h=250&fit=crop',caption:'NVIDIA GPU hardware'},
+      {src:'https://images.unsplash.com/photo-1587202372775-e229f172b9d7?w=400&h=250&fit=crop',caption:'Graphics card close-up'},
+      {src:'https://images.unsplash.com/photo-1555618254-5e06196e4875?w=400&h=250&fit=crop',caption:'PC gaming build'},
+    ],
+    sources: [
+      {name:'TechPowerUp',domain:'techpowerup.com',path:'/review/rtx-5060-ti-benchmark'},
+      {name:'Tom\'s Hardware',domain:'tomshardware.com',path:'/rtx-5060-ti-vs-4070'},
+      {name:'VideoCardz',domain:'videocardz.com',path:'/nvidia-rtx-5060-ti-specs'},
+    ],
+    timing:{parse:80,fetch:650,synth:1050,total:1.78,sources:8}
+  },
+  llm: {
+    query: 'Best local LLMs for coding in March 2026',
+    semantics: ['local LLM', 'coding', 'March 2026', 'open-source models'],
+    answer: `
+      <p>As of <strong>March 2026</strong>, the best local LLMs for coding tasks — ranked by capability vs VRAM requirement:</p>
+      <ul>
+        <li><strong>Qwen 2.5 Coder 32B</strong> — The king of local coding. Matches GPT-4 on HumanEval at <span class="highlight">92.7%</span>. Needs ~20GB VRAM (Q4). Best for serious development.</li>
+        <li><strong>Qwen 2.5 Coder 14B</strong> — Sweet spot for 12-16GB GPUs. <span class="highlight">87.5%</span> HumanEval. Excellent for daily coding tasks.</li>
+        <li><strong>DeepSeek Coder V3</strong> — MoE architecture, activates 37B of 685B params. Near-frontier quality but needs 24GB+ VRAM.</li>
+        <li><strong>CodeLlama 34B</strong> — Meta's offering, strong at infilling and long-context code. Solid but aging.</li>
+        <li><strong>StarCoder2 15B</strong> — Trained on The Stack v2. Great for multi-language support and permissive license.</li>
+      </ul>
+      <p>For a <strong>12 GB RTX 4070</strong>, the practical choices are <strong>Qwen 2.5 Coder 14B</strong> (Q4_K_M, ~9 GB) or <strong>StarCoder2 15B</strong> (Q4, ~9.5 GB). Both fit with room for context.</p>
+      <p><strong>Qwen3 14B</strong> is excellent for general reasoning but <em>not specifically optimized for code</em> — use the Coder variants for programming tasks.</p>
+    `,
+    images: [
+      {src:'https://images.unsplash.com/photo-1555949963-aa79dcee981c?w=400&h=250&fit=crop',caption:'Code on dark terminal'},
+      {src:'https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=400&h=250&fit=crop',caption:'Matrix-style code'},
+      {src:'https://images.unsplash.com/photo-1504639725590-34d0984388bd?w=400&h=250&fit=crop',caption:'Programming workspace'},
+    ],
+    sources: [
+      {name:'HuggingFace',domain:'huggingface.co',path:'/blog/best-coding-llms-2026'},
+      {name:'Reddit r/LocalLLaMA',domain:'reddit.com',path:'/r/LocalLLaMA/coding-roundup'},
+      {name:'Ollama Blog',domain:'ollama.com',path:'/blog/coding-models'},
+    ],
+    timing:{parse:105,fetch:780,synth:1220,total:2.1,sources:11}
+  }
+};
+
+// === STATE ===
+let currentState = 'idle'; // idle | loading | result
+
+// === SEARCH ===
+function doSearch(){
+  const input = document.getElementById('searchInput');
+  const query = input.value.trim();
+  if(!query) return;
+
+  // Find matching result (fuzzy)
+  const key = findResultKey(query);
+  const result = RESULTS[key];
+
+  currentState = 'loading';
+  document.getElementById('searchHero').classList.add('compact');
+  document.getElementById('searchHints').style.display = 'none';
+  document.getElementById('searchBtn').disabled = true;
+  document.getElementById('searchBtn').textContent = '...';
+  document.getElementById('resultArea').classList.remove('active');
+  document.getElementById('resultArea').innerHTML = '';
+  document.getElementById('clearBtn').classList.remove('active');
+
+  // Show loading
+  const loading = document.getElementById('loadingState');
+  loading.classList.add('active');
+
+  // Animate steps
+  animateLoading(result);
+}
+
+function findResultKey(query){
+  const q = query.toLowerCase();
+  if(q.includes('duplantis') || q.includes('pole vault') || q.includes('record')) return 'duplantis';
+  if(q.includes('quantum')) return 'quantum';
+  if(q.includes('gpu') || q.includes('5060') || q.includes('4070') || q.includes('rtx')) return 'gpu';
+  if(q.includes('llm') || q.includes('coding') || q.includes('code')) return 'llm';
+  // Default
+  return 'duplantis';
+}
+
+function animateLoading(result){
+  const bar = document.getElementById('loadingBar');
+  const steps = ['ls-parse','ls-fetch','ls-synth'];
+
+  // Step 1: Parse
+  bar.style.width = '15%';
+  document.getElementById(steps[0]).classList.add('active');
+
+  setTimeout(() => {
+    bar.style.width = '30%';
+    document.getElementById(steps[0]).classList.remove('active');
+    document.getElementById(steps[0]).classList.add('done');
+    document.getElementById(steps[1]).classList.add('active');
+  }, 400);
+
+  // Step 2: Fetch
+  setTimeout(() => {
+    bar.style.width = '65%';
+  }, 800);
+
+  setTimeout(() => {
+    bar.style.width = '80%';
+    document.getElementById(steps[1]).classList.remove('active');
+    document.getElementById(steps[1]).classList.add('done');
+    document.getElementById(steps[2]).classList.add('active');
+    document.getElementById('typingDots').style.display = 'flex';
+  }, 1200);
+
+  // Step 3: Synthesize
+  setTimeout(() => {
+    bar.style.width = '100%';
+  }, 1800);
+
+  setTimeout(() => {
+    document.getElementById(steps[2]).classList.remove('active');
+    document.getElementById(steps[2]).classList.add('done');
+    document.getElementById('typingDots').style.display = 'none';
+
+    // Hide loading, show result
+    setTimeout(() => {
+      document.getElementById('loadingState').classList.remove('active');
+      // Reset loading step classes
+      steps.forEach(s => {
+        document.getElementById(s).classList.remove('active','done');
+      });
+      bar.style.width = '0';
+      showResult(result);
+    }, 300);
+  }, 2200);
+}
+
+function showResult(result){
+  currentState = 'result';
+  const area = document.getElementById('resultArea');
+
+  // Semantic chips
+  let html = '<div class="semantic-chips">';
+  result.semantics.forEach(s => {
+    html += `<span class="semantic-chip">${s}</span>`;
+  });
+  html += '</div>';
+
+  // Answer block
+  html += `<div class="answer-block"><div class="answer-text">${result.answer}</div></div>`;
+
+  // Images
+  html += '<div class="images-row">';
+  result.images.forEach((img, i) => {
+    html += `<div class="img-card" style="animation-delay:${i * 0.08}s">
+      <img src="${img.src}" alt="${img.caption}" loading="lazy" onerror="this.parentElement.style.display='none'"/>
+      <div class="img-card-caption">${img.caption}</div>
+    </div>`;
+  });
+  html += '</div>';
+
+  // Sources
+  html += '<div class="sources-block"><div class="sources-title">Sources</div>';
+  result.sources.forEach(s => {
+    const initial = s.name.charAt(0).toUpperCase();
+    html += `<div class="source-item">
+      <div class="source-favicon">${initial}</div>
+      <span class="source-url">${s.name} &mdash; ${s.path}</span>
+      <span class="source-domain">${s.domain}</span>
+    </div>`;
+  });
+  html += '</div>';
+
+  // Timing
+  html += `<div class="timing-bar">
+    <span>Parse <span class="tb-val">${result.timing.parse}ms</span></span>
+    <span class="tb-sep">/</span>
+    <span>Fetch <span class="tb-val">${result.timing.fetch}ms</span></span>
+    <span class="tb-sep">/</span>
+    <span>Synthesize <span class="tb-val">${result.timing.synth}ms</span></span>
+    <span class="tb-sep">/</span>
+    <span>Total <span class="tb-val">${result.timing.total}s</span></span>
+    <span class="tb-sep">/</span>
+    <span><span class="tb-val">${result.timing.sources}</span> sources scanned</span>
+  </div>`;
+
+  area.innerHTML = html;
+  area.classList.add('active');
+
+  // Show clear button
+  document.getElementById('clearBtn').classList.add('active');
+
+  // Re-enable search
+  document.getElementById('searchBtn').disabled = false;
+  document.getElementById('searchBtn').textContent = 'Search';
+}
+
+// === CLEAR ===
+function clearAll(){
+  currentState = 'idle';
+  document.getElementById('resultArea').classList.remove('active');
+  document.getElementById('resultArea').innerHTML = '';
+  document.getElementById('clearBtn').classList.remove('active');
+  document.getElementById('searchHero').classList.remove('compact');
+  document.getElementById('searchHints').style.display = '';
+  document.getElementById('searchInput').value = '';
+  document.getElementById('searchInput').focus();
+  document.getElementById('searchBtn').disabled = false;
+  document.getElementById('searchBtn').textContent = 'Search';
+}
+
+// === QUICK SEARCH ===
+function quickSearch(text){
+  document.getElementById('searchInput').value = text;
+  doSearch();
+}
+
+// === ENTER KEY ===
+document.getElementById('searchInput').addEventListener('keydown', (e) => {
+  if(e.key === 'Enter' && !e.shiftKey){
+    e.preventDefault();
+    doSearch();
+  }
+});
+</script>
+</body>
+</html>

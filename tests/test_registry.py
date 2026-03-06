@@ -64,7 +64,7 @@ class TestManifestFields:
         core_ids = {m.id for m in core_mods}
         assert "core" in core_ids
         assert "desktop" in core_ids
-        assert "gpu" in core_ids
+        assert "apu" in core_ids
         assert "cloud" in core_ids
 
     def test_infra_tier_modules(self):

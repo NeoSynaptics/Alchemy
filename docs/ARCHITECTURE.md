@@ -2,88 +2,91 @@
 
 ## Overview
 
-Alchemy is the CPU-side core engine. It runs UI-TARS-72B for GUI interaction on a hidden shadow desktop. NEO-TX (GPU-side, user-facing) delegates heavy GUI work here.
+Alchemy is the core AI engine. Everything runs in a single server on port 8000: voice pipeline, click automation (shadow desktop + Playwright), GPU orchestration, research browser, and more.
 
 ```
-YOUR PC (i9-13900K, 128GB RAM, RTX 4070 12GB)
-┌─────────────────────────────────────────────────────────────────┐
-│                                                                 │
-│  WINDOWS 11 (your screen — untouched)                          │
-│                                                                 │
-│  ┌─────────────────────────┐  ┌──────────────────────────────┐  │
-│  │  Alchemy (port 8000)    │  │  Ollama (port 11434)         │  │
-│  │  CPU-side core engine   │  │                              │  │
-│  │                         │  │  CPU (128GB RAM):            │  │
-│  │  - Shadow desktop ctrl  │  │    UI-TARS-72B (~42GB)       │  │
-│  │  - Vision agent loop    │  │                              │  │
-│  │  - /vision/analyze      │  │  GPU (12GB VRAM):            │  │
-│  │  - /shadow/start|stop   │  │    14B conversational (NEO)  │  │
-│  │                         │  │    + small models (NEO)      │  │
-│  └─────────────────────────┘  │    + Whisper STT (NEO)       │  │
-│                                │                              │  │
-│  ┌─────────────────────────┐  └──────────────────────────────┘  │
-│  │  NEO-TX (port 8100)     │                                    │
-│  │  GPU-side smart iface   │  ┌────────────────────────────┐    │
-│  │                         │  │  WSL2 Ubuntu               │    │
-│  │  - Voice pipeline       │  │                            │    │
-│  │  - 14B conversation     │  │  Xvfb :99 (invisible)     │    │
-│  │  - Tray widget          │  │  Fluxbox (window manager)  │    │
-│  │  - Approval gates       │  │  x11vnc → noVNC (:6080)   │    │
-│  │  - Small specialized    │  │  Firefox, LibreOffice...   │    │
-│  │    GPU models           │  │                            │    │
-│  │                         │  │  THE SHADOW DESKTOP        │    │
-│  │  Delegates GUI tasks ───┼──┤  (controlled by Alchemy)   │    │
-│  │  to Alchemy             │  │                            │    │
-│  └─────────────────────────┘  └────────────────────────────┘    │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
+YOUR PC (i9-13900K, 128GB RAM, RTX 4070 12GB + RTX 5060 Ti 16GB)
++---------------------------------------------------------------+
+|                                                                 |
+|  WINDOWS 11 (your screen -- untouched)                         |
+|                                                                 |
+|  +---------------------------+  +----------------------------+  |
+|  |  Alchemy (port 8000)      |  |  Ollama (port 11434)       |  |
+|  |  Core AI engine           |  |                            |  |
+|  |                           |  |  GPU 1 (16GB):             |  |
+|  |  - AlchemyVoice           |  |    Qwen3 14B (9GB)         |  |
+|  |    (voice, chat, tray)    |  |    Qwen2.5-VL 7B (4.4GB)   |  |
+|  |  - AlchemyClick           |  |                            |  |
+|  |    (GUI automation)       |  |  GPU 0 (12GB):             |  |
+|  |  - Shadow desktop ctrl    |  |    Whisper (1GB)           |  |
+|  |  - GPU orchestrator       |  |    Fish Speech (5GB)       |  |
+|  |  - Research browser       |  |                            |  |
+|  |  - Gate reviewer          |  |  CPU (128GB RAM):          |  |
+|  |                           |  |    UI-TARS-72B (~42GB)     |  |
+|  +---------------------------+  +----------------------------+  |
+|                                                                 |
+|  +---------------------------+  +----------------------------+  |
+|  |  System Tray (optional)   |  |  WSL2 Ubuntu               |  |
+|  |  PyQt6 widget             |  |                            |  |
+|  |  - Approval dialogs       |  |  Xvfb :99 (invisible)     |  |
+|  |  - noVNC viewport         |  |  Fluxbox (window manager)  |  |
+|  |  - Voice status           |  |  x11vnc -> noVNC (:6080)   |  |
+|  +---------------------------+  |  Firefox, LibreOffice...    |  |
+|                                 |                            |  |
+|                                 |  THE SHADOW DESKTOP        |  |
+|                                 |  (controlled by Alchemy)   |  |
+|                                 +----------------------------+  |
++---------------------------------------------------------------+
 ```
 
-## Separation of Concerns
+## Module Layout
 
-**Alchemy** (this repo) — CPU side:
-- Shadow desktop (WSL2 + Xvfb + Fluxbox + x11vnc + noVNC)
-- Vision agent loop (screenshot → UI-TARS-72B → action → xdotool)
-- CPU model lifecycle (UI-TARS-72B load/unload/health)
-- API server (port 8000)
-- Auth (bearer tokens)
+**Core (Tier 0 -- locked):**
+- `alchemy/core/` -- Playwright agent kernel, browser manager, approval gate
+- `alchemy/click/` -- AlchemyClick (Playwright + vision-based GUI automation)
+- `alchemy/voice/` -- AlchemyVoice (voice pipeline, smart router, conversation, tray)
+- `alchemy/cloud/` -- Cloud AI Bridge (provider-agnostic, Claude primary)
 
-**NEO-TX** (separate repo) — GPU side:
-- Voice pipeline (Whisper STT + Piper TTS + wake word)
-- 14B conversational model (semantic, NOT coding)
-- Small specialized GPU models for specific fast tasks
-- Tray widget + viewport (noVNC view into shadow desktop)
-- Defense constitution (approval gates)
-- User interaction layer
+**Infrastructure (Tier 1):**
+- `alchemy/gpu/` -- VRAM/RAM fleet management, model placement
+- `alchemy/adapters/` -- LLM adapters (Ollama, vLLM, GUI-Actor)
+- `alchemy/shadow/` -- Shadow desktop (WSL2 bridge, controller)
+- `alchemy/router/` -- Context router (request classification)
 
-**The boundary is the API.** NEO-TX calls Alchemy endpoints for GUI tasks. Alchemy calls NEO-TX back for approval on dangerous actions.
+**App (Tier 2 -- freely changeable):**
+- `alchemy/desktop/` -- Native Windows automation (ghost cursor)
+- `alchemy/gate/` -- Gate reviewer (Claude Code auto-approve)
+- `alchemy/research/` -- AlchemyBrowser (web research)
+- `alchemy/word/` -- AlchemyWord (text editor suggestions)
 
 ## Resource Split
 
 ```
-CPU (i9-13900K, 128GB RAM):           GPU (RTX 4070, 12GB VRAM):
-  UI-TARS-72B Q4_K_M  = ~42GB           14B conversational  = ~9GB (resident)
-  Piper TTS            = ~50MB           Whisper large-v3    = ~3GB (on-demand)
-  Shadow desktop       = minimal         Small models        = ~2GB (on-demand)
-  Remaining            = ~86GB free      Scheduling: time-share VRAM
+GPU 1 (RTX 5060 Ti, 16GB VRAM):    GPU 0 (RTX 4070, 12GB VRAM):
+  Qwen3 14B       = ~9GB (resident)    Whisper large-v3 = ~1GB (resident)
+  Qwen2.5-VL 7B   = ~4.4GB (resident)  Fish Speech      = ~5GB (resident)
+
+CPU (i9-13900K, 128GB RAM):
+  UI-TARS-72B Q4_K_M = ~42GB
+  Remaining          = ~86GB free
 ```
 
 GPU and CPU never block each other. They work in parallel.
 
-## Agent Loop (Alchemy-side)
+## Click Agent Loop
 
 ```
-NEO-TX sends: POST /vision/task {goal: "send email with hours"}
-    │
-    ▼
+Voice/API sends: POST /v1/vision/task {goal: "send email with hours"}
+    |
+    v
 Alchemy agent loop:
     1. Capture screenshot from Xvfb (:99)
-    2. Send to UI-TARS-72B → get action JSON
+    2. Send to vision model -> get action JSON
     3. Classify action tier (AUTO / NOTIFY / APPROVE)
-    4. If APPROVE → pause, request approval from NEO-TX
+    4. If APPROVE -> pause, show approval dialog via tray
     5. Execute action via xdotool in WSL2
     6. Repeat (max 50 steps)
-    │
-    ▼
-NEO-TX receives: task complete / approval request / status update
+    |
+    v
+Result: task complete / approval request / status update
 ```

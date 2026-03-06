@@ -69,7 +69,7 @@ All Electron apps expose Chrome DevTools Protocol. Launch with `--remote-debuggi
 
 All inputs feed into a single task queue:
 
-1. **Voice** via NEO-TX — "Hey, go book that flight"
+1. **Voice** via AlchemyVoice — "Hey, go book that flight"
 2. **Phone** via AlchemyCode — text command from iPhone
 3. **Direct API** — POST /v1/agent/task
 
@@ -215,7 +215,7 @@ Wire the safety layer and viewport.
 ### Phase 4: Integration (Day 4+)
 Wire into the full stack.
 
-1. Connect task queue to NEO-TX voice input
+1. Connect task queue to AlchemyVoice voice input
 2. Connect task queue to AlchemyCode phone input
 3. Pipe action logs to NEO-RX timeline
 4. OS settings app control panel

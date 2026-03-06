@@ -1,7 +1,9 @@
-"""Integration test — full Alchemy ↔ NEO-TX handshake.
+"""Integration test — full Alchemy server handshake.
 
-Starts both servers on test ports, verifies the complete task lifecycle:
+Starts the Alchemy server on a test port, verifies the complete task lifecycle:
 health check → submit task → poll status → approval flow → shadow control.
+
+Voice, callbacks, and all subsystems are now part of the same Alchemy process.
 
 Run with: pytest tests/test_integration.py -m integration -v
 """
@@ -15,9 +17,7 @@ import httpx
 import pytest
 
 ALCHEMY_PORT = 18000
-NEOTX_PORT = 18100
 ALCHEMY_URL = f"http://127.0.0.1:{ALCHEMY_PORT}"
-NEOTX_URL = f"http://127.0.0.1:{NEOTX_PORT}"
 
 
 def _wait_for_server(url: str, timeout: float = 10.0):
@@ -36,45 +36,33 @@ def _wait_for_server(url: str, timeout: float = 10.0):
 
 @pytest.fixture(scope="module")
 def servers():
-    """Start both servers on test ports, yield URLs, then kill them."""
+    """Start Alchemy server on test port, yield URL, then kill it."""
     alchemy = subprocess.Popen(
         [sys.executable, "-m", "uvicorn", "alchemy.server:app",
          "--host", "127.0.0.1", "--port", str(ALCHEMY_PORT)],
         cwd="C:/Users/info/GitHub/Alchemy",
         stdout=subprocess.PIPE, stderr=subprocess.PIPE,
     )
-    neotx = subprocess.Popen(
-        [sys.executable, "-m", "uvicorn", "neotx.server:app",
-         "--host", "127.0.0.1", "--port", str(NEOTX_PORT)],
-        cwd="C:/Users/info/GitHub/NEO-TX",
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-    )
 
     try:
         _wait_for_server(ALCHEMY_URL)
-        _wait_for_server(NEOTX_URL)
-        yield {"alchemy": ALCHEMY_URL, "neotx": NEOTX_URL}
+        yield {"alchemy": ALCHEMY_URL}
     finally:
         alchemy.terminate()
-        neotx.terminate()
         alchemy.wait(timeout=5)
-        neotx.wait(timeout=5)
 
 
 @pytest.mark.integration
 class TestFullHandshake:
     def test_health_checks(self, servers):
         r1 = httpx.get(f"{servers['alchemy']}/health")
-        r2 = httpx.get(f"{servers['neotx']}/health")
         assert r1.status_code == 200
-        assert r2.status_code == 200
         assert r1.json()["status"] == "ok"
-        assert r2.json()["status"] == "ok"
 
     def test_submit_task_and_poll(self, servers):
         r = httpx.post(f"{servers['alchemy']}/vision/task", json={
             "goal": "send email with hours",
-            "callback_url": servers["neotx"],
+            "callback_url": servers["alchemy"],
         })
         assert r.status_code == 200
         data = r.json()
@@ -87,14 +75,13 @@ class TestFullHandshake:
         assert r2.json()["task_id"] == task_id
 
     def test_approval_flow(self, servers):
-        # Submit task
         r = httpx.post(f"{servers['alchemy']}/vision/task", json={
-            "goal": "test approval", "callback_url": servers["neotx"],
+            "goal": "test approval", "callback_url": servers["alchemy"],
         })
         task_id = r.json()["task_id"]
 
-        # Alchemy sends approval callback to NEO-TX
-        r2 = httpx.post(f"{servers['neotx']}/callbacks/approval", json={
+        # Approval callback (now internal to Alchemy)
+        r2 = httpx.post(f"{servers['alchemy']}/v1/callbacks/approval", json={
             "task_id": task_id,
             "action": {"action": "click", "x": 340, "y": 200,
                        "reasoning": "Click Send", "tier": "approve"},
@@ -104,7 +91,7 @@ class TestFullHandshake:
         assert r2.status_code == 200
         assert r2.json()["received"] is True
 
-        # NEO-TX approves
+        # Approve the action
         r3 = httpx.post(f"{servers['alchemy']}/vision/task/{task_id}/approve", json={
             "decided_by": "user", "reason": "looks good",
         })
@@ -114,7 +101,7 @@ class TestFullHandshake:
 
     def test_deny_flow(self, servers):
         r = httpx.post(f"{servers['alchemy']}/vision/task", json={
-            "goal": "test denial", "callback_url": servers["neotx"],
+            "goal": "test denial", "callback_url": servers["alchemy"],
         })
         task_id = r.json()["task_id"]
 
@@ -156,7 +143,7 @@ class TestFullHandshake:
         assert len(r.json()["models"]) >= 1
 
     def test_notify_callback(self, servers):
-        r = httpx.post(f"{servers['neotx']}/callbacks/notify", json={
+        r = httpx.post(f"{servers['alchemy']}/v1/callbacks/notify", json={
             "task_id": "00000000-0000-0000-0000-000000000001",
             "action": {"action": "click", "x": 50, "y": 50,
                        "reasoning": "Opening Firefox", "tier": "notify"},
@@ -166,7 +153,7 @@ class TestFullHandshake:
         assert r.json()["received"] is True
 
     def test_task_update_callback(self, servers):
-        r = httpx.post(f"{servers['neotx']}/callbacks/task-update", json={
+        r = httpx.post(f"{servers['alchemy']}/v1/callbacks/task-update", json={
             "task_id": "00000000-0000-0000-0000-000000000001",
             "status": "completed", "current_step": 5,
             "message": "Task done",

@@ -156,13 +156,72 @@ class WordSettings(BaseModel):
 
 
 class VoiceSettings(BaseModel):
-    """Voice pipeline (STT + TTS)."""
+    """AlchemyVoice — voice pipeline, smart routing, conversation, tray."""
     enabled: bool = True
-    stt_model: str = "whisper-large-v3"
-    tts_model: str = "fish-speech-s1"
-    wake_word: str = "neo"
-    vad_threshold: float = 0.5
-    silence_timeout_ms: int = 1500
+
+    # GPU model (conversational)
+    gpu_model: str = "qwen3:14b"
+    gpu_model_keep_alive: str = "30m"
+    gpu_mode: str = "dual"  # "single" = VRAM swap, "dual" = all resident
+
+    # STT (Whisper)
+    whisper_model: str = "large-v3"
+    whisper_device: str = "cuda"
+
+    # Wake word
+    wake_word: str = "hey_neo"
+    voice_wake_threshold: float = 0.5
+
+    # VAD
+    voice_vad_aggressiveness: int = 2
+    voice_silence_ms: int = 800
+
+    # TTS engine selection
+    tts_engine: str = "piper"  # "piper", "fish", or "kokoro"
+    piper_model: str = "en_US-lessac-medium"
+
+    # Fish Speech
+    fish_speech_port: int = 8080
+    fish_speech_checkpoint: str = "checkpoints/openaudio-s1-mini"
+    fish_speech_decoder_path: str = ""
+    fish_speech_decoder_config: str = "modded_dac_vq"
+    fish_speech_host: str = "127.0.0.1"
+    fish_speech_startup_timeout: float = 60.0
+    fish_speech_compile: bool = False
+    fish_speech_sample_rate: int = 44100
+    fish_speech_temperature: float = 0.8
+    fish_speech_top_p: float = 0.8
+    fish_speech_repetition_penalty: float = 1.1
+    fish_speech_max_new_tokens: int = 1024
+    fish_speech_reference_id: str = ""
+    fish_speech_chunk_length: int = 200
+    fish_speech_python_exe: str = ""
+    fish_speech_dir: str = ""
+
+    # Kokoro TTS
+    kokoro_host: str = "127.0.0.1"
+    kokoro_port: int = 8880
+    kokoro_voice: str = "af_heart"
+
+    # System tray
+    tray_enabled: bool = True
+    tray_novnc_url: str = "http://localhost:6080/vnc.html?autoconnect=true&resize=scale"
+
+    # Knowledge (NEO-RX)
+    neorx_host: str = "http://localhost:8110"
+    knowledge_enabled: bool = True
+    knowledge_max_docs: int = 3
+
+
+class FlowVSAgentSettings(BaseModel):
+    """AlchemyFlowVS agent — toggle only."""
+    enabled: bool = False
+
+
+class AgentsSettings(BaseModel):
+    """AlchemyAgents — internal agent orchestration. Toggle per agent."""
+    enabled: bool = True
+    flow_vs: FlowVSAgentSettings = FlowVSAgentSettings()
 
 
 # --- Root settings (composes all groups) ---
@@ -190,6 +249,7 @@ class Settings(BaseSettings):
     research: ResearchSettings = ResearchSettings()
     word: WordSettings = WordSettings()
     voice: VoiceSettings = VoiceSettings()
+    agents: AgentsSettings = AgentsSettings()
 
     # === Flat fields (backward compat -- used by server.py and existing code) ===
 
@@ -285,6 +345,44 @@ class Settings(BaseSettings):
     gate_enabled: bool = True
     gate_model: str = "qwen3:14b"
     gate_timeout: float = 5.0
+
+    # Voice (flat compat — new code should use settings.voice.*)
+    voice_enabled: bool = True
+    tts_engine: str = "piper"
+    gpu_model: str = "qwen3:14b"
+    gpu_model_keep_alive: str = "30m"
+    gpu_mode: str = "dual"
+    whisper_model: str = "large-v3"
+    whisper_device: str = "cuda"
+    wake_word: str = "hey_neo"
+    voice_wake_threshold: float = 0.5
+    voice_vad_aggressiveness: int = 2
+    voice_silence_ms: int = 800
+    piper_model: str = "en_US-lessac-medium"
+    fish_speech_port: int = 8080
+    fish_speech_checkpoint: str = "checkpoints/openaudio-s1-mini"
+    fish_speech_decoder_path: str = ""
+    fish_speech_decoder_config: str = "modded_dac_vq"
+    fish_speech_host: str = "127.0.0.1"
+    fish_speech_startup_timeout: float = 60.0
+    fish_speech_compile: bool = False
+    fish_speech_sample_rate: int = 44100
+    fish_speech_temperature: float = 0.8
+    fish_speech_top_p: float = 0.8
+    fish_speech_repetition_penalty: float = 1.1
+    fish_speech_max_new_tokens: int = 1024
+    fish_speech_reference_id: str = ""
+    fish_speech_chunk_length: int = 200
+    fish_speech_python_exe: str = ""
+    fish_speech_dir: str = ""
+    kokoro_host: str = "127.0.0.1"
+    kokoro_port: int = 8880
+    kokoro_voice: str = "af_heart"
+    tray_enabled: bool = True
+    tray_novnc_url: str = "http://localhost:6080/vnc.html?autoconnect=true&resize=scale"
+    neorx_host: str = "http://localhost:8110"
+    knowledge_enabled: bool = True
+    knowledge_max_docs: int = 3
 
     # Research
     research_enabled: bool = True

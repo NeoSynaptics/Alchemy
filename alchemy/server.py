@@ -25,8 +25,9 @@ from alchemy.api import playwright_api
 from alchemy.api import research_api
 from alchemy.api import gate_api
 from alchemy.api import desktop_api
-from alchemy.api import gpu_api
+from alchemy.api import apu_api
 from alchemy.api import modules_api
+from alchemy.api import click_api
 from alchemy.router.environment import EnvironmentDetector
 from alchemy.shadow.controller import ShadowDesktopController
 from alchemy.shadow.wsl import WslRunner
@@ -86,10 +87,10 @@ async def lifespan(app: FastAPI):
     app.state.ollama_client = ollama
     app.state.task_manager = TaskManager()
 
-    # --- GPU Stack Orchestrator ---
+    # --- APU (Alchemy Processing Unit) ---
     try:
         from pathlib import Path
-        from alchemy.gpu import GPUMonitor, ModelRegistry, StackOrchestrator
+        from alchemy.apu import GPUMonitor, ModelRegistry, StackOrchestrator
 
         gpu_monitor = GPUMonitor()
         model_registry = ModelRegistry()
@@ -106,7 +107,7 @@ async def lifespan(app: FastAPI):
         app.state.orchestrator = orchestrator
         app.state.gpu_monitor = gpu_monitor
         app.state.model_registry = model_registry
-        logger.info("GPU Stack Orchestrator started (%d models registered)",
+        logger.info("APU started (%d models registered)",
                      len(model_registry.all_models()))
 
         # Validate model contracts — apps declare what they need, core checks availability
@@ -122,7 +123,7 @@ async def lifespan(app: FastAPI):
                            report.module_id, report.optional_missing)
 
     except Exception as e:
-        logger.warning("GPU Stack Orchestrator failed to start: %s", e)
+        logger.warning("APU failed to start: %s", e)
         app.state.orchestrator = None
         app.state.gpu_monitor = None
         app.state.model_registry = None
@@ -260,12 +261,78 @@ async def lifespan(app: FastAPI):
     else:
         app.state.environment = None
 
+    # --- AlchemyVoice (voice pipeline, smart router, conversation, tray) ---
+    app.state.voice_system = None
+    if settings.voice_enabled:
+        try:
+            from alchemy.voice import VoiceSystem
+
+            voice_system = VoiceSystem(settings)
+            # Voice router needs the SmartRouter — build it
+            from alchemy.voice.models.provider import OllamaProvider
+            from alchemy.voice.models.registry import build_default_registry
+            from alchemy.voice.models.schemas import ModelLocation
+            from alchemy.voice.router.cascade import ConversationToVisionCascade
+            from alchemy.voice.router.router import SmartRouter
+            from alchemy.voice.models.conversation import ConversationManager
+
+            voice_registry = build_default_registry()
+            voice_ollama = OllamaProvider(
+                host=settings.ollama_host,
+                timeout=120.0,
+                keep_alive=settings.gpu_model_keep_alive,
+            )
+            await voice_ollama.start()
+
+            voice_providers = {ModelLocation.GPU_LOCAL: voice_ollama}
+            voice_router = SmartRouter(
+                registry=voice_registry,
+                providers=voice_providers,
+                conversation_manager=ConversationManager(),
+                cascades=[ConversationToVisionCascade()],
+            )
+
+            await voice_system.start(router=voice_router)
+            app.state.voice_system = voice_system
+            app.state.voice_ollama = voice_ollama
+            logger.info("AlchemyVoice started")
+        except ImportError as e:
+            logger.warning("Voice dependencies not available: %s", e)
+        except Exception:
+            logger.exception("AlchemyVoice failed to start")
+
+    # --- Constitution (approval defense) ---
+    app.state.constitution = None
+    try:
+        from alchemy.voice.constitution.engine import ConstitutionEngine
+
+        app.state.constitution = ConstitutionEngine()
+        logger.info("Constitution engine loaded (%d rules)", len(app.state.constitution.rules))
+    except Exception:
+        logger.debug("Constitution engine not available")
+
+    # --- Task planner ---
+    app.state.planner = None
+    try:
+        from alchemy.voice.planner.planner import TaskPlanner
+
+        app.state.planner = TaskPlanner()
+        logger.info("Task planner initialized")
+    except Exception:
+        logger.debug("Task planner not available")
+
     yield
 
     # Cleanup
+    if getattr(app.state, "voice_system", None):
+        await app.state.voice_system.stop()
+        logger.info("AlchemyVoice stopped")
+    if getattr(app.state, "voice_ollama", None):
+        await app.state.voice_ollama.close()
+
     if getattr(app.state, "orchestrator", None):
         await app.state.orchestrator.close()
-        logger.info("GPU Stack Orchestrator stopped")
+        logger.info("APU stopped")
 
     if getattr(app.state, "browser_manager", None):
         await app.state.browser_manager.close()
@@ -312,8 +379,18 @@ app.include_router(playwright_api.router, prefix="/v1")
 app.include_router(research_api.router, prefix="/v1")
 app.include_router(desktop_api.router, prefix="/v1")
 app.include_router(gate_api.router, prefix="/gate")
-app.include_router(gpu_api.router, prefix="/v1")
+app.include_router(apu_api.router, prefix="/v1")
 app.include_router(modules_api.router, prefix="/v1")
+app.include_router(click_api.router)
+
+# AlchemyVoice routes (chat, voice control, callbacks)
+from alchemy.voice.api import callbacks as voice_callbacks
+from alchemy.voice.api import chat as voice_chat
+from alchemy.voice.api import voice as voice_control
+
+app.include_router(voice_callbacks.router, prefix="/v1")
+app.include_router(voice_chat.router, prefix="/v1")
+app.include_router(voice_control.router, prefix="/v1")
 
 
 @app.get("/health")
@@ -328,8 +405,10 @@ async def health():
     desktop_mode = desktop_agent._controller.mode if desktop_agent else None
     gui_actor_ok = getattr(app.state, "gui_actor_client", None) is not None
     orchestrator_ok = getattr(app.state, "orchestrator", None) is not None
+    voice_system = getattr(app.state, "voice_system", None)
+    voice_ok = voice_system is not None and voice_system.is_running
     return {
-        "status": "ok", "version": "0.3.0",
+        "status": "ok", "version": "0.4.0",
         "wsl_available": wsl_ok, "ollama_connected": ollama_ok,
         "playwright_agent": pw_ok, "browser_ready": browser_ok,
         "research_enabled": settings.research_enabled,
@@ -338,5 +417,6 @@ async def health():
         "desktop_mode": desktop_mode,
         "gui_actor": gui_actor_ok,
         "gpu_orchestrator": orchestrator_ok,
+        "voice_enabled": voice_ok,
         "vision_model": settings.pw_escalation_model,
     }

@@ -82,7 +82,7 @@ def validate_module_contract(manifest: ModuleManifest, registry) -> ContractRepo
 
     Args:
         manifest: The module's manifest with model requirements.
-        registry: A ModelRegistry instance (from alchemy.gpu).
+        registry: A ModelRegistry instance (from alchemy.apu).
 
     Returns:
         ContractReport with per-requirement results.

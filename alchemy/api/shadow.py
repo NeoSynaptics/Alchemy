@@ -1,6 +1,6 @@
 """Shadow Desktop API — start, stop, health, screenshot.
 
-NEO-TX calls these to manage the WSL2 shadow desktop.
+AlchemyVoice calls these to manage the WSL2 shadow desktop.
 Uses ShadowDesktopController for real WSL2 operations,
 falls back to mock responses if WSL2 is unavailable.
 """

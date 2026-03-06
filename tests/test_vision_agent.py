@@ -18,15 +18,15 @@ def deps():
     controller = AsyncMock()
     controller.screenshot = AsyncMock(return_value=b"\x89PNG\r\n\x1a\n" + b"\x00" * 100)
     controller.execute = AsyncMock(return_value="")
-    neotx = AsyncMock()
-    neotx.request_approval = AsyncMock()
-    neotx.notify = AsyncMock()
-    neotx.task_update = AsyncMock()
+    voice_cb = AsyncMock()
+    voice_cb.request_approval = AsyncMock()
+    voice_cb.notify = AsyncMock()
+    voice_cb.task_update = AsyncMock()
     task_manager = TaskManager()
-    return ollama, controller, neotx, task_manager
+    return ollama, controller, voice_cb, task_manager
 
 
-def _make_agent(ollama, controller, neotx, task_manager, **kwargs):
+def _make_agent(ollama, controller, voice_cb, task_manager, **kwargs):
     defaults = dict(
         model="test-model", max_steps=10, timeout=30.0,
         screenshot_interval=0.0, approval_timeout=5.0,
@@ -36,14 +36,14 @@ def _make_agent(ollama, controller, neotx, task_manager, **kwargs):
     )
     defaults.update(kwargs)
     return VisionAgent(
-        ollama=ollama, controller=controller, neotx=neotx,
+        ollama=ollama, controller=controller, voice_cb=voice_cb,
         task_manager=task_manager, **defaults,
     )
 
 
 class TestRunTask:
     async def test_happy_path_finishes(self, deps):
-        ollama, controller, neotx, tm = deps
+        ollama, controller, voice_cb, tm = deps
         tid = uuid4()
         tm.create_task(tid, "test task")
 
@@ -61,7 +61,7 @@ class TestRunTask:
         assert controller.execute.call_count == 1  # only click, not finished
 
     async def test_max_steps_exceeded(self, deps):
-        ollama, controller, neotx, tm = deps
+        ollama, controller, voice_cb, tm = deps
         tid = uuid4()
         tm.create_task(tid, "endless task")
 
@@ -76,7 +76,7 @@ class TestRunTask:
         assert "max steps" in tm.get_task(tid).error.lower()
 
     async def test_screenshot_failure(self, deps):
-        ollama, controller, neotx, tm = deps
+        ollama, controller, voice_cb, tm = deps
         tid = uuid4()
         tm.create_task(tid, "screenshot fail")
 
@@ -89,7 +89,7 @@ class TestRunTask:
         assert "No display" in tm.get_task(tid).error
 
     async def test_ollama_error(self, deps):
-        ollama, controller, neotx, tm = deps
+        ollama, controller, voice_cb, tm = deps
         tid = uuid4()
         tm.create_task(tid, "inference fail")
 
@@ -102,7 +102,7 @@ class TestRunTask:
         assert "Inference error" in tm.get_task(tid).error
 
     async def test_parse_error_continues(self, deps):
-        ollama, controller, neotx, tm = deps
+        ollama, controller, voice_cb, tm = deps
         tid = uuid4()
         tm.create_task(tid, "parse error")
 
@@ -118,7 +118,7 @@ class TestRunTask:
         assert status == TaskStatus.COMPLETED
 
     async def test_cancellation(self, deps):
-        ollama, controller, neotx, tm = deps
+        ollama, controller, voice_cb, tm = deps
         tid = uuid4()
         state = tm.create_task(tid, "cancel me")
         state.cancel_event.set()
@@ -130,7 +130,7 @@ class TestRunTask:
 
     async def test_non_streaming_mode(self, deps):
         """When streaming is disabled, use chat() instead."""
-        ollama, controller, neotx, tm = deps
+        ollama, controller, voice_cb, tm = deps
         tid = uuid4()
         tm.create_task(tid, "non-streaming")
 
@@ -146,7 +146,7 @@ class TestRunTask:
 
     async def test_model_escalation_on_failure(self, deps):
         """When fast model fails, escalate to full model."""
-        ollama, controller, neotx, tm = deps
+        ollama, controller, voice_cb, tm = deps
         tid = uuid4()
         tm.create_task(tid, "escalation test")
 
@@ -169,7 +169,7 @@ class TestRunTask:
 
 class TestAnalyzeSingle:
     async def test_returns_action(self, deps):
-        ollama, controller, neotx, tm = deps
+        ollama, controller, voice_cb, tm = deps
         ollama.chat_stream = AsyncMock(return_value=(
             "Thought: Click the button.\nAction: click(start_box='(500,250)')"
         ))
@@ -185,7 +185,7 @@ class TestAnalyzeSingle:
         assert resp.model == "test-model"
 
     async def test_non_streaming_analyze(self, deps):
-        ollama, controller, neotx, tm = deps
+        ollama, controller, voice_cb, tm = deps
         ollama.chat = AsyncMock(return_value={
             "message": {"role": "assistant", "content": "Thought: Click.\nAction: click(start_box='(500,500)')"},
         })

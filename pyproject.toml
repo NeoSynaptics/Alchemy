@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "alchemy"
-version = "0.1.0"
-description = "Core engine — CPU-side heavy lifting, shadow desktop, UI-TARS vision agent"
+version = "0.4.0"
+description = "Core AI engine — voice, click automation, GPU orchestration, research, local-first"
 requires-python = ">=3.12"
 license = "MIT"
 authors = [
@@ -26,9 +26,30 @@ dependencies = [
     "trafilatura>=2.0",
     "pyyaml>=6.0",
     "nvidia-ml-py>=12.0",
+    "websockets",
 ]
 
 [project.optional-dependencies]
+voice = [
+    "faster-whisper",
+    "openwakeword",
+    "sounddevice",
+    "webrtcvad",
+]
+voice-piper = [
+    "alchemy[voice]",
+    "piper-tts",
+]
+tray = [
+    "PyQt6",
+    "PyQt6-WebEngine",
+]
+planner = [
+    "chromadb",
+]
+all = [
+    "alchemy[voice,voice-piper,tray,planner]",
+]
 dev = [
     "pytest",
     "pytest-asyncio",
@@ -36,14 +57,19 @@ dev = [
     "pip-tools",
     "import-linter",
 ]
+tray-dev = [
+    "alchemy[tray]",
+    "pytest-qt",
+]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-addopts = "-m 'not integration and not live'"
+addopts = "-m 'not integration and not live and not gpu'"
 markers = [
     "live: tests requiring running WSL2 + shadow desktop",
-    "integration: tests requiring both Alchemy + NEO-TX servers running",
+    "integration: tests requiring full Alchemy server running",
+    "gpu: tests requiring GPU for voice/model inference",
 ]
 
 [tool.ruff]

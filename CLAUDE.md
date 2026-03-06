@@ -1,28 +1,29 @@
 # Alchemy — Claude Session Guide
 
 ## What This Is
-Core engine for the NEO stack. GPU/CPU orchestrator, click agent, voice pipeline, research browser, and more. NEO-TX (the user-facing layer) delegates heavy work here via API.
+Core AI engine. Voice pipeline, click automation, GPU orchestration, research browser, and more. Everything runs from a single server on port 8000.
 
 ## Key Paths
 - Config: `config/settings.py` (nested BaseModel groups per module)
 - Server: `alchemy/server.py` (FastAPI, port 8000)
+- **AlchemyVoice: `alchemy/voice/` (voice pipeline, smart router, conversation, tray, constitution)**
 - AlchemyClick: `alchemy/click/` (two-tier GUI automation: Playwright + vision fallback)
 - Shadow Desktop: `alchemy/shadow/` (WSL2 bridge, controller, health)
-- GPU Orchestrator: `alchemy/gpu/` (VRAM/RAM fleet management, model placement)
+- APU (Alchemy Processing Unit): `alchemy/apu/` (VRAM/RAM fleet management, model placement, health guard)
 - Models: `alchemy/models/` (CPU model lifecycle)
 - Router: `alchemy/router/` (request classification + context routing)
 - Core: `alchemy/core/` (Playwright agent, browser manager, approval gate)
 - Auth: `alchemy/security/` (bearer tokens)
 - WSL Scripts: `wsl/` (setup, start, stop, health)
 
-## Module Registry (13 modules)
+## Module Registry
 
 | Module | ID | Tier | Path |
 |--------|----|------|------|
 | Agent Kernel | `core` | core | `alchemy/core/` |
 | AlchemyClick | `click` | core | `alchemy/click/` |
-| Voice Pipeline | `voice` | core | `alchemy/voice/` |
-| GPU Orchestrator | `gpu` | infra | `alchemy/gpu/` |
+| **AlchemyVoice** | `voice` | core | `alchemy/voice/` |
+| APU (Alchemy Processing Unit) | `apu` | infra | `alchemy/apu/` |
 | LLM Adapters | `adapters` | infra | `alchemy/adapters/` |
 | Shadow Desktop | `shadow` | infra | `alchemy/shadow/` |
 | Context Router | `router` | infra | `alchemy/router/` |
@@ -32,7 +33,29 @@ Core engine for the NEO stack. GPU/CPU orchestrator, click agent, voice pipeline
 | AlchemyBrowser | `research` | app | `alchemy/research/` |
 | AlchemyWord | `word` | app | `alchemy/word/` |
 
-## GPU Fleet & Eviction
+## AlchemyVoice (alchemy/voice/)
+Voice is a first-class core module. Public interface hides model internals.
+
+**Public API** (what external code uses):
+- `VoiceSystem` — start/stop/configure voice
+- `VoiceMode` — conversation, command, dictation, muted
+- `VoiceStatus` — serializable status for GUI/API
+
+**Internal modules** (hidden behind VoiceSystem):
+- `pipeline.py` — state machine (IDLE→LISTENING→RECORDING→PROCESSING→SPEAKING)
+- `stt.py` — Whisper STT
+- `tts.py` — Piper/Fish Speech/Kokoro TTS
+- `wake_word.py` — openWakeWord detection
+- `vram_manager.py` — single/dual GPU VRAM swapping
+- `models/` — voice model registry + providers (Ollama, Alchemy)
+- `router/` — smart routing (conversation vs GUI task)
+- `constitution/` — approval gates (AUTO/NOTIFY/APPROVE)
+- `planner/` — task decomposition
+- `tray/` — system tray UI (PyQt6, optional)
+- `knowledge/` — NEO-RX integration (optional)
+- `api/` — /chat, /voice, /callbacks endpoints
+
+## APU Fleet & Eviction
 
 - **No model is immune.** All models can be evicted from VRAM.
 - **Eviction order:** app models first → infra → core last.
@@ -41,13 +64,19 @@ Core engine for the NEO stack. GPU/CPU orchestrator, click agent, voice pipeline
 - `ModelTier` enum: RESIDENT(P0) > USER_ACTIVE(P1) > AGENT(P2) > WARM(P3) > COLD(P4)
 
 ## API
-- `POST /vision/analyze` → screenshot → VLM → action JSON
-- `POST /vision/task` → submit multi-step GUI task
-- `POST /shadow/start|stop` → control shadow desktop
-- `GET /shadow/health` → service status
+- `POST /v1/vision/analyze` → screenshot → VLM → action JSON
+- `POST /v1/vision/task` → submit multi-step GUI task
+- `POST /v1/shadow/start|stop` → control shadow desktop
+- `GET /v1/shadow/health` → service status
 - `GET /v1/modules` → module discovery + contract status
-- `POST /v1/gpu/app/{name}/activate-manifest` → resolve model contracts
-- `GET /v1/gpu/status` → GPU/RAM status
+- `POST /v1/apu/app/{name}/activate-manifest` → resolve model contracts
+- `GET /v1/apu/status` → GPU/RAM status
+- `POST /v1/chat` → non-streaming chat
+- `POST /v1/chat/stream` → SSE streaming chat
+- `GET /v1/voice/status` → voice pipeline status
+- `POST /v1/voice/start|stop` → control voice pipeline
+- `POST /v1/voice/mode` → change voice mode
+- `POST /v1/callbacks/approval|notify|task-update` → internal callbacks
 
 ## Commands
 ```bash
@@ -58,9 +87,6 @@ make shadow-health   # Check services
 make server          # Run Alchemy on :8000
 make test            # Run pytest
 ```
-
-## NEO-TX Integration
-NEO-TX (port 8100) sends GUI tasks to Alchemy. For APPROVE-tier actions, the click agent loop pauses and sends an approval request back to NEO-TX before executing.
 
 ## Module Conventions (MANDATORY)
 

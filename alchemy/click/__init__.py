@@ -1,16 +1,68 @@
-"""AlchemyClick — two-tier GUI automation (click agent).
+"""AlchemyClick — the overarching GUI automation behavior contract.
 
-Tier 1 (PRIMARY): Playwright accessibility tree → Qwen3 14B → ref-based actions.
-  No screenshots, no coordinates. Pure structured data. Fast + reliable.
-  Covers: Chrome, Electron apps (VS Code, Spotify, Slack, Discord, Notion).
+AlchemyClick defines HOW the agent behaves when interacting with any GUI.
+It owns the shared rules: task lifecycle, approval gates, action tier
+classification, and the 10 proven patterns.
 
-Tier 2 (FALLBACK): Screenshot → Qwen2.5-VL 7B → coordinate-based actions → xdotool.
-  For native Win32 apps without DOM/accessibility tree access.
+Two execution paths live underneath:
 
-For APPROVE-tier actions, the click agent pauses and requests human confirmation
-before executing irreversible operations.
+  AlchemyBrowser (alchemy.click.browser)
+    Playwright accessibility tree + Qwen3 14B → ref-based actions.
+    For web apps and Electron apps (Chrome, VS Code, Spotify, Slack).
+
+  AlchemyFlow (alchemy.click.flow)
+    Screenshot → Qwen2.5-VL 7B → pixel coordinates → ghost cursor.
+    For native Win32 apps and anything without a DOM.
+
+Shared components at this level:
+  - TaskManager: task lifecycle + approval signaling (used by both paths)
+  - Patterns: the 10 proven capabilities registry
+  - Parent manifest: declares the module to Alchemy's registry
 """
 
 from alchemy.click.manifest import MANIFEST
+from alchemy.click.task_manager import TaskManager
+from alchemy.click.functions import (
+    ALCHEMY_BROWSER,
+    ALCHEMY_CLICK,
+    ALCHEMY_FLOW,
+    ALCHEMY_FLOW_AGENT,
+    ALCHEMY_FLOW_VS,
+    Visibility,
+    all_functions,
+    browser,
+    click,
+    dispatch_browser,
+    dispatch_click,
+    dispatch_flow,
+    dispatch_flow_vs,
+    external_functions,
+    flow,
+    get_function,
+    internal_functions,
+)
 
-__all__ = ["MANIFEST"]
+__all__ = [
+    "MANIFEST",
+    "TaskManager",
+    # Function registry
+    "ALCHEMY_CLICK",
+    "ALCHEMY_FLOW",
+    "ALCHEMY_FLOW_AGENT",
+    "ALCHEMY_FLOW_VS",
+    "ALCHEMY_BROWSER",
+    "Visibility",
+    "get_function",
+    "all_functions",
+    "external_functions",
+    "internal_functions",
+    # Dispatchers
+    "dispatch_click",
+    "dispatch_flow",
+    "dispatch_flow_vs",
+    "dispatch_browser",
+    # Shorthand
+    "click",
+    "flow",
+    "browser",
+]

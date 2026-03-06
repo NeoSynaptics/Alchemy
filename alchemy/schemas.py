@@ -1,7 +1,6 @@
-"""Alchemy ↔ NEO-TX API contract — shared Pydantic models.
+"""Alchemy shared Pydantic models — vision, shadow, callbacks, tasks.
 
-Both repos maintain identical copies of these schemas. Any change here
-must be mirrored in neotx/schemas.py.
+Single source of truth. Voice code re-exports from alchemy.voice.schemas.
 """
 
 from __future__ import annotations
@@ -39,7 +38,7 @@ class ShadowStatus(str, Enum):
 
 
 # ---------------------------------------------------------------------------
-# Vision (NEO-TX → Alchemy)
+# Vision
 # ---------------------------------------------------------------------------
 
 class VisionAction(BaseModel):
@@ -102,7 +101,7 @@ class ApprovalDecisionResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Shadow Desktop (NEO-TX → Alchemy)
+# Shadow Desktop
 # ---------------------------------------------------------------------------
 
 class ShadowStartRequest(BaseModel):
@@ -133,7 +132,7 @@ class ShadowHealthResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Models (NEO-TX → Alchemy)
+# Models
 # ---------------------------------------------------------------------------
 
 class ModelInfo(BaseModel):
@@ -150,7 +149,7 @@ class ModelsResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Callbacks (Alchemy → NEO-TX)
+# Callbacks (click agent → voice/tray)
 # ---------------------------------------------------------------------------
 
 class ApprovalRequest(BaseModel):
@@ -275,3 +274,32 @@ class ResearchTaskStatusResponse(BaseModel):
     pipeline_stage: str = "pending"
     total_ms: float = 0.0
     error: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# AlchemyClick Function Calls
+# ---------------------------------------------------------------------------
+
+class ClickTarget(str, Enum):
+    """Which execution path to use."""
+    AUTO = "auto"          # AlchemyClick decides (Flow vs Browser)
+    FLOW = "flow"          # Force AlchemyFlow (vision + ghost cursor)
+    BROWSER = "browser"    # Force AlchemyBrowser (Playwright + a11y)
+
+
+class ClickCallRequest(BaseModel):
+    """Invoke AlchemyClick (or a sub-function) as a function call."""
+    goal: str
+    target: ClickTarget = ClickTarget.AUTO
+    url: str | None = None              # For browser: start URL or CDP endpoint
+    cdp_endpoint: str | None = None     # For browser: Electron CDP
+    context: dict | None = None         # Extra context for the agent
+    callback_url: str = "http://localhost:8100"
+
+
+class ClickCallResult(BaseModel):
+    """Result from an AlchemyClick function call."""
+    task_id: UUID
+    status: TaskStatus = TaskStatus.PENDING
+    target_used: ClickTarget
+    created_at: datetime

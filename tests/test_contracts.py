@@ -8,7 +8,7 @@ from alchemy.contracts import (
     validate_contracts,
     validate_module_contract,
 )
-from alchemy.gpu.registry import ModelBackend, ModelCard, ModelRegistry, ModelTier
+from alchemy.apu.registry import ModelBackend, ModelCard, ModelRegistry, ModelTier
 from alchemy.manifest import ModelRequirement, ModuleManifest
 
 
