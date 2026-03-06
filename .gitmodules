@@ -1,0 +1,3 @@
+[submodule "AlchemySynteticTest"]
+	path = AlchemySynteticTest
+	url = https://github.com/NeoSynaptics/AlchemySynteticTest.git
