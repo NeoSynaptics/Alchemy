@@ -39,10 +39,10 @@ from alchemy.schemas import (
 logger = logging.getLogger(__name__)
 
 
-def __classify_tier_contextual(action, category, goal):
+def _classify_tier_contextual(action, category, goal):
     """Lazy import to break circular: vision_agent → router.tier → click → vision_agent."""
     from alchemy.router.tier import classify_tier_contextual
-    return _classify_tier_contextual(action, category, goal)
+    return classify_tier_contextual(action, category, goal)
 
 # Short prompt — PROVEN to give better coordinate accuracy than long UI-TARS templates.
 # Qwen2.5-VL outputs image pixel coords natively with this prompt.
