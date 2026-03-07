@@ -32,7 +32,7 @@ forbidden_modules =
 name = GPU orchestrator never imports from feature modules
 type = forbidden
 source_modules =
-    alchemy.gpu
+    alchemy.apu
 forbidden_modules =
     alchemy.api
     alchemy.click

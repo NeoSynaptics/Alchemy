@@ -27,7 +27,6 @@ from alchemy.clients.voice_callback import VoiceCallbackClient
 from alchemy.models.ollama_client import OllamaClient
 from alchemy.router.categories import TaskCategory, classify_task
 from alchemy.router.context_builder import ContextBuilder
-from alchemy.router.tier import classify_tier_contextual
 from alchemy.schemas import (
     ActionTier,
     ApprovalRequest,
@@ -38,6 +37,12 @@ from alchemy.schemas import (
     VisionAnalyzeResponse,
 )
 logger = logging.getLogger(__name__)
+
+
+def __classify_tier_contextual(action, category, goal):
+    """Lazy import to break circular: vision_agent → router.tier → click → vision_agent."""
+    from alchemy.router.tier import classify_tier_contextual
+    return _classify_tier_contextual(action, category, goal)
 
 # Short prompt — PROVEN to give better coordinate accuracy than long UI-TARS templates.
 # Qwen2.5-VL outputs image pixel coords natively with this prompt.
@@ -216,7 +221,7 @@ class VisionAgent:
                             tier=ActionTier.AUTO,
                         )
                         if category:
-                            action.tier = classify_tier_contextual(action, category, goal)
+                            action.tier = _classify_tier_contextual(action, category, goal)
 
                         raw_text = f"Thought: OmniParser matched '{match.label}'\nAction: click {{\"point_2d\": [{match.center_x}, {match.center_y}]}}"
 
@@ -276,7 +281,7 @@ class VisionAgent:
                         image_height=self._image_height,
                     )
                     if category:
-                        action.tier = classify_tier_contextual(action, category, goal)
+                        action.tier = _classify_tier_contextual(action, category, goal)
                     else:
                         action.tier = classify_tier(action)
                     consecutive_parse_errors = 0
@@ -416,7 +421,7 @@ class VisionAgent:
 
         category = classify_task(goal) if self._context_builder else None
         if category:
-            action.tier = classify_tier_contextual(action, category, goal)
+            action.tier = _classify_tier_contextual(action, category, goal)
         else:
             action.tier = classify_tier(action)
 
