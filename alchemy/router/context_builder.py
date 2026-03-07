@@ -78,19 +78,11 @@ class ContextBuilder:
         """Format the environment snapshot as a readable block."""
         env = self._env
         lines = ["## Environment"]
-        lines.append(f"- Shadow Desktop: {env.os_type}, {env.desktop}, {env.resolution}")
-
-        if env.shadow_apps:
-            lines.append(f"- Shadow Apps: {', '.join(env.shadow_apps)}")
-
-        lines.append(f"- Windows Host: {env.windows_version}")
+        lines.append(f"- OS: {env.windows_version}")
+        lines.append(f"- Resolution: {env.resolution}")
 
         if env.windows_apps:
-            lines.append(f"- Windows Apps: {', '.join(env.windows_apps)}")
-
-        audio_status = "available" if env.has_audio else "not configured"
-        lines.append(f"- Audio: PulseAudio {audio_status} on shadow desktop")
-        lines.append(f"- App launcher: {env.search_method}")
+            lines.append(f"- Installed Apps: {', '.join(env.windows_apps)}")
 
         return "\n".join(lines)
 
@@ -105,27 +97,16 @@ class ContextBuilder:
         dev_apps = env.apps_for_category(_DEV_KEYWORDS)
         file_apps = env.apps_for_category(_FILE_KEYWORDS)
 
-        # Tag apps with their platform
-        def _tag(apps: list[str]) -> str:
-            if not apps:
-                return "none detected"
-            tagged = []
-            for app in apps:
-                if app in env.shadow_apps:
-                    tagged.append(f"{app} (shadow)")
-                elif app in env.windows_apps:
-                    tagged.append(f"{app} (Windows)")
-                else:
-                    tagged.append(app)
-            return ", ".join(tagged)
+        def _fmt(apps: list[str]) -> str:
+            return ", ".join(apps) if apps else "none detected"
 
         subs = {
-            "media_apps": _tag(media_apps),
-            "default_browser": env.default_browser,
-            "file_manager": _tag(file_apps) if file_apps else "nautilus or terminal",
-            "comm_apps": _tag(comm_apps),
-            "dev_apps": _tag(dev_apps),
-            "desktop": env.desktop,
+            "media_apps": _fmt(media_apps),
+            "default_browser": "Edge",
+            "file_manager": _fmt(file_apps) if file_apps else "File Explorer",
+            "comm_apps": _fmt(comm_apps),
+            "dev_apps": _fmt(dev_apps),
+            "desktop": "Windows",
         }
 
         try:

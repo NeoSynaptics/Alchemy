@@ -67,7 +67,7 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 addopts = "-m 'not integration and not live and not gpu'"
 markers = [
-    "live: tests requiring running WSL2 + shadow desktop",
+    "live: tests requiring running Alchemy server + desktop",
     "integration: tests requiring full Alchemy server running",
     "gpu: tests requiring GPU for voice/model inference",
 ]

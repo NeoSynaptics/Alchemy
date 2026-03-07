@@ -12,11 +12,11 @@ forbidden_modules =
     alchemy.api
     alchemy.research
     alchemy.router
-    alchemy.shadow
+
     alchemy.server
 
 [importlinter:contract:adapters-independence]
-name = Adapters don't import from API/research/router/shadow
+name = Adapters don't import from API/research/router
 type = forbidden
 source_modules =
     alchemy.adapters
@@ -24,7 +24,7 @@ forbidden_modules =
     alchemy.api
     alchemy.research
     alchemy.router
-    alchemy.shadow
+
     alchemy.server
     alchemy.core
 
@@ -39,7 +39,7 @@ forbidden_modules =
     alchemy.gate
     alchemy.research
     alchemy.router
-    alchemy.shadow
+
     alchemy.desktop
     alchemy.playwright
     alchemy.voice
@@ -56,7 +56,7 @@ forbidden_modules =
     alchemy.gate
     alchemy.research
     alchemy.router
-    alchemy.shadow
+
     alchemy.desktop
     alchemy.voice
     alchemy.server
@@ -69,7 +69,7 @@ source_modules =
 forbidden_modules =
     alchemy.research
     alchemy.desktop
-    alchemy.shadow
+
     alchemy.click
 
 [importlinter:contract:research-isolation]
@@ -80,7 +80,7 @@ source_modules =
 forbidden_modules =
     alchemy.gate
     alchemy.desktop
-    alchemy.shadow
+
     alchemy.click
 
 [importlinter:contract:desktop-isolation]
@@ -91,7 +91,7 @@ source_modules =
 forbidden_modules =
     alchemy.gate
     alchemy.research
-    alchemy.shadow
+
     alchemy.click
 
 [importlinter:contract:word-isolation]
@@ -103,7 +103,7 @@ forbidden_modules =
     alchemy.gate
     alchemy.research
     alchemy.desktop
-    alchemy.shadow
+
     alchemy.click
 
 [importlinter:contract:voice-isolation]
@@ -115,7 +115,7 @@ forbidden_modules =
     alchemy.gate
     alchemy.research
     alchemy.desktop
-    alchemy.shadow
+
     alchemy.click
     alchemy.word
 
@@ -143,7 +143,7 @@ forbidden_modules =
     alchemy.gate
     alchemy.research
     alchemy.router
-    alchemy.shadow
+
     alchemy.desktop
     alchemy.voice
     alchemy.server

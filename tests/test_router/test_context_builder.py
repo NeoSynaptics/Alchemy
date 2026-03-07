@@ -10,14 +10,10 @@ from alchemy.router.environment import EnvironmentSnapshot
 @pytest.fixture
 def env():
     return EnvironmentSnapshot(
-        os_type="Ubuntu 22.04 (WSL2)",
-        desktop="Fluxbox",
+        os_type="Windows",
         resolution="1920x1080",
-        shadow_apps=["firefox", "vlc", "xterm", "nautilus"],
-        default_browser="firefox",
-        has_audio=True,
-        search_method="fluxbox menu (right-click desktop)",
-        windows_apps=["Spotify", "Google Chrome", "Discord", "Visual Studio Code"],
+        windows_apps=["Spotify", "Google Chrome", "Discord", "Visual Studio Code",
+                       "firefox", "vlc", "Notepad"],
         windows_version="Windows 11 Pro",
     )
 
@@ -28,16 +24,8 @@ class TestContextBuilder:
         ctx = builder.build("open spotify")
 
         assert "## Environment" in ctx
-        assert "Ubuntu 22.04" in ctx
-        assert "Fluxbox" in ctx
+        assert "Windows 11 Pro" in ctx
         assert "1920x1080" in ctx
-
-    def test_build_includes_shadow_apps(self, env):
-        builder = ContextBuilder(env)
-        ctx = builder.build("open firefox")
-
-        assert "firefox" in ctx
-        assert "vlc" in ctx
 
     def test_build_includes_windows_apps(self, env):
         builder = ContextBuilder(env)
@@ -45,19 +33,6 @@ class TestContextBuilder:
 
         assert "Spotify" in ctx
         assert "Windows 11 Pro" in ctx
-
-    def test_build_includes_audio_status(self, env):
-        builder = ContextBuilder(env)
-        ctx = builder.build("play music")
-
-        assert "PulseAudio available" in ctx
-
-    def test_build_no_audio(self, env):
-        env.has_audio = False
-        builder = ContextBuilder(env)
-        ctx = builder.build("play music")
-
-        assert "not configured" in ctx
 
     def test_build_includes_category_hint(self, env):
         builder = ContextBuilder(env)
@@ -127,8 +102,8 @@ class TestContextBuilder:
         builder = ContextBuilder(env)
         ctx = builder.build("open spotify and play music")
 
-        # Spotify is on Windows, VLC is on shadow
-        assert "(shadow)" in ctx or "(Windows)" in ctx
+        # Apps are detected from Windows
+        assert "Spotify" in ctx
 
     def test_empty_environment(self):
         env = EnvironmentSnapshot()

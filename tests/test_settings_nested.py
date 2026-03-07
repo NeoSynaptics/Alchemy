@@ -44,7 +44,7 @@ class TestNestedSettings:
         """Every nested group should work with no args."""
         s = Settings()
         for name in [
-            "ollama", "server", "auth", "shadow", "screenshot",
+            "ollama", "server", "auth", "screenshot",
             "click", "router", "pw", "pw_escalation", "gui_actor",
             "desktop", "gate", "research", "word", "voice",
         ]:

@@ -31,11 +31,6 @@ class ActionTier(str, Enum):
     APPROVE = "approve"
 
 
-class ShadowStatus(str, Enum):
-    RUNNING = "running"
-    STOPPED = "stopped"
-    ERROR = "error"
-
 
 # ---------------------------------------------------------------------------
 # Vision
@@ -98,37 +93,6 @@ class ApprovalDecisionResponse(BaseModel):
     task_id: UUID
     decision: str  # "approved" or "denied"
     status: TaskStatus
-
-
-# ---------------------------------------------------------------------------
-# Shadow Desktop
-# ---------------------------------------------------------------------------
-
-class ShadowStartRequest(BaseModel):
-    resolution: str = "1920x1080x24"
-    display_num: int = 99
-
-
-class ShadowStartResponse(BaseModel):
-    status: ShadowStatus
-    display: str  # ":99"
-    vnc_url: str  # "localhost:5900"
-    novnc_url: str  # "http://localhost:6080/vnc.html?autoconnect=true"
-
-
-class ShadowStopResponse(BaseModel):
-    status: ShadowStatus
-    message: str = "Shadow desktop stopped"
-
-
-class ShadowHealthResponse(BaseModel):
-    status: ShadowStatus
-    xvfb_running: bool = False
-    fluxbox_running: bool = False
-    vnc_running: bool = False
-    novnc_running: bool = False
-    display: str = ":99"
-    uptime_seconds: float | None = None
 
 
 # ---------------------------------------------------------------------------

@@ -13,11 +13,6 @@ from alchemy.voice.schemas import (
     ModelsResponse,
     NotifyAck,
     NotifyRequest,
-    ShadowHealthResponse,
-    ShadowStartRequest,
-    ShadowStartResponse,
-    ShadowStatus,
-    ShadowStopResponse,
     TaskStatus,
     TaskStatusResponse,
     TaskUpdateAck,
@@ -74,24 +69,6 @@ class TestVisionSchemas:
         _roundtrip(ApprovalDecisionResponse(
             task_id=uuid4(), decision="approved", status=TaskStatus.RUNNING,
         ))
-
-
-class TestShadowSchemas:
-    def test_start_request(self):
-        _roundtrip(ShadowStartRequest())
-
-    def test_start_response(self):
-        _roundtrip(ShadowStartResponse(
-            status=ShadowStatus.RUNNING, display=":99",
-            vnc_url="localhost:5900",
-            novnc_url="http://localhost:6080/vnc.html?autoconnect=true",
-        ))
-
-    def test_stop_response(self):
-        _roundtrip(ShadowStopResponse(status=ShadowStatus.STOPPED))
-
-    def test_health_response(self):
-        _roundtrip(ShadowHealthResponse(status=ShadowStatus.RUNNING, xvfb_running=True))
 
 
 class TestModelsSchemas:

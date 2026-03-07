@@ -1,4 +1,4 @@
-"""Action executor tests — mock ShadowDesktopController."""
+"""Action executor tests — mock desktop controller."""
 
 from unittest.mock import AsyncMock
 
@@ -11,7 +11,13 @@ from alchemy.schemas import VisionAction
 @pytest.fixture
 def executor():
     mock_controller = AsyncMock()
-    mock_controller.execute = AsyncMock(return_value="")
+    mock_controller.click = AsyncMock(return_value="")
+    mock_controller.double_click = AsyncMock(return_value="")
+    mock_controller.right_click = AsyncMock(return_value="")
+    mock_controller.type_text = AsyncMock(return_value="")
+    mock_controller.hotkey = AsyncMock(return_value="")
+    mock_controller.scroll = AsyncMock(return_value="")
+    mock_controller.move_to = AsyncMock(return_value="")
     return ActionExecutor(mock_controller)
 
 
@@ -19,67 +25,55 @@ class TestExecute:
     async def test_click(self, executor):
         action = VisionAction(action="click", x=100, y=200)
         await executor.execute(action)
-        cmd = executor._controller.execute.call_args[0][0]
-        assert "mousemove --sync 100 200" in cmd
-        assert "click 1" in cmd
+        executor._controller.click.assert_awaited_once_with(100, 200)
 
     async def test_double_click(self, executor):
         action = VisionAction(action="double_click", x=100, y=200)
         await executor.execute(action)
-        cmd = executor._controller.execute.call_args[0][0]
-        assert "--repeat 2" in cmd
+        executor._controller.double_click.assert_awaited_once_with(100, 200)
 
     async def test_right_click(self, executor):
         action = VisionAction(action="right_click", x=100, y=200)
         await executor.execute(action)
-        cmd = executor._controller.execute.call_args[0][0]
-        assert "click 3" in cmd
+        executor._controller.right_click.assert_awaited_once_with(100, 200)
 
     async def test_drag(self, executor):
         action = VisionAction(action="drag", x=100, y=200, end_x=300, end_y=400)
         await executor.execute(action)
-        cmd = executor._controller.execute.call_args[0][0]
-        assert "mousedown 1" in cmd
-        assert "mouseup 1" in cmd
+        executor._controller.click.assert_awaited_once_with(100, 200)
+        executor._controller.move_to.assert_awaited_once_with(300, 400)
 
     async def test_type(self, executor):
         action = VisionAction(action="type", text="hello world")
         await executor.execute(action)
-        cmd = executor._controller.execute.call_args[0][0]
-        assert "xdotool type" in cmd
-        assert "hello world" in cmd
+        executor._controller.type_text.assert_awaited_once_with("hello world")
 
     async def test_hotkey(self, executor):
         action = VisionAction(action="hotkey", text="ctrl+c")
         await executor.execute(action)
-        cmd = executor._controller.execute.call_args[0][0]
-        assert "xdotool key" in cmd
-        assert "ctrl+c" in cmd
+        executor._controller.hotkey.assert_awaited_once_with("ctrl+c")
 
     async def test_scroll_down(self, executor):
         action = VisionAction(action="scroll", x=500, y=500, direction="down", amount=3)
         await executor.execute(action)
-        cmd = executor._controller.execute.call_args[0][0]
-        assert "click --repeat 3" in cmd
-        assert "5" in cmd  # button 5 = scroll down
+        executor._controller.scroll.assert_awaited_once_with(500, 500, "down", 3)
 
     async def test_scroll_up(self, executor):
         action = VisionAction(action="scroll", x=500, y=500, direction="up", amount=2)
         await executor.execute(action)
-        cmd = executor._controller.execute.call_args[0][0]
-        assert "4" in cmd  # button 4 = scroll up
+        executor._controller.scroll.assert_awaited_once_with(500, 500, "up", 2)
 
     async def test_wait(self, executor):
         action = VisionAction(action="wait")
         result = await executor.execute(action)
         assert result == "waited"
-        executor._controller.execute.assert_not_called()
+        executor._controller.click.assert_not_awaited()
 
     async def test_done_no_execute(self, executor):
         action = VisionAction(action="done")
         result = await executor.execute(action)
         assert result == ""
-        executor._controller.execute.assert_not_called()
+        executor._controller.click.assert_not_awaited()
 
     async def test_fail_no_execute(self, executor):
         action = VisionAction(action="fail")

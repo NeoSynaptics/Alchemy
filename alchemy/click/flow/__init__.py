@@ -23,10 +23,14 @@ from alchemy.click.flow.action_parser import (
     to_vision_action,
     validate_coords,
 )
+from alchemy.click.flow.omniparser import OmniParser, ParseResult, UIElement
 from alchemy.click.flow.vision_agent import VisionAgent
 
 __all__ = [
     "FlowAgent",
+    "OmniParser",
+    "ParseResult",
+    "UIElement",
     "ScreenSource",
     "ActionSink",
     "StepResult",

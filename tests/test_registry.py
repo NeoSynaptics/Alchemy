@@ -71,7 +71,6 @@ class TestManifestFields:
         infra_mods = [m for m in all_modules() if m.tier == "infra"]
         infra_ids = {m.id for m in infra_mods}
         assert "adapters" in infra_ids
-        assert "shadow" in infra_ids
 
     def test_enabled_key_exists_where_declared(self):
         for m in all_modules():

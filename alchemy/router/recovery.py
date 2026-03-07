@@ -10,9 +10,9 @@ from alchemy.router.categories import TaskCategory
 
 RECOVERY_STRATEGIES: dict[TaskCategory, str] = {
     TaskCategory.MEDIA: (
-        "If the media app isn't visible: check the taskbar, try the application menu "
-        "(right-click the desktop), or open it via terminal. "
-        "If no dedicated app exists on the shadow desktop, use the browser instead."
+        "If the media app isn't visible: check the taskbar, try the Start menu, "
+        "or open it via search (Win key + type). "
+        "If no dedicated app exists, use the browser instead."
     ),
     TaskCategory.WEB: (
         "If the browser doesn't respond: wait 3 seconds for it to load, "
@@ -35,13 +35,13 @@ RECOVERY_STRATEGIES: dict[TaskCategory, str] = {
         "previous command has finished before typing the next one."
     ),
     TaskCategory.SYSTEM: (
-        "If the settings panel isn't accessible: try right-clicking the desktop for "
-        "system options, or use terminal commands (e.g., nmcli for network, xrandr for display). "
+        "If the settings panel isn't accessible: try the Start menu and search for Settings, "
+        "or use PowerShell for system commands. "
         "Some settings may require restarting the affected service."
     ),
     TaskCategory.GENERAL: (
         "If stuck: try right-clicking for context menus, check the taskbar for running apps, "
-        "or use the application menu (right-click desktop) to find what you need. "
+        "or use the Start menu to find what you need. "
         "If an app is unresponsive, try clicking elsewhere first, then back on the target."
     ),
 }

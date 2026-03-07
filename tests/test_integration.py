@@ -1,7 +1,7 @@
 """Integration test — full Alchemy server handshake.
 
 Starts the Alchemy server on a test port, verifies the complete task lifecycle:
-health check → submit task → poll status → approval flow → shadow control.
+health check → submit task → poll status → approval flow.
 
 Voice, callbacks, and all subsystems are now part of the same Alchemy process.
 
@@ -118,24 +118,6 @@ class TestFullHandshake:
         })
         assert r.status_code == 200
         assert r.json()["action"]["action"] in ("click", "type", "scroll", "done", "fail")
-
-    def test_shadow_lifecycle(self, servers):
-        r1 = httpx.post(f"{servers['alchemy']}/shadow/start", json={})
-        assert r1.status_code == 200
-        assert r1.json()["status"] == "running"
-
-        r2 = httpx.get(f"{servers['alchemy']}/shadow/health")
-        assert r2.status_code == 200
-
-        r3 = httpx.post(f"{servers['alchemy']}/shadow/stop")
-        assert r3.status_code == 200
-        assert r3.json()["status"] == "stopped"
-
-    def test_screenshot_returns_png(self, servers):
-        r = httpx.get(f"{servers['alchemy']}/shadow/screenshot")
-        assert r.status_code == 200
-        assert r.headers["content-type"] == "image/png"
-        assert r.content[:4] == b"\x89PNG"
 
     def test_models_endpoint(self, servers):
         r = httpx.get(f"{servers['alchemy']}/models")

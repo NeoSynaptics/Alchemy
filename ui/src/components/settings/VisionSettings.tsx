@@ -11,7 +11,7 @@ export function VisionSettings() {
         <CardHeader>
           <CardTitle>Vision Agent (Tier 2)</CardTitle>
           <CardDescription>
-            UI-TARS screenshot-based agent for native Win32 / shadow desktop
+            UI-TARS screenshot-based agent for native Windows desktop
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">

@@ -7,9 +7,7 @@ from httpx import ASGITransport, AsyncClient
 
 from alchemy.click.task_manager import TaskManager
 from alchemy.models.ollama_client import OllamaClient
-from alchemy.schemas import ShadowStatus
 from alchemy.server import app
-from alchemy.shadow.controller import ShadowDesktopController
 
 
 @pytest.fixture
@@ -27,14 +25,13 @@ async def client():
     mock_ollama.ping = AsyncMock(return_value=True)
     mock_ollama.list_models = AsyncMock(return_value=[])
 
-    mock_controller = AsyncMock(spec=ShadowDesktopController)
+    mock_controller = AsyncMock()
     mock_controller.screenshot = AsyncMock(return_value=b"\x89PNG\r\n\x1a\n" + b"\x00" * 100)
     mock_controller.execute = AsyncMock(return_value="")
 
     task_manager = TaskManager()
 
     app.state.ollama_client = mock_ollama
-    app.state.shadow_controller = mock_controller
     app.state.task_manager = task_manager
 
     transport = ASGITransport(app=app)
@@ -43,7 +40,6 @@ async def client():
 
     # Cleanup
     app.state.ollama_client = None
-    app.state.shadow_controller = None
     app.state.task_manager = None
 
 

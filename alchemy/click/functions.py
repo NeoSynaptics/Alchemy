@@ -227,6 +227,15 @@ async def dispatch_flow(
     width = settings.desktop_screenshot_width or 1920
     height = settings.desktop_screenshot_height or 1080
 
+    omniparser = None
+    if settings.click_omniparser_enabled:
+        from alchemy.click.flow.omniparser import OmniParser
+        omniparser = OmniParser(
+            confidence_threshold=settings.click_omniparser_confidence,
+            device=settings.click_omniparser_device,
+            model_path=settings.click_omniparser_model_path or None,
+        )
+
     agent = VisionAgent(
         ollama=ollama,
         controller=controller,
@@ -243,6 +252,7 @@ async def dispatch_flow(
         use_streaming=settings.click_use_streaming,
         temperature=settings.ollama_temperature,
         max_tokens=settings.ollama_max_tokens,
+        omniparser=omniparser,
     )
 
     async def _run():

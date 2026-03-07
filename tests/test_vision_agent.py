@@ -31,7 +31,7 @@ def _make_agent(ollama, controller, voice_cb, task_manager, **kwargs):
         model="test-model", max_steps=10, timeout=30.0,
         screenshot_interval=0.0, approval_timeout=5.0,
         history_window=4, screen_width=1920, screen_height=1080,
-        use_streaming=True, model_routing=False,
+        use_streaming=True,
         temperature=0.0, max_tokens=384,
     )
     defaults.update(kwargs)
@@ -58,7 +58,7 @@ class TestRunTask:
 
         assert status == TaskStatus.COMPLETED
         assert tm.get_task(tid).status == TaskStatus.COMPLETED
-        assert controller.execute.call_count == 1  # only click, not finished
+        assert controller.click.call_count == 1  # only click action, not finished
 
     async def test_max_steps_exceeded(self, deps):
         ollama, controller, voice_cb, tm = deps
@@ -161,7 +161,7 @@ class TestRunTask:
 
         ollama.chat_stream = AsyncMock(side_effect=mock_stream)
 
-        agent = _make_agent(*deps, fast_model="fast-model", model_routing=True)
+        agent = _make_agent(*deps)
         status = await agent.run_task(tid, "open spotify and play music")
 
         assert status == TaskStatus.COMPLETED

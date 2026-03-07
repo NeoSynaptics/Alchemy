@@ -21,6 +21,7 @@ from alchemy.click.flow.action_parser import (
     parse_response,
     to_vision_action,
 )
+from alchemy.click.flow.omniparser import OmniParser
 from alchemy.click.task_manager import TaskManager
 from alchemy.clients.voice_callback import VoiceCallbackClient
 from alchemy.models.ollama_client import OllamaClient
@@ -97,6 +98,7 @@ class VisionAgent:
         temperature: float = 0.0,
         max_tokens: int = 512,
         controller=None,
+        omniparser: OmniParser | None = None,
     ):
         self._ollama = ollama
         self._controller = controller
@@ -117,6 +119,7 @@ class VisionAgent:
         self._use_streaming = use_streaming
         self._temperature = temperature
         self._max_tokens = max_tokens
+        self._omniparser = omniparser
 
     def _get_timeout(self, category: TaskCategory | None) -> float:
         """Get adaptive timeout based on task category."""
@@ -184,6 +187,56 @@ class VisionAgent:
                     )
                     return TaskStatus.FAILED
 
+                # --- OmniParser perception (optional) ---
+                omni_result = None
+                omni_context = ""
+                if self._omniparser:
+                    try:
+                        omni_result = await self._omniparser.parse(screenshot)
+                        logger.debug(
+                            "OmniParser: %d elements in %.0fms",
+                            len(omni_result.elements), omni_result.parse_ms,
+                        )
+                    except Exception as e:
+                        logger.warning("OmniParser failed, skipping: %s", e)
+
+                # --- OmniParser fast-path: skip VLM if element matches goal ---
+                if omni_result and omni_result.elements:
+                    match = self._omniparser.match_goal(omni_result.elements, goal)
+                    if match:
+                        logger.info(
+                            "OmniParser fast-path: %r at (%d,%d) — skipping VLM",
+                            match.label, match.center_x, match.center_y,
+                        )
+                        action = VisionAction(
+                            action="click",
+                            x=match.center_x,
+                            y=match.center_y,
+                            reasoning=f"OmniParser fast-path: matched '{match.label}' (conf={match.confidence:.2f})",
+                            tier=ActionTier.AUTO,
+                        )
+                        if category:
+                            action.tier = classify_tier_contextual(action, category, goal)
+
+                        raw_text = f"Thought: OmniParser matched '{match.label}'\nAction: click {{\"point_2d\": [{match.center_x}, {match.center_y}]}}"
+
+                        self._task_manager.update_task(
+                            task_id, current_step=step + 1, last_action=action,
+                        )
+                        await self._safe_task_update(task_id, step + 1, action)
+
+                        if action.action not in ("done", "fail"):
+                            await self._executor.execute(action)
+
+                        messages.append({"role": "assistant", "content": raw_text})
+                        if len(messages) > self._history_window * 2 + 1:
+                            messages = [messages[0]] + messages[-(self._history_window * 2):]
+                        await asyncio.sleep(self._adaptive_interval(action))
+                        continue
+
+                    # No fast-path match — enrich VLM prompt with element map
+                    omni_context = self._omniparser.to_prompt_context(omni_result.elements)
+
                 # Build user message — first step includes system prompt (VLM workaround)
                 if step == 0:
                     user_content = system_text
@@ -192,6 +245,9 @@ class VisionAgent:
                         f"Step {step + 1}. Here is the current screenshot. "
                         f"Continue working on: {goal}"
                     )
+
+                if omni_context:
+                    user_content += f"\n\n{omni_context}"
 
                 messages.append({"role": "user", "content": user_content})
 
@@ -229,6 +285,22 @@ class VisionAgent:
                     logger.warning("Parse error at step %d (%d consecutive): %s", step, consecutive_parse_errors, e)
                     messages.append({"role": "assistant", "content": raw_text})
                     continue
+
+                # --- OmniParser verification: check VLM coords land on a real element ---
+                if omni_result and action.x is not None and action.y is not None:
+                    verified = self._omniparser.verify_action(
+                        omni_result.elements, action.x, action.y,
+                    )
+                    if verified:
+                        logger.debug(
+                            "OmniParser verified: VLM click (%d,%d) lands on '%s'",
+                            action.x, action.y, verified.label,
+                        )
+                    else:
+                        logger.warning(
+                            "OmniParser: VLM click (%d,%d) doesn't match any detected element",
+                            action.x, action.y,
+                        )
 
                 # Update task state
                 self._task_manager.update_task(
@@ -298,9 +370,37 @@ class VisionAgent:
     ) -> VisionAnalyzeResponse:
         """One-shot: analyze a screenshot and return the next action (no execution)."""
         start = time.monotonic()
+        omni_context = ""
+
+        # OmniParser perception + fast-path
+        if self._omniparser:
+            try:
+                omni_result = await self._omniparser.parse(screenshot)
+                if omni_result.elements:
+                    match = self._omniparser.match_goal(omni_result.elements, goal)
+                    if match:
+                        action = VisionAction(
+                            action="click",
+                            x=match.center_x,
+                            y=match.center_y,
+                            reasoning=f"OmniParser fast-path: matched '{match.label}' (conf={match.confidence:.2f})",
+                        )
+                        action.tier = classify_tier(action)
+                        return VisionAnalyzeResponse(
+                            action=action,
+                            model="omniparser-v2",
+                            inference_ms=(time.monotonic() - start) * 1000,
+                        )
+                    omni_context = self._omniparser.to_prompt_context(omni_result.elements)
+            except Exception as e:
+                logger.warning("OmniParser failed in analyze_single: %s", e)
+
         options = self._get_options()
 
         prompt = f"{_SYSTEM_PROMPT}\n\nTask: {goal}"
+        if omni_context:
+            prompt += f"\n\n{omni_context}"
+
         messages = [{"role": "user", "content": prompt}]
 
         raw_text = await self._infer(self._model, messages, screenshot, options)

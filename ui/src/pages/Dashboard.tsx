@@ -1,14 +1,12 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { useModels, useShadowHealth } from '@/hooks/useAlchemy'
+import { useModels } from '@/hooks/useAlchemy'
 import { Button } from '@/components/ui/button'
 
 export function DashboardPage() {
   const { data: models, loading: modelsLoading, error: modelsError, refresh: refreshModels } = useModels()
-  const { data: shadow, loading: shadowLoading, refresh: refreshShadow } = useShadowHealth()
 
   const backendOnline = !modelsError
-  const shadowOnline = shadow?.status === 'running'
 
   return (
     <div className="space-y-6">
@@ -17,12 +15,12 @@ export function DashboardPage() {
           <h1 className="text-3xl font-bold tracking-tight">AlchemyFrontDev</h1>
           <p className="text-muted-foreground">Agent engine status overview</p>
         </div>
-        <Button variant="outline" onClick={() => { refreshModels(); refreshShadow() }}>
+        <Button variant="outline" onClick={() => { refreshModels() }}>
           Refresh
         </Button>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2">
         <Card>
           <CardHeader className="pb-2">
             <CardDescription>Backend API</CardDescription>
@@ -35,21 +33,6 @@ export function DashboardPage() {
                 <Badge variant="destructive">Offline</Badge>
               )}
               <span className="text-sm font-normal text-muted-foreground">:8000</span>
-            </CardTitle>
-          </CardHeader>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Shadow Desktop</CardDescription>
-            <CardTitle className="flex items-center gap-2">
-              {shadowLoading ? (
-                <Badge variant="secondary">Checking...</Badge>
-              ) : shadowOnline ? (
-                <Badge className="bg-emerald-500/15 text-emerald-600 border-emerald-500/20">Running</Badge>
-              ) : (
-                <Badge variant="secondary">Stopped</Badge>
-              )}
             </CardTitle>
           </CardHeader>
         </Card>

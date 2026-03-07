@@ -8,13 +8,12 @@ Core AI engine. Voice pipeline, click automation, GPU orchestration, research br
 - Server: `alchemy/server.py` (FastAPI, port 8000)
 - **AlchemyVoice: `alchemy/voice/` (voice pipeline, smart router, conversation, tray, constitution)**
 - AlchemyClick: `alchemy/click/` (two-tier GUI automation: Playwright + vision fallback)
-- Shadow Desktop: `alchemy/shadow/` (WSL2 bridge, controller, health)
+- Desktop Agent: `alchemy/desktop/` (native Windows automation: SendInput, ghost cursor)
 - APU (Alchemy Processing Unit): `alchemy/apu/` (VRAM/RAM fleet management, model placement, health guard)
 - Models: `alchemy/models/` (CPU model lifecycle)
 - Router: `alchemy/router/` (request classification + context routing)
 - Core: `alchemy/core/` (Playwright agent, browser manager, approval gate)
 - Auth: `alchemy/security/` (bearer tokens)
-- WSL Scripts: `wsl/` (setup, start, stop, health)
 
 ## Module Registry
 
@@ -25,7 +24,6 @@ Core AI engine. Voice pipeline, click automation, GPU orchestration, research br
 | **AlchemyVoice** | `voice` | core | `alchemy/voice/` |
 | APU (Alchemy Processing Unit) | `apu` | infra | `alchemy/apu/` |
 | LLM Adapters | `adapters` | infra | `alchemy/adapters/` |
-| Shadow Desktop | `shadow` | infra | `alchemy/shadow/` |
 | Context Router | `router` | infra | `alchemy/router/` |
 | Cloud AI Bridge | `cloud` | infra | `alchemy/cloud/` |
 | Desktop Agent | `desktop` | app | `alchemy/desktop/` |
@@ -66,8 +64,6 @@ Voice is a first-class core module. Public interface hides model internals.
 ## API
 - `POST /v1/vision/analyze` → screenshot → VLM → action JSON
 - `POST /v1/vision/task` → submit multi-step GUI task
-- `POST /v1/shadow/start|stop` → control shadow desktop
-- `GET /v1/shadow/health` → service status
 - `GET /v1/modules` → module discovery + contract status
 - `POST /v1/apu/app/{name}/activate-manifest` → resolve model contracts
 - `GET /v1/apu/status` → GPU/RAM status
@@ -80,10 +76,6 @@ Voice is a first-class core module. Public interface hides model internals.
 
 ## Commands
 ```bash
-make shadow-setup    # Install Xvfb/Fluxbox/x11vnc/noVNC in WSL2
-make shadow-start    # Start shadow desktop
-make shadow-stop     # Stop shadow desktop
-make shadow-health   # Check services
 make server          # Run Alchemy on :8000
 make test            # Run pytest
 ```

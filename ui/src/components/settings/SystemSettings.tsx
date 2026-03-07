@@ -106,35 +106,6 @@ export function SystemSettings() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Shadow Desktop (WSL2)</CardTitle>
-          <CardDescription>Xvfb virtual display for vision agent</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="wsl-distro">WSL Distro</Label>
-              <Input id="wsl-distro" defaultValue="Ubuntu" disabled />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="wsl-res">Resolution</Label>
-              <Input id="wsl-res" defaultValue="1920x1080x24" />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="wsl-vnc">VNC Port</Label>
-              <Input id="wsl-vnc" type="number" defaultValue={5900} />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="wsl-novnc">noVNC Port</Label>
-              <Input id="wsl-novnc" type="number" defaultValue={6080} />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
     </div>
   )
 }
