@@ -41,16 +41,6 @@ class AuthSettings(BaseModel):
     require: bool = False
 
 
-class ShadowSettings(BaseModel):
-    """Shadow desktop (WSL2)."""
-    wsl_distro: str = "Ubuntu"
-    wsl_repo_path: str = "/mnt/c/Users/info/GitHub/Alchemy"
-    display_num: int = 99
-    vnc_port: int = 5900
-    novnc_port: int = 6080
-    resolution: str = "1920x1080x24"
-
-
 class ScreenshotSettings(BaseModel):
     """Screenshot capture."""
     format: str = "jpeg"
@@ -218,6 +208,16 @@ class FlowVSAgentSettings(BaseModel):
     enabled: bool = False
 
 
+class ConnectSettings(BaseModel):
+    """AlchemyConnect — universal tunnel/bus for external apps."""
+    enabled: bool = True
+    auth_timeout_seconds: float = 10.0
+    ping_interval_seconds: float = 30.0
+    max_connections: int = 10
+    offline_queue_max: int = 200
+    data_dir: str = "data/connect"
+
+
 class AgentsSettings(BaseModel):
     """AlchemyAgents — internal agent orchestration. Toggle per agent."""
     enabled: bool = True
@@ -237,7 +237,6 @@ class Settings(BaseSettings):
     ollama: OllamaSettings = OllamaSettings()
     server: ServerSettings = ServerSettings()
     auth: AuthSettings = AuthSettings()
-    shadow: ShadowSettings = ShadowSettings()
     screenshot: ScreenshotSettings = ScreenshotSettings()
     click: ClickSettings = ClickSettings()
     router: RouterSettings = RouterSettings()
@@ -249,6 +248,7 @@ class Settings(BaseSettings):
     research: ResearchSettings = ResearchSettings()
     word: WordSettings = WordSettings()
     voice: VoiceSettings = VoiceSettings()
+    connect: ConnectSettings = ConnectSettings()
     agents: AgentsSettings = AgentsSettings()
 
     # === Flat fields (backward compat -- used by server.py and existing code) ===
@@ -272,14 +272,6 @@ class Settings(BaseSettings):
     auth_token: str = ""
     require_auth: bool = False
 
-    # Shadow Desktop (WSL2)
-    wsl_distro: str = "Ubuntu"
-    shadow_wsl_repo_path: str = "/mnt/c/Users/info/GitHub/Alchemy"
-    display_num: int = 99
-    vnc_port: int = 5900
-    novnc_port: int = 6080
-    resolution: str = "1920x1080x24"
-
     # Screenshot
     screenshot_format: str = "jpeg"
     screenshot_jpeg_quality: int = 85
@@ -294,6 +286,10 @@ class Settings(BaseSettings):
     click_history_window: int = 4
     click_use_streaming: bool = True
     click_model_routing: bool = True
+    click_omniparser_enabled: bool = False
+    click_omniparser_confidence: float = 0.3
+    click_omniparser_device: str = "cuda:0"
+    click_omniparser_model_path: str = ""
 
     # Router
     router_enabled: bool = True
@@ -383,6 +379,9 @@ class Settings(BaseSettings):
     neorx_host: str = "http://localhost:8110"
     knowledge_enabled: bool = True
     knowledge_max_docs: int = 3
+
+    # AlchemyConnect
+    connect_enabled: bool = True
 
     # Research
     research_enabled: bool = True

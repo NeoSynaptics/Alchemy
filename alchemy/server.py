@@ -20,7 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from alchemy.adapters import OllamaClient
 from alchemy.click.task_manager import TaskManager
-from alchemy.api import models_api, shadow, vision
+from alchemy.api import models_api, vision
 from alchemy.api import playwright_api
 from alchemy.api import research_api
 from alchemy.api import gate_api
@@ -29,8 +29,6 @@ from alchemy.api import apu_api
 from alchemy.api import modules_api
 from alchemy.api import click_api
 from alchemy.router.environment import EnvironmentDetector
-from alchemy.shadow.controller import ShadowDesktopController
-from alchemy.shadow.wsl import WslRunner
 from config.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -38,30 +36,7 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Initialize shadow desktop controller on startup."""
-    wsl = WslRunner(distro=settings.wsl_distro, display_num=settings.display_num)
-
-    # Run sync WSL check in thread to avoid blocking the event loop
-    wsl_ok = await asyncio.to_thread(wsl.is_available)
-
-    if wsl_ok:
-        logger.info("WSL2 (%s) available — shadow desktop controller active", settings.wsl_distro)
-        app.state.shadow_controller = ShadowDesktopController(
-            wsl=wsl,
-            display_num=settings.display_num,
-            vnc_port=settings.vnc_port,
-            novnc_port=settings.novnc_port,
-            resolution=settings.resolution,
-            screenshot_format=settings.screenshot_format,
-            screenshot_jpeg_quality=settings.screenshot_jpeg_quality,
-            screenshot_resize_width=settings.screenshot_resize_width,
-            screenshot_resize_height=settings.screenshot_resize_height,
-            repo_wsl_path=settings.shadow_wsl_repo_path,
-        )
-    else:
-        logger.warning("WSL2 not available — shadow desktop endpoints will return mock data")
-        app.state.shadow_controller = None
-
+    """Initialize services on startup."""
     # Initialize Ollama client
     ollama = OllamaClient(
         host=settings.ollama_host,
@@ -251,11 +226,10 @@ async def lifespan(app: FastAPI):
 
     # Detect environment for context router
     if settings.router_enabled:
-        detector = EnvironmentDetector(wsl=wsl if wsl_ok else None)
+        detector = EnvironmentDetector()
         app.state.environment = await detector.detect()
         logger.info(
-            "Router environment: %d shadow apps, %d windows apps",
-            len(app.state.environment.shadow_apps),
+            "Router environment: %d windows apps",
             len(app.state.environment.windows_apps),
         )
     else:
@@ -301,6 +275,22 @@ async def lifespan(app: FastAPI):
         except Exception:
             logger.exception("AlchemyVoice failed to start")
 
+    # --- AlchemyConnect (phone-to-PC tunnel) ---
+    app.state.connect = None
+    if settings.connect_enabled:
+        try:
+            from alchemy.connect import AlchemyConnect
+            from alchemy.connect.agents.chat_agent import ChatAgent
+
+            connect = AlchemyConnect(app, settings)
+            connect.register_agent(ChatAgent(app.state))
+            await connect.start()
+            app.state.connect = connect
+            logger.info("AlchemyConnect started (%d agents)",
+                        len(connect.available_agents))
+        except Exception:
+            logger.exception("AlchemyConnect failed to start")
+
     # --- Constitution (approval defense) ---
     app.state.constitution = None
     try:
@@ -324,6 +314,10 @@ async def lifespan(app: FastAPI):
     yield
 
     # Cleanup
+    if getattr(app.state, "connect", None):
+        await app.state.connect.stop()
+        logger.info("AlchemyConnect stopped")
+
     if getattr(app.state, "voice_system", None):
         await app.state.voice_system.stop()
         logger.info("AlchemyVoice stopped")
@@ -341,9 +335,6 @@ async def lifespan(app: FastAPI):
     await ollama.close()
     if getattr(app.state, "gui_actor_client", None):
         await app.state.gui_actor_client.close()
-    if app.state.shadow_controller:
-        logger.info("Shutting down shadow desktop...")
-        await app.state.shadow_controller.stop()
 
 
 app = FastAPI(
@@ -373,7 +364,6 @@ async def add_request_id(request, call_next):
 
 
 app.include_router(vision.router, prefix="/v1")
-app.include_router(shadow.router, prefix="/v1")
 app.include_router(models_api.router, prefix="/v1")
 app.include_router(playwright_api.router, prefix="/v1")
 app.include_router(research_api.router, prefix="/v1")
@@ -395,7 +385,6 @@ app.include_router(voice_control.router, prefix="/v1")
 
 @app.get("/health")
 async def health():
-    wsl_ok = getattr(app.state, "shadow_controller", None) is not None
     ollama_ok = getattr(app.state, "ollama_client", None) is not None
     pw_ok = getattr(app.state, "pw_agent", None) is not None
     browser_ok = getattr(app.state, "browser_manager", None) is not None
@@ -407,9 +396,11 @@ async def health():
     orchestrator_ok = getattr(app.state, "orchestrator", None) is not None
     voice_system = getattr(app.state, "voice_system", None)
     voice_ok = voice_system is not None and voice_system.is_running
+    connect = getattr(app.state, "connect", None)
+    connect_ok = connect is not None
     return {
         "status": "ok", "version": "0.4.0",
-        "wsl_available": wsl_ok, "ollama_connected": ollama_ok,
+        "ollama_connected": ollama_ok,
         "playwright_agent": pw_ok, "browser_ready": browser_ok,
         "research_enabled": settings.research_enabled,
         "gate_enabled": gate_ok,
@@ -418,5 +409,7 @@ async def health():
         "gui_actor": gui_actor_ok,
         "gpu_orchestrator": orchestrator_ok,
         "voice_enabled": voice_ok,
+        "connect_enabled": connect_ok,
+        "connect_devices": connect.connected_devices if connect else 0,
         "vision_model": settings.pw_escalation_model,
     }
