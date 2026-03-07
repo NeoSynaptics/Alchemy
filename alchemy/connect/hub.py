@@ -10,6 +10,7 @@ import asyncio
 import json
 import logging
 import time
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 
 from fastapi import WebSocket, WebSocketDisconnect
@@ -53,6 +54,16 @@ class ConnectionHub:
         self._server_version = server_version
         self._connections: dict[str, DeviceConnection] = {}
         self._ping_tasks: dict[str, asyncio.Task] = {}
+        self._gpu_semaphore = asyncio.Semaphore(2)  # Dual GPU — 2 concurrent ops
+
+    @asynccontextmanager
+    async def gpu_guard(self):
+        """Acquire GPU semaphore for heavy operations (image gen, etc.)."""
+        await self._gpu_semaphore.acquire()
+        try:
+            yield
+        finally:
+            self._gpu_semaphore.release()
 
     @property
     def connected_devices(self) -> int:

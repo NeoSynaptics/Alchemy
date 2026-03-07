@@ -281,9 +281,13 @@ async def lifespan(app: FastAPI):
         try:
             from alchemy.connect import AlchemyConnect
             from alchemy.connect.agents.chat_agent import ChatAgent
+            from alchemy.connect.agents.image_agent import ImageAgent
+            from alchemy.connect.agents.voice_agent import VoiceAgent
 
             connect = AlchemyConnect(app, settings)
             connect.register_agent(ChatAgent(app.state))
+            connect.register_agent(ImageAgent(app.state, gpu_guard=connect._hub._gpu_semaphore))
+            connect.register_agent(VoiceAgent(app.state))
             await connect.start()
             app.state.connect = connect
             logger.info("AlchemyConnect started (%d agents)",

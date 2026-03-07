@@ -205,6 +205,47 @@ class TestConnectionHub:
                 assert any(a["agent_id"] == "echo" for a in agents)
 
 
+class TestGPUGuard:
+    def test_gpu_semaphore_exists(self, setup):
+        hub = setup["hub"]
+        assert hasattr(hub, "_gpu_semaphore")
+        assert isinstance(hub._gpu_semaphore, asyncio.Semaphore)
+
+    @pytest.mark.asyncio
+    async def test_gpu_guard_limits_concurrency(self, setup):
+        """GPU guard allows 2 concurrent operations (dual GPU)."""
+        hub = setup["hub"]
+        acquired = []
+
+        async def worker(idx):
+            async with hub.gpu_guard():
+                acquired.append(idx)
+                await asyncio.sleep(0.05)
+
+        # Launch 3 workers — only 2 should run concurrently
+        tasks = [asyncio.create_task(worker(i)) for i in range(3)]
+        await asyncio.sleep(0.01)  # Let first two acquire
+        assert len(acquired) <= 2
+        await asyncio.gather(*tasks)
+        assert len(acquired) == 3
+
+    @pytest.mark.asyncio
+    async def test_gpu_guard_releases_on_error(self, setup):
+        """Semaphore is released even if the operation raises."""
+        hub = setup["hub"]
+
+        async def failing_op():
+            async with hub.gpu_guard():
+                raise RuntimeError("boom")
+
+        with pytest.raises(RuntimeError):
+            await failing_op()
+
+        # Should still be acquirable (released properly)
+        async with hub.gpu_guard():
+            pass  # Would deadlock if not released
+
+
 class TestOfflineQueueIntegration:
     def test_queue_drains_on_connect(self, setup):
         """Messages queued while offline are delivered on reconnect."""
