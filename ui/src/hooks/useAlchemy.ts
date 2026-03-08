@@ -200,6 +200,34 @@ export function useVoiceControl() {
   return { start, stop, setMode }
 }
 
+// ── Settings ─────────────────────────────────────────────────
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function useSettings() {
+  const fetcher = useCallback(() => apiFetch<Record<string, any>>('/settings'), [])
+  const { data, loading, error, refresh } = useApiFetch(fetcher)
+
+  const update = useCallback(
+    async (path: string, value: unknown) => {
+      // Build nested object from dot path: "pw.think" → { pw: { think: value } }
+      const keys = path.split('.')
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let payload: any = value
+      for (let i = keys.length - 1; i >= 0; i--) {
+        payload = { [keys[i]]: payload }
+      }
+      await apiFetch('/settings', {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+      })
+      refresh()
+    },
+    [refresh],
+  )
+
+  return { data, loading, error, refresh, update }
+}
+
 // ── SSE Streaming Chat ──────────────────────────────────────
 
 export async function* streamChat(

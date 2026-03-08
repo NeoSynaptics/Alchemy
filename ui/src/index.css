@@ -122,3 +122,8 @@
     @apply bg-background text-foreground;
     }
 }
+
+@keyframes audioBar {
+  0%, 100% { height: 4px; }
+  50% { height: 16px; }
+}
