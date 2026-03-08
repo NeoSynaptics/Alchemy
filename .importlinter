@@ -12,11 +12,16 @@ forbidden_modules =
     alchemy.api
     alchemy.research
     alchemy.router
-
+    alchemy.click
+    alchemy.gate
+    alchemy.desktop
+    alchemy.voice
+    alchemy.word
+    alchemy.playwright
     alchemy.server
 
 [importlinter:contract:adapters-independence]
-name = Adapters don't import from API/research/router
+name = Adapters don't import from features or API
 type = forbidden
 source_modules =
     alchemy.adapters
@@ -24,7 +29,12 @@ forbidden_modules =
     alchemy.api
     alchemy.research
     alchemy.router
-
+    alchemy.click
+    alchemy.gate
+    alchemy.desktop
+    alchemy.voice
+    alchemy.word
+    alchemy.playwright
     alchemy.server
     alchemy.core
 
@@ -69,8 +79,9 @@ source_modules =
 forbidden_modules =
     alchemy.research
     alchemy.desktop
-
     alchemy.click
+    alchemy.voice
+    alchemy.word
 
 [importlinter:contract:research-isolation]
 name = Research does not import from other feature modules
@@ -80,8 +91,9 @@ source_modules =
 forbidden_modules =
     alchemy.gate
     alchemy.desktop
-
     alchemy.click
+    alchemy.voice
+    alchemy.word
 
 [importlinter:contract:desktop-isolation]
 name = Desktop does not import from other feature modules
@@ -91,8 +103,9 @@ source_modules =
 forbidden_modules =
     alchemy.gate
     alchemy.research
-
     alchemy.click
+    alchemy.voice
+    alchemy.word
 
 [importlinter:contract:word-isolation]
 name = Word does not import from other feature modules

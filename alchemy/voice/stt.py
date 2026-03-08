@@ -35,7 +35,7 @@ class WhisperSTT:
 
         from faster_whisper import WhisperModel
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         self._model = await loop.run_in_executor(
             None,
             lambda: WhisperModel(
@@ -58,7 +58,7 @@ class WhisperSTT:
         # Convert PCM bytes to float32 numpy array (Whisper expects float32)
         audio = np.frombuffer(audio_bytes, dtype=np.int16).astype(np.float32) / 32768.0
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         t0 = time.monotonic()
 
         def _do_transcribe():
@@ -89,7 +89,7 @@ class WhisperSTT:
         model_ref = self._model
         self._model = None
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, self._free_gpu_memory, model_ref)
         logger.info("Whisper model unloaded, VRAM freed")
 

@@ -191,7 +191,11 @@ class AlchemyProvider(ModelProvider):
         self._alchemy_client: object | None = None
 
     async def start(self) -> None:
-        from alchemy.voice.bridge.alchemy_client import AlchemyClient
+        try:
+            from alchemy.voice.bridge.alchemy_client import AlchemyClient
+        except ImportError:
+            logger.warning("alchemy.voice.bridge not available — AlchemyProvider disabled")
+            return
 
         self._alchemy_client = AlchemyClient(
             base_url=self._base_url, timeout=self._timeout

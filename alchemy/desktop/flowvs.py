@@ -212,12 +212,12 @@ async def _decide(
         answer = response.get("content", "").strip().upper()
         logger.info("Decision for '%s': %s", dialog.context_text[:60], answer)
 
-        if "DENY" in answer:
-            return Decision.DENY
-        return Decision.APPROVE
+        if "APPROVE" in answer:
+            return Decision.APPROVE
+        return Decision.DENY
     except Exception as e:
-        logger.error("Decision failed: %s — defaulting to APPROVE", e)
-        return Decision.APPROVE  # fail-open for non-destructive default
+        logger.error("Decision failed: %s — defaulting to DENY (fail-closed)", e)
+        return Decision.DENY  # fail-closed: deny when uncertain
 
 
 # --- Click Execution (AlchemyFlow) ---

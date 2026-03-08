@@ -33,9 +33,10 @@ class ActionExecutor:
             case "right_click":
                 return await self._controller.right_click(action.x, action.y)
             case "drag":
-                # Move to start, hold, move to end, release
-                await self._controller.click(action.x, action.y)
-                return await self._controller.move_to(action.end_x, action.end_y)
+                # Proper drag: mousedown at start, move to end, mouseup
+                return await self._controller.drag(
+                    action.x, action.y, action.end_x, action.end_y
+                )
             case "type":
                 return await self._controller.type_text(action.text or "")
             case "hotkey":

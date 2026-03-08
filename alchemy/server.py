@@ -12,8 +12,15 @@ from uuid import uuid4
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
+from importlib.metadata import version as _pkg_version
+
 from config.logging import setup_logging
 from fastapi import FastAPI
+
+try:
+    __version__ = _pkg_version("alchemy")
+except Exception:
+    __version__ = "0.4.0"
 
 setup_logging()
 from fastapi.middleware.cors import CORSMiddleware
@@ -39,25 +46,25 @@ async def lifespan(app: FastAPI):
     """Initialize services on startup."""
     # Initialize Ollama client
     ollama = OllamaClient(
-        host=settings.ollama_host,
+        host=settings.ollama.host,
         timeout=120.0,
-        keep_alive=settings.ollama_keep_alive,
-        retry_attempts=settings.ollama_retry_attempts,
-        retry_delay=settings.ollama_retry_delay,
+        keep_alive=settings.ollama.keep_alive,
+        retry_attempts=settings.ollama.retry_attempts,
+        retry_delay=settings.ollama.retry_delay,
     )
     await ollama.start()
 
     if await ollama.ping():
-        logger.info("Ollama at %s — connected", settings.ollama_host)
+        logger.info("Ollama at %s — connected", settings.ollama.host)
         # Check both models
-        for model_name in [settings.ollama_cpu_model, settings.ollama_fast_model]:
+        for model_name in [settings.ollama.cpu_model, settings.ollama.fast_model]:
             if await ollama.is_model_available(model_name):
                 logger.info("Model %s — available", model_name)
             else:
                 logger.warning("Model %s not found — pull with: ollama pull %s",
                               model_name, model_name)
     else:
-        logger.warning("Ollama not reachable at %s", settings.ollama_host)
+        logger.warning("Ollama not reachable at %s", settings.ollama.host)
 
     app.state.ollama_client = ollama
     app.state.task_manager = TaskManager()
@@ -105,50 +112,50 @@ async def lifespan(app: FastAPI):
         app.state.contract_reports = {}
 
     # --- Playwright Agent (Tier 1) ---
-    if settings.pw_enabled:
+    if settings.pw.enabled:
         try:
             from alchemy.core import PlaywrightAgent, ApprovalGate, BrowserManager
 
-            browser_mgr = BrowserManager(headless=settings.pw_headless)
+            browser_mgr = BrowserManager(headless=settings.pw.headless)
             await browser_mgr.start()
             app.state.browser_manager = browser_mgr
 
-            approval_gate = ApprovalGate(enabled=settings.pw_approval_enabled)
+            approval_gate = ApprovalGate(enabled=settings.pw.approval_enabled)
 
             # Tier 1.5: Vision escalation (UI-TARS 7B fallback when stuck)
             vision_escalation = None
             stuck_detector = None
-            if settings.pw_escalation_enabled:
+            if settings.pw_escalation.enabled:
                 from alchemy.core import StuckDetector, VisionEscalation
 
                 vision_escalation = VisionEscalation(
                     ollama_client=ollama,
-                    model=settings.pw_escalation_model,
-                    temperature=settings.pw_escalation_temperature,
-                    max_tokens=settings.pw_escalation_max_tokens,
+                    model=settings.pw_escalation.model,
+                    temperature=settings.pw_escalation.temperature,
+                    max_tokens=settings.pw_escalation.max_tokens,
                 )
                 stuck_detector = StuckDetector(
-                    max_parse_failures=settings.pw_escalation_parse_failures,
-                    max_repeated_actions=settings.pw_escalation_repeated_actions,
-                    complexity_threshold=settings.pw_escalation_complexity_threshold,
+                    max_parse_failures=settings.pw_escalation.parse_failures,
+                    max_repeated_actions=settings.pw_escalation.repeated_actions,
+                    complexity_threshold=settings.pw_escalation.complexity_threshold,
                 )
-                logger.info("Tier 1.5 escalation ready (model=%s)", settings.pw_escalation_model)
+                logger.info("Tier 1.5 escalation ready (model=%s)", settings.pw_escalation.model)
 
             pw_agent = PlaywrightAgent(
                 ollama_client=ollama,
-                model=settings.pw_model,
-                max_steps=settings.pw_max_steps,
-                think=settings.pw_think,
-                temperature=settings.pw_temperature,
-                max_tokens=settings.pw_max_tokens,
-                settle_timeout=settings.pw_settle_timeout,
+                model=settings.pw.model,
+                max_steps=settings.pw.max_steps,
+                think=settings.pw.think,
+                temperature=settings.pw.temperature,
+                max_tokens=settings.pw.max_tokens,
+                settle_timeout=settings.pw.settle_timeout,
                 approval_checker=lambda action: approval_gate.needs_approval(action),
                 vision_escalation=vision_escalation,
                 stuck_detector=stuck_detector,
             )
             app.state.pw_agent = pw_agent
             logger.info("Playwright agent ready (model=%s, think=%s, escalation=%s)",
-                        settings.pw_model, settings.pw_think, settings.pw_escalation_enabled)
+                        settings.pw.model, settings.pw.think, settings.pw_escalation.enabled)
 
         except ImportError as e:
             logger.warning("Playwright not installed — Tier 1 agent disabled: %s", e)
@@ -163,25 +170,25 @@ async def lifespan(app: FastAPI):
         app.state.pw_agent = None
 
     # --- Desktop Agent (native Windows automation) ---
-    if settings.desktop_enabled:
+    if settings.desktop.enabled:
         try:
             from alchemy.desktop import DesktopAgent, DesktopController
 
             desktop_ctrl = DesktopController(
-                screenshot_width=settings.desktop_screenshot_width,
-                screenshot_height=settings.desktop_screenshot_height,
-                screenshot_quality=settings.desktop_screenshot_quality,
-                mode=settings.desktop_default_mode,
+                screenshot_width=settings.desktop.screenshot_width,
+                screenshot_height=settings.desktop.screenshot_height,
+                screenshot_quality=settings.desktop.screenshot_quality,
+                mode=settings.desktop.default_mode,
             )
             app.state.desktop_agent = DesktopAgent(
                 ollama_client=ollama,
                 controller=desktop_ctrl,
-                model=settings.desktop_model,
-                max_steps=settings.desktop_max_steps,
-                temperature=settings.desktop_temperature,
-                max_tokens=settings.desktop_max_tokens,
+                model=settings.desktop.model,
+                max_steps=settings.desktop.max_steps,
+                temperature=settings.desktop.temperature,
+                max_tokens=settings.desktop.max_tokens,
             )
-            logger.info("Desktop agent ready (model=%s)", settings.desktop_model)
+            logger.info("Desktop agent ready (model=%s)", settings.desktop.model)
         except ImportError as e:
             logger.warning("pyautogui not installed — desktop agent disabled: %s", e)
             app.state.desktop_agent = None
@@ -193,39 +200,39 @@ async def lifespan(app: FastAPI):
 
     # --- GUI-Actor (future — Microsoft attention-based grounding) ---
     app.state.gui_actor_client = None
-    if settings.gui_actor_enabled:
+    if settings.gui_actor.enabled:
         try:
             from alchemy.adapters import GUIActorClient
 
             gui_actor = GUIActorClient(
-                host=settings.gui_actor_host,
-                timeout=settings.gui_actor_timeout,
+                host=settings.gui_actor.host,
+                timeout=settings.gui_actor.timeout,
             )
             await gui_actor.start()
             if await gui_actor.ping():
                 app.state.gui_actor_client = gui_actor
-                logger.info("GUI-Actor client ready (host=%s)", settings.gui_actor_host)
+                logger.info("GUI-Actor client ready (host=%s)", settings.gui_actor.host)
             else:
-                logger.warning("GUI-Actor server not reachable at %s", settings.gui_actor_host)
+                logger.warning("GUI-Actor server not reachable at %s", settings.gui_actor.host)
                 await gui_actor.close()
         except Exception as e:
             logger.warning("GUI-Actor client failed to start: %s", e)
 
     # --- Gate (Claude Code auto-approve) ---
-    if settings.gate_enabled:
+    if settings.gate.enabled:
         from alchemy.gate import GateReviewer
 
         app.state.gate_reviewer = GateReviewer(
             ollama_client=ollama,
-            model=settings.gate_model,
-            timeout=settings.gate_timeout,
+            model=settings.gate.model,
+            timeout=settings.gate.timeout,
         )
-        logger.info("Gate reviewer ready (model=%s)", settings.gate_model)
+        logger.info("Gate reviewer ready (model=%s)", settings.gate.model)
     else:
         app.state.gate_reviewer = None
 
     # Detect environment for context router
-    if settings.router_enabled:
+    if settings.router.enabled:
         detector = EnvironmentDetector()
         app.state.environment = await detector.detect()
         logger.info(
@@ -237,7 +244,7 @@ async def lifespan(app: FastAPI):
 
     # --- AlchemyVoice (voice pipeline, smart router, conversation, tray) ---
     app.state.voice_system = None
-    if settings.voice_enabled:
+    if settings.voice.enabled:
         try:
             from alchemy.voice import VoiceSystem
 
@@ -252,9 +259,9 @@ async def lifespan(app: FastAPI):
 
             voice_registry = build_default_registry()
             voice_ollama = OllamaProvider(
-                host=settings.ollama_host,
+                host=settings.ollama.host,
                 timeout=120.0,
-                keep_alive=settings.gpu_model_keep_alive,
+                keep_alive=settings.voice.gpu_model_keep_alive,
             )
             await voice_ollama.start()
 
@@ -277,7 +284,7 @@ async def lifespan(app: FastAPI):
 
     # --- AlchemyConnect (phone-to-PC tunnel) ---
     app.state.connect = None
-    if settings.connect_enabled:
+    if settings.connect.enabled:
         try:
             from alchemy.connect import AlchemyConnect
             from alchemy.connect.agents.chat_agent import ChatAgent
@@ -344,17 +351,29 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Alchemy",
     description="Local-first LLM core engine",
-    version="0.2.0",
+    version=__version__,
     lifespan=lifespan,
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=settings.auth.cors_origins,
+    allow_credentials=len(settings.auth.cors_origins) > 0 and settings.auth.cors_origins != ["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def auth_middleware(request, call_next):
+    """Enforce bearer token auth when require_auth is enabled."""
+    if settings.auth.require and request.url.path not in ("/health", "/docs", "/openapi.json"):
+        auth_header = request.headers.get("Authorization", "")
+        expected = f"Bearer {settings.auth.token}"
+        if not settings.auth.token or auth_header != expected:
+            from fastapi.responses import JSONResponse
+            return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
+    return await call_next(request)
 
 
 @app.middleware("http")
@@ -403,10 +422,10 @@ async def health():
     connect = getattr(app.state, "connect", None)
     connect_ok = connect is not None
     return {
-        "status": "ok", "version": "0.4.0",
+        "status": "ok", "version": __version__,
         "ollama_connected": ollama_ok,
         "playwright_agent": pw_ok, "browser_ready": browser_ok,
-        "research_enabled": settings.research_enabled,
+        "research_enabled": settings.research.enabled,
         "gate_enabled": gate_ok,
         "desktop_agent": desktop_ok,
         "desktop_mode": desktop_mode,
@@ -415,5 +434,5 @@ async def health():
         "voice_enabled": voice_ok,
         "connect_enabled": connect_ok,
         "connect_devices": connect.connected_devices if connect else 0,
-        "vision_model": settings.pw_escalation_model,
+        "vision_model": settings.pw_escalation.model,
     }

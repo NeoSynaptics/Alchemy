@@ -325,7 +325,11 @@ async def dispatch_browser(
     task_manager = _get_or_create(app_state, "task_manager", TaskManager)
     task_manager.create_task(task_id, req.goal)
 
-    logger.info("alchemy_browser: started task %s goal=%r url=%r", task_id, req.goal, req.url)
+    logger.warning(
+        "alchemy_browser: task %s created but Playwright agent launch is not yet "
+        "implemented — task will stay PENDING. goal=%r url=%r",
+        task_id, req.goal, req.url,
+    )
     return ClickCallResult(
         task_id=task_id,
         status=TaskStatus.PENDING,

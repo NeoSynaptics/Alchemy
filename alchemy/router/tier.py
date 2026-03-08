@@ -9,9 +9,20 @@ from __future__ import annotations
 
 import re
 
-from alchemy.click.action_parser import classify_tier
 from alchemy.router.categories import TaskCategory
 from alchemy.schemas import ActionTier, VisionAction
+
+
+def classify_tier(action: VisionAction) -> ActionTier:
+    """Classify action tier based on action type (base rules).
+
+    Inlined here to avoid importing from alchemy.click (lateral import violation).
+    """
+    if action.action in ("wait", "done", "fail"):
+        return ActionTier.AUTO
+    if action.action in ("type", "hotkey"):
+        return ActionTier.NOTIFY
+    return ActionTier.AUTO
 
 # Keywords in goal or action text that signal destructive intent
 _DESTRUCTIVE_KEYWORDS = re.compile(

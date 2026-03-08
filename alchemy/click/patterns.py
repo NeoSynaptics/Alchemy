@@ -289,7 +289,7 @@ def browser_patterns() -> list[Pattern]:
 def pattern_report() -> str:
     """Human-readable summary of all patterns and their status."""
     lines = [
-        "AlchemyClick -- 11 Patterns",
+        f"AlchemyClick -- {len(ALL_PATTERNS)} Patterns",
         "=" * 44,
         "",
         "  AlchemyFlow (vision + ghost cursor):",

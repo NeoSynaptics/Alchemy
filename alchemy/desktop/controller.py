@@ -185,6 +185,45 @@ def _send_scroll(x: int, y: int, screen_w: int, screen_h: int, amount: int) -> N
     _restore_cursor(*saved)
 
 
+def _send_drag(
+    start_x: int, start_y: int, end_x: int, end_y: int,
+    screen_w: int, screen_h: int,
+) -> None:
+    """Drag from start to end — mousedown, move, mouseup."""
+    saved = _save_cursor()
+    abs_sx, abs_sy = _to_absolute(start_x, start_y, screen_w, screen_h)
+    abs_ex, abs_ey = _to_absolute(end_x, end_y, screen_w, screen_h)
+
+    inputs = (INPUT * 4)()
+
+    # Move to start
+    inputs[0].type = INPUT_MOUSE
+    inputs[0].union.mi.dx = abs_sx
+    inputs[0].union.mi.dy = abs_sy
+    inputs[0].union.mi.dwFlags = MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE
+
+    # Mouse down at start
+    inputs[1].type = INPUT_MOUSE
+    inputs[1].union.mi.dx = abs_sx
+    inputs[1].union.mi.dy = abs_sy
+    inputs[1].union.mi.dwFlags = MOUSEEVENTF_LEFTDOWN | MOUSEEVENTF_ABSOLUTE
+
+    # Move to end (while held)
+    inputs[2].type = INPUT_MOUSE
+    inputs[2].union.mi.dx = abs_ex
+    inputs[2].union.mi.dy = abs_ey
+    inputs[2].union.mi.dwFlags = MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE
+
+    # Release at end
+    inputs[3].type = INPUT_MOUSE
+    inputs[3].union.mi.dx = abs_ex
+    inputs[3].union.mi.dy = abs_ey
+    inputs[3].union.mi.dwFlags = MOUSEEVENTF_LEFTUP | MOUSEEVENTF_ABSOLUTE
+
+    ctypes.windll.user32.SendInput(4, ctypes.pointer(inputs[0]), ctypes.sizeof(INPUT))
+    _restore_cursor(*saved)
+
+
 def _send_text(text: str) -> None:
     """Type text using SendInput with Unicode characters."""
     for char in text:
@@ -232,12 +271,16 @@ for c in "0123456789":
 
 def _send_hotkey(*keys: str) -> None:
     """Press a key combination (e.g., ctrl+c)."""
-    vk_codes = [_VK_MAP.get(k.lower(), 0) for k in keys]
+    vk_codes = []
+    for k in keys:
+        vk = _VK_MAP.get(k.lower(), 0)
+        if vk == 0:
+            logger.warning("Unknown key name in hotkey: %r (skipped)", k)
+            continue
+        vk_codes.append(vk)
 
     # Press all keys down
     for vk in vk_codes:
-        if vk == 0:
-            continue
         inp = INPUT()
         inp.type = INPUT_KEYBOARD
         inp.union.ki.wVk = vk
@@ -245,8 +288,6 @@ def _send_hotkey(*keys: str) -> None:
 
     # Release all keys (reverse order)
     for vk in reversed(vk_codes):
-        if vk == 0:
-            continue
         inp = INPUT()
         inp.type = INPUT_KEYBOARD
         inp.union.ki.wVk = vk
@@ -446,6 +487,17 @@ class DesktopController:
             _send_scroll, x, y, self._screen.width, self._screen.height, scroll_amount,
         )
         return f"scrolled {direction} {amount} at ({x}, {y})"
+
+    async def drag(self, start_x: int, start_y: int, end_x: int, end_y: int) -> str:
+        """Drag from (start_x, start_y) to (end_x, end_y) — proper mousedown-move-mouseup."""
+        self._ensure_init()
+        self._cursor_move(start_x, start_y)
+        await asyncio.to_thread(
+            _send_drag, start_x, start_y, end_x, end_y,
+            self._screen.width, self._screen.height,
+        )
+        self._cursor_move(end_x, end_y)
+        return f"dragged ({start_x},{start_y}) -> ({end_x},{end_y})"
 
     async def move_to(self, x: int, y: int) -> str:
         """Move mouse to position (this one DOES move the visible cursor)."""

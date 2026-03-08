@@ -14,8 +14,8 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 def _get_router(req: Request) -> SmartRouter:
     """Get the voice SmartRouter from app state."""
     voice_system = getattr(req.app.state, "voice_system", None)
-    if voice_system and voice_system._router:
-        return voice_system._router
+    if voice_system and voice_system.router:
+        return voice_system.router
     # Fallback: check direct app.state.router (legacy)
     return getattr(req.app.state, "router", None)
 
@@ -25,7 +25,19 @@ async def chat(request: ChatRequest, req: Request) -> ChatResponse:
     """Non-streaming chat. Returns full response after inference completes."""
     smart_router = _get_router(req)
     if not smart_router:
-        return ChatResponse(content="Voice system not available", model="none")
+        from uuid import uuid4
+        from alchemy.voice.models.schemas import RouteDecision, RouteIntent, ModelLocation
+        return ChatResponse(
+            message="Voice system not available",
+            conversation_id=uuid4(),
+            model_used="none",
+            route_decision=RouteDecision(
+                intent=RouteIntent.UNCLEAR,
+                target_model="none",
+                target_location=ModelLocation.CPU_LOCAL,
+                confidence=0.0,
+            ),
+        )
     return await smart_router.route(request)
 
 

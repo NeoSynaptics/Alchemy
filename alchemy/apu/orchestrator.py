@@ -1,15 +1,17 @@
 """GPU Stack Orchestrator — smart model placement across dual GPUs + RAM.
 
-Core philosophy: VRAM flows like water.
-- P0 RESIDENT (voice + GUI clicker) = never evicted.
+Core philosophy: VRAM flows like water. No model is immune.
+- P0 RESIDENT = evicted last (not never).
 - P1 USER_ACTIVE (user's current app) = evicted only by P0.
 - P2 AGENT (AI background tasks) = yields to P0/P1.
 - P3 WARM (in RAM) = promote to VRAM in seconds.
 - P4 COLD (on disk) = needs full load time.
+Evicted models go to RAM (warm), not disk — fast reload.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass, field
 
@@ -56,6 +58,7 @@ class StackOrchestrator:
         self._ollama_host = ollama_host.rstrip("/")
         self._mode = "auto"
         self._started = False
+        self._lock = asyncio.Lock()
 
         # Track which apps have activated models
         self._app_models: dict[str, list[str]] = {}
@@ -115,6 +118,11 @@ class StackOrchestrator:
 
     async def load_model(self, name: str, gpu: int | None = None) -> LoadResult:
         """Load a model to VRAM. If gpu is None, use preferred_gpu or auto-place."""
+        async with self._lock:
+            return await self._load_model_locked(name, gpu)
+
+    async def _load_model_locked(self, name: str, gpu: int | None = None) -> LoadResult:
+        """Internal load_model — caller must hold self._lock."""
         card = self._registry.get(name)
         if card is None:
             return LoadResult(success=False, error=f"Model '{name}' not in registry")
@@ -155,15 +163,16 @@ class StackOrchestrator:
 
     async def unload_model(self, name: str) -> bool:
         """Unload a model from VRAM to disk (cold)."""
-        card = self._registry.get(name)
-        if card is None:
-            return False
+        async with self._lock:
+            card = self._registry.get(name)
+            if card is None:
+                return False
 
-        if card.current_location.is_gpu:
-            await self._backend_unload(card)
+            if card.current_location.is_gpu:
+                await self._backend_unload(card)
 
-        self._registry.update_location(name, ModelLocation.DISK, ModelTier.COLD)
-        return True
+            self._registry.update_location(name, ModelLocation.DISK, ModelTier.COLD)
+            return True
 
     async def promote(self, name: str, gpu: int | None = None) -> LoadResult:
         """Promote a model from RAM/disk → VRAM."""

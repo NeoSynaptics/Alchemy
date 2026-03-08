@@ -64,9 +64,10 @@ class CloudSetup:
         if not api_key or not api_key.strip():
             return SetupResult(False, "API key cannot be empty", provider_id)
 
-        # Store in env file
+        # Store in env file with restricted permissions
         env_file = _CLOUD_CONFIG_DIR / f"{provider_id}.env"
         env_file.write_text(f"{provider.env_key}={api_key.strip()}\n")
+        env_file.chmod(0o600)
 
         # Set in current process
         os.environ[provider.env_key] = api_key.strip()
@@ -147,13 +148,20 @@ class CloudSetup:
 
     def load_all_keys(self) -> int:
         """Load all stored API keys into the environment. Returns count loaded."""
+        # Only load keys for known providers to prevent env var injection
+        from alchemy.cloud.providers import all_providers
+        valid_keys = {p.env_key for p in all_providers()}
         count = 0
         for env_file in _CLOUD_CONFIG_DIR.glob("*.env"):
             for line in env_file.read_text().strip().splitlines():
                 if "=" in line:
                     key, value = line.split("=", 1)
-                    os.environ[key.strip()] = value.strip()
-                    count += 1
+                    key = key.strip()
+                    if key in valid_keys:
+                        os.environ[key] = value.strip()
+                        count += 1
+                    else:
+                        logger.warning("Skipping unknown env key: %s", key)
         return count
 
     def _load_key(self, provider_id: str) -> str | None:
@@ -165,7 +173,7 @@ class CloudSetup:
         if not env_file.exists():
             return None
         for line in env_file.read_text().strip().splitlines():
-            if line.startswith(provider.env_key):
+            if line.startswith(provider.env_key + "="):
                 return line.split("=", 1)[1].strip()
         return None
 

@@ -144,7 +144,7 @@ class NeoTrayIcon(QSystemTrayIcon):
             try:
                 with httpx.Client(timeout=5.0) as client:
                     status_resp = client.get(f"{base}/voice/status")
-                    is_running = status_resp.json().get("is_running", False)
+                    is_running = status_resp.json().get("running", False)
 
                     if is_running:
                         client.post(f"{base}/voice/stop")

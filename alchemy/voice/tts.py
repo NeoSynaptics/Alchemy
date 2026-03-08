@@ -60,7 +60,7 @@ class PiperTTS:
                     f"from pathlib import Path; download_voice('{self._model_name}', Path('{project_models}'))\""
                 )
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         self._voice = await loop.run_in_executor(
             None,
             lambda: PiperVoice.load(model_path, use_cuda=False),
@@ -165,7 +165,7 @@ class PiperTTS:
         if not self._voice or not text.strip():
             return None
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
 
         def _do_synth():
             wav_buffer = io.BytesIO()

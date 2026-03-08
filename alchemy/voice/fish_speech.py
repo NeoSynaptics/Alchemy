@@ -69,7 +69,7 @@ class FishSpeechProcess:
         cmd = self._build_command()
         logger.info("Starting Fish Speech: %s", " ".join(cmd))
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == "win32" else 0
         self._process = await loop.run_in_executor(
             None,
@@ -94,7 +94,7 @@ class FishSpeechProcess:
         pid = self._process.pid
         logger.info("Stopping Fish Speech (PID=%d)", pid)
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         if sys.platform == "win32":
             await loop.run_in_executor(
                 None,

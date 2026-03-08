@@ -70,7 +70,7 @@ class GateReviewer:
 
         1. Check static policies (instant, no inference).
         2. If ambiguous, ask Qwen3 14B (think:false, ~800ms).
-        3. On timeout/error, fail-open (accept).
+        3. On timeout/error, fail-closed (deny).
         """
         start = time.monotonic()
 
@@ -118,10 +118,10 @@ class GateReviewer:
 
         except asyncio.TimeoutError:
             ms = (time.monotonic() - start) * 1000
-            logger.warning("Gate timeout (%.0fms), fail-open accept: %s", ms, tool_name)
+            logger.warning("Gate timeout (%.0fms), fail-closed deny: %s", ms, tool_name)
             return GateResult(
-                action="accept",
-                reason=f"timeout after {ms:.0f}ms",
+                action="deny",
+                reason=f"timeout after {ms:.0f}ms — fail-closed",
                 tier="ask_ollama",
                 latency_ms=ms,
                 model=self._model,
@@ -129,10 +129,10 @@ class GateReviewer:
 
         except Exception as e:
             ms = (time.monotonic() - start) * 1000
-            logger.warning("Gate error, fail-open accept: %s — %s", tool_name, e)
+            logger.warning("Gate error, fail-closed deny: %s — %s", tool_name, e)
             return GateResult(
-                action="accept",
-                reason=f"error: {e}",
+                action="deny",
+                reason=f"error: {e} — fail-closed",
                 tier="ask_ollama",
                 latency_ms=ms,
                 model=self._model,

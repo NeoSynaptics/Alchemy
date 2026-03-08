@@ -26,8 +26,22 @@ from alchemy.desktop.agent import DesktopStep, DesktopTaskStatus
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["desktop"], dependencies=[Depends(require_contract("desktop"))])
 
-# In-memory task store
+# In-memory task store with max size cap to prevent unbounded growth
+_MAX_TASKS = 1000
 _tasks: dict[str, dict] = {}
+
+
+def _evict_old_tasks() -> None:
+    """Remove oldest completed tasks when store exceeds max size."""
+    if len(_tasks) <= _MAX_TASKS:
+        return
+    completed = [
+        (tid, t) for tid, t in _tasks.items()
+        if t.get("status") in ("completed", "failed")
+    ]
+    completed.sort(key=lambda x: x[1].get("created_at", ""))
+    for tid, _ in completed[: len(_tasks) - _MAX_TASKS]:
+        del _tasks[tid]
 
 
 # --- Request / Response schemas ---
@@ -89,6 +103,7 @@ async def submit_desktop_task(req: DesktopTaskRequest, request: Request):
     task_id = str(uuid4())
     now = datetime.now(timezone.utc)
 
+    _evict_old_tasks()
     _tasks[task_id] = {
         "task_id": task_id,
         "status": "running",

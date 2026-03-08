@@ -57,17 +57,17 @@ async def receive_approval_request(
             req.action = enforced
 
     if event_bus is None:
-        # Tray disabled — auto-approve and forward to Alchemy
-        logger.info("Tray disabled: auto-approving task %s", req.task_id)
+        # Tray disabled — auto-deny for safety (fail-closed)
+        logger.warning("Tray disabled: auto-denying task %s (no approval UI available)", req.task_id)
         if alchemy_client:
             try:
-                await alchemy_client.approve_task(req.task_id, decided_by="auto")
+                await alchemy_client.deny_task(req.task_id, decided_by="auto-deny-no-tray")
             except Exception:
-                logger.exception("Failed to forward auto-approval to Alchemy")
+                logger.exception("Failed to forward auto-denial to Alchemy")
         return ApprovalRequestAck(received=True, task_id=req.task_id)
 
     # Create Future for GUI thread to resolve
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     future = loop.create_future()
 
     msg = TrayMessage(

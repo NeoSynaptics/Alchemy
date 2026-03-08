@@ -141,6 +141,11 @@ async def analyze(req: VisionAnalyzeRequest, request: Request) -> VisionAnalyzeR
     if not ollama:
         raise HTTPException(status_code=503, detail="Ollama not available")
 
+    # Limit input size: ~10MB base64 ≈ ~7.5MB decoded image
+    _MAX_B64_LENGTH = 10 * 1024 * 1024
+    if len(req.screenshot_b64) > _MAX_B64_LENGTH:
+        raise HTTPException(status_code=413, detail="Screenshot payload too large (max 10MB)")
+
     voice_cb = VoiceCallbackClient()
     task_manager = TaskManager()
     agent = _make_agent(ollama, task_manager, voice_cb, _get_context_builder(request))

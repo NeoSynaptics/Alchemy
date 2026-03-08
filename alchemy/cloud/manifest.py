@@ -6,6 +6,6 @@ MANIFEST = ModuleManifest(
     id="cloud",
     name="Cloud AI Bridge",
     description="Cloud AI provider setup, API key storage, and VS Code extension management.",
-    tier="core",
+    tier="infra",
     env_keys=["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GOOGLE_API_KEY"],
 )

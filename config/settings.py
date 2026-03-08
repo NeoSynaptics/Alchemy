@@ -39,6 +39,14 @@ class AuthSettings(BaseModel):
     """Authentication."""
     token: str = ""
     require: bool = False
+    cors_origins: list[str] = ["http://localhost:3000", "http://localhost:5173"]
+
+    def model_post_init(self, __context: object) -> None:
+        if self.require and not self.token:
+            raise ValueError(
+                "auth.require is True but auth.token is empty. "
+                "Set AUTH__TOKEN or disable AUTH__REQUIRE."
+            )
 
 
 class ScreenshotSettings(BaseModel):

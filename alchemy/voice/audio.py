@@ -33,7 +33,7 @@ class AudioStream:
         """Open the mic input stream."""
         import sounddevice as sd
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         self._queue: asyncio.Queue[bytes] = asyncio.Queue()
 
         def _callback(indata, frames, time_info, status):

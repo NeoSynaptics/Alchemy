@@ -72,11 +72,7 @@ class ApprovalGate:
         # Check element name for irreversible keywords
         check_text = f"{element_name} {action.text or ''} {action.thought}".lower()
 
-        # Quick safe override check
-        for safe in _SAFE_OVERRIDES:
-            if safe in check_text:
-                return False
-
+        # Check irreversible patterns FIRST (before safe overrides)
         all_keywords = _IRREVERSIBLE_KEYWORDS | self.extra_keywords
         for keyword in all_keywords:
             if keyword in check_text:
@@ -85,6 +81,11 @@ class ApprovalGate:
                     keyword, check_text[:100],
                 )
                 return True
+
+        # Safe override check — only after irreversible patterns are cleared
+        for safe in _SAFE_OVERRIDES:
+            if safe in check_text:
+                return False
 
         return False
 

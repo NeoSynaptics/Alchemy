@@ -38,9 +38,12 @@ class TaskState:
 class TaskManager:
     """Thread-safe in-memory task store with asyncio.Event signaling."""
 
+    _MAX_COMPLETED_TASKS = 1000
+
     def __init__(self):
         self._tasks: dict[UUID, TaskState] = {}
         self._agent_tasks: dict[UUID, asyncio.Task] = {}
+        self._lock = asyncio.Lock()
 
     def create_task(self, task_id: UUID, goal: str) -> TaskState:
         """Register a new task."""

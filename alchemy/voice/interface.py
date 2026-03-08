@@ -98,6 +98,11 @@ class VoiceSystem:
         return self._pipeline is not None and self._pipeline.is_running
 
     @property
+    def router(self):
+        """Public access to the SmartRouter (used by chat API)."""
+        return self._router
+
+    @property
     def mode(self) -> VoiceMode:
         return self._mode
 
@@ -157,10 +162,24 @@ class VoiceSystem:
 
     async def stop(self) -> None:
         """Stop the voice pipeline and release resources."""
-        if self._pipeline and self._pipeline.is_running:
-            await self._pipeline.stop()
+        if self._pipeline:
+            if self._pipeline.is_running:
+                await self._pipeline.stop()
+            # Clean up VRAM manager httpx client
+            if hasattr(self._pipeline, '_vram') and self._pipeline._vram:
+                try:
+                    await self._pipeline._vram.close()
+                except Exception:
+                    logger.debug("VRAM manager close failed", exc_info=True)
+            # Clean up Fish Speech subprocess
+            if hasattr(self._pipeline, '_fish_process') and self._pipeline._fish_process:
+                try:
+                    await self._pipeline._fish_process.stop()
+                except Exception:
+                    logger.debug("Fish Speech process stop failed", exc_info=True)
         self._started = False
         self._pipeline = None
+        self._router = None
         logger.info("Voice system stopped")
 
     async def _build_pipeline(self):

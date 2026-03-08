@@ -89,23 +89,24 @@ class OllamaClient:
         if options:
             payload["options"] = options
 
+        attempts = max(self._retry_attempts, 1)
         last_exc: Exception | None = None
-        for attempt in range(self._retry_attempts):
+        for attempt in range(attempts):
             try:
                 resp = await client.post("/api/chat", json=payload)
                 resp.raise_for_status()
                 return resp.json()
             except (httpx.TimeoutException, httpx.HTTPStatusError) as e:
                 last_exc = e
-                if attempt < self._retry_attempts - 1:
+                if attempt < attempts - 1:
                     delay = self._retry_delay * (2 ** attempt)
                     logger.warning(
                         "Ollama chat attempt %d/%d failed (%s), retrying in %.1fs",
-                        attempt + 1, self._retry_attempts, e, delay,
+                        attempt + 1, attempts, e, delay,
                     )
                     await asyncio.sleep(delay)
                 else:
-                    logger.error("Ollama chat failed after %d attempts: %s", self._retry_attempts, e)
+                    logger.error("Ollama chat failed after %d attempts: %s", attempts, e)
 
         raise last_exc  # type: ignore[misc]
 
@@ -145,8 +146,9 @@ class OllamaClient:
         elif seed is not None:
             payload["options"] = {"seed": seed}
 
+        attempts = max(self._retry_attempts, 1)
         last_exc: Exception | None = None
-        for attempt in range(self._retry_attempts):
+        for attempt in range(attempts):
             try:
                 resp = await client.post("/api/chat", json=payload)
                 resp.raise_for_status()
@@ -159,17 +161,17 @@ class OllamaClient:
                 }
             except (httpx.TimeoutException, httpx.HTTPStatusError) as e:
                 last_exc = e
-                if attempt < self._retry_attempts - 1:
+                if attempt < attempts - 1:
                     delay = self._retry_delay * (2 ** attempt)
                     logger.warning(
                         "Ollama chat_think attempt %d/%d failed (%s), retrying in %.1fs",
-                        attempt + 1, self._retry_attempts, e, delay,
+                        attempt + 1, attempts, e, delay,
                     )
                     await asyncio.sleep(delay)
                 else:
                     logger.error(
                         "Ollama chat_think failed after %d attempts: %s",
-                        self._retry_attempts, e,
+                        attempts, e,
                     )
 
         raise last_exc  # type: ignore[misc]
@@ -204,8 +206,9 @@ class OllamaClient:
 
         accumulated = ""
         last_exc: Exception | None = None
+        attempts = max(self._retry_attempts, 1)
 
-        for attempt in range(self._retry_attempts):
+        for attempt in range(attempts):
             try:
                 accumulated = ""
                 async with client.stream("POST", "/api/chat", json=payload) as resp:
@@ -229,11 +232,11 @@ class OllamaClient:
                 return accumulated
             except (httpx.TimeoutException, httpx.HTTPStatusError) as e:
                 last_exc = e
-                if attempt < self._retry_attempts - 1:
+                if attempt < attempts - 1:
                     delay = self._retry_delay * (2 ** attempt)
                     logger.warning(
                         "Ollama stream attempt %d/%d failed (%s), retrying in %.1fs",
-                        attempt + 1, self._retry_attempts, e, delay,
+                        attempt + 1, attempts, e, delay,
                     )
                     await asyncio.sleep(delay)
 

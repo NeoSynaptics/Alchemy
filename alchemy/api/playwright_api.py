@@ -25,8 +25,22 @@ from alchemy.schemas import (
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["playwright"], dependencies=[Depends(require_contract("core"))])
 
-# In-memory task store (same pattern as vision API)
+# In-memory task store with max size cap to prevent unbounded growth
+_MAX_TASKS = 1000
 _tasks: dict[str, dict] = {}
+
+
+def _evict_old_tasks() -> None:
+    """Remove oldest completed tasks when store exceeds max size."""
+    if len(_tasks) <= _MAX_TASKS:
+        return
+    completed = [
+        (tid, t) for tid, t in _tasks.items()
+        if t.get("status") in ("completed", "failed", TaskStatus.COMPLETED, TaskStatus.FAILED)
+    ]
+    completed.sort(key=lambda x: str(x[1].get("created_at", "")))
+    for tid, _ in completed[: len(_tasks) - _MAX_TASKS]:
+        del _tasks[tid]
 
 
 @router.post("/playwright/task", response_model=PlaywrightTaskResponse)
@@ -41,6 +55,7 @@ async def submit_task(req: PlaywrightTaskRequest, request: Request):
     task_id = str(uuid4())
     now = datetime.now(timezone.utc)
 
+    _evict_old_tasks()
     _tasks[task_id] = {
         "task_id": task_id,
         "status": TaskStatus.RUNNING,
