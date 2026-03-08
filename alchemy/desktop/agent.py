@@ -337,17 +337,13 @@ def _parse_response(raw: str) -> tuple[str, int | None, int | None, str | None, 
     if thought_match:
         thought = thought_match.group(1).strip()
 
-    # Try Qwen2.5-VL native JSON point format FIRST: {"point_2d": [X, Y]}
-    # This is the most accurate format for Qwen2.5-VL.
-    json_result = _parse_qwen_vl_json(raw, thought)
-    if json_result:
-        return json_result
-
-    # Try standard format: Action: click(start_box="(X,Y)")
+    # Try standard format FIRST: Action: click(start_box="(X,Y)")
     action_match = _ACTION_RE.search(raw)
-
-    # Try alternate format: Action: click@(X,Y) — minicpm-v sometimes uses this
-    if not action_match:
+    if action_match:
+        # Standard format found — skip JSON fallback, process below
+        pass
+    else:
+        # Try alternate format: Action: click@(X,Y) — minicpm-v sometimes uses this
         at_match = _ACTION_AT_RE.search(raw)
         if at_match:
             action_type_raw = at_match.group(1)
@@ -360,6 +356,11 @@ def _parse_response(raw: str) -> tuple[str, int | None, int | None, str | None, 
                 "wait": "wait", "finished": "done",
             }
             return action_map.get(action_type_raw, action_type_raw), at_x, at_y, None, None, thought
+
+        # Try Qwen2.5-VL native JSON point format as LAST fallback
+        json_result = _parse_qwen_vl_json(raw, thought)
+        if json_result:
+            return json_result
 
         raise ValueError(f"No Action: found in: {raw[:200]!r}")
 
@@ -430,7 +431,11 @@ def _parse_qwen_vl_json(
 
     # Handle "done" / "wait" (no coordinates needed)
     if action_name in ("done", "finished"):
-        return "done", None, None, None, None, thought
+        text = None
+        content_match = _CONTENT_RE.search(raw)
+        if content_match:
+            text = content_match.group(1).replace("\\'", "'").replace('\\"', '"')
+        return "done", None, None, text, None, thought
     if action_name == "wait":
         return "wait", None, None, None, None, thought
 

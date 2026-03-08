@@ -152,7 +152,11 @@ def _parse_point_2d(raw: str, thought: str) -> ParsedAction | None:
 
     # Terminal actions
     if action_name in ("done", "finished"):
-        return ParsedAction(thought=thought, action_type="finished")
+        content = None
+        content_match = _CONTENT_RE.search(raw)
+        if content_match:
+            content = content_match.group(1).replace("\\'", "'").replace('\\"', '"')
+        return ParsedAction(thought=thought, action_type="finished", content=content)
     if action_name == "wait":
         return ParsedAction(thought=thought, action_type="wait")
 

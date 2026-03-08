@@ -161,7 +161,7 @@ class TestToVisionActionCoordModes:
 
     def test_normalized_default(self):
         parsed = ParsedAction(thought="Click", action_type="click", start_box=(500, 500))
-        action = to_vision_action(parsed, 1920, 1080)
+        action = to_vision_action(parsed, 1920, 1080, coord_mode=CoordMode.NORMALIZED)
         assert action.x == 960
         assert action.y == 540
 

@@ -28,6 +28,7 @@ from alchemy.api import desktop_api
 from alchemy.api import apu_api
 from alchemy.api import modules_api
 from alchemy.api import click_api
+from alchemy.api import settings_api
 from alchemy.router.environment import EnvironmentDetector
 from config.settings import settings
 
@@ -376,6 +377,7 @@ app.include_router(gate_api.router, prefix="/gate")
 app.include_router(apu_api.router, prefix="/v1")
 app.include_router(modules_api.router, prefix="/v1")
 app.include_router(click_api.router)
+app.include_router(settings_api.router, prefix="/v1")
 
 # AlchemyVoice routes (chat, voice control, callbacks)
 from alchemy.voice.api import callbacks as voice_callbacks

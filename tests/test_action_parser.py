@@ -3,6 +3,7 @@
 import pytest
 
 from alchemy.click.action_parser import (
+    CoordMode,
     ParsedAction,
     classify_tier,
     parse_uitars_response,
@@ -125,7 +126,7 @@ class TestScaleCoord:
 class TestToVisionAction:
     def test_click_scaled(self):
         parsed = ParsedAction(thought="Click it", action_type="click", start_box=(500, 500))
-        action = to_vision_action(parsed, 1920, 1080)
+        action = to_vision_action(parsed, 1920, 1080, coord_mode=CoordMode.NORMALIZED)
         assert action.action == "click"
         assert action.x == 960
         assert action.y == 540

@@ -179,8 +179,8 @@ class TestAnalyzeSingle:
         resp = await agent.analyze_single(png, "click the button")
 
         assert resp.action.action == "click"
-        assert resp.action.x == 960
-        assert resp.action.y == 270
+        assert resp.action.x == 750   # 500/1280*1920 (IMAGE_PIXEL mode)
+        assert resp.action.y == 375   # 250/720*1080
         assert resp.inference_ms > 0
         assert resp.model == "test-model"
 
