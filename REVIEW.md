@@ -249,6 +249,62 @@ The docstring says "P0 RESIDENT = never evicted" but `_make_room` Pass 2 (lines 
 
 ---
 
+## AlchemyVoice Module — Detailed Findings
+
+### 23. Missing `bridge` Module Breaks `AlchemyProvider` (Bug)
+
+**File:** `alchemy/voice/models/provider.py:194`
+
+`from alchemy.voice.bridge.alchemy_client import AlchemyClient` — but no `alchemy/voice/bridge/` directory exists. Any attempt to start the `AlchemyProvider` (used for GUI task escalation to the 72B vision model) will raise `ModuleNotFoundError` at runtime.
+
+### 24. Tray Voice Toggle Checks Wrong JSON Key (Bug)
+
+**File:** `alchemy/voice/tray/icon.py:147`
+
+Reads `status_resp.json().get("is_running", False)` but the `/voice/status` endpoint returns `VoiceStatusResponse` with a `running` field, not `is_running`. The toggle button always thinks voice is stopped and will always try to start, never stop.
+
+### 25. Chat Endpoint Returns Wrong Field Names (Bug)
+
+**File:** `alchemy/voice/api/chat.py:28`
+
+Returns `ChatResponse(content="Voice system not available", model="none")` but `ChatResponse` has fields `message`, `conversation_id`, `model_used`, and `route_decision` — not `content` or `model`. This raises a Pydantic `ValidationError` at runtime.
+
+### 26. Auto-Approval Fallback Bypasses Safety Gates (Security)
+
+**File:** `alchemy/voice/api/callbacks.py:60-67`
+
+When the tray event bus is `None` (tray disabled), APPROVE-tier actions are auto-approved. This silently bypasses the approval gate for destructive, financial, authentication, and system modification actions. The constitutional engine correctly escalates tiers, but enforcement is then nullified.
+
+**Recommendation:** Default to auto-deny when the tray is unavailable, not auto-approve.
+
+### 27. TTS `speak_streamed()` Duplicated ~50 Lines Across Three Engines
+
+**File:** `alchemy/voice/tts.py`
+
+The sentence-buffering logic with asyncio Queue, timeout flushing, and sentence boundary regex is copy-pasted identically across `PiperTTS`, `FishSpeechTTS`, and `KokoroTTS`. Should be extracted to a shared base class or helper function.
+
+### 28. Deprecated `asyncio.get_event_loop()` Used Throughout Voice
+
+**Files:** `alchemy/voice/audio.py:36`, `stt.py:38,61`, `tts.py:63,168`, `fish_speech.py:72`
+
+In Python 3.10+, `get_event_loop()` emits a deprecation warning if there's no running loop. Since these are all called from async contexts, they should use `asyncio.get_running_loop()` instead.
+
+### 29. Voice Chat API Accesses Private `_router` Field
+
+**File:** `alchemy/voice/api/chat.py:17`
+
+`_get_router()` accesses `voice_system._router` — a private attribute of `VoiceSystem`. This violates the encapsulation that `interface.py` was designed to provide.
+
+**Recommendation:** Add a public `router` property to `VoiceSystem`.
+
+### 30. No Resource Cleanup in `VoiceSystem.stop()`
+
+**File:** `alchemy/voice/interface.py:158-164`
+
+When stopping, `VoiceSystem` sets `self._pipeline = None` but doesn't close the VRAM manager's httpx client, TTS httpx clients, or Fish Speech process. These resources may leak.
+
+---
+
 ## Architecture Observations (Positive)
 
 ### Import Boundary Contracts
@@ -304,13 +360,21 @@ The `.importlinter` contracts have a few gaps relative to CLAUDE.md conventions:
 | 7 | **High** | Cloud API keys world-readable | Write with `0o600` permissions |
 | 8 | **High** | Arbitrary env var injection via cloud config | Validate keys against provider registry |
 | 9 | **High** | Router imports from feature module | Lift `classify_tier` to shared module |
-| 10 | **Medium** | Private attribute access | Expose via public properties |
-| 11 | **Medium** | Monolithic lifespan | Extract init helpers |
-| 12 | **Medium** | No settings validation | Add `@field_validator` for bounded values |
-| 13 | **Medium** | Import linter gaps | Extend contracts for all feature modules |
-| 14 | **Medium** | `raise None` in adapters | Guard against zero retry attempts |
-| 15 | **Medium** | Cloud manifest tier mismatch | Change to `tier="infra"` |
-| 16 | **Low** | Empty auth token default | Validate at startup |
-| 17 | **Low** | Python version mismatch | Ensure CI uses Python 3.12+ |
-| 18 | **Low** | APU docstring contradicts code | Fix "never evicted" claim |
-| 19 | **Low** | Cloud `_load_key` prefix matching | Use exact key match |
+| 10 | **High** | Missing `bridge` module crashes `AlchemyProvider` | Create module or remove dead import |
+| 11 | **High** | Auto-approve fallback bypasses safety gates | Default to deny when tray unavailable |
+| 12 | **Medium** | Private attribute access | Expose via public properties |
+| 13 | **Medium** | Monolithic lifespan | Extract init helpers |
+| 14 | **Medium** | No settings validation | Add `@field_validator` for bounded values |
+| 15 | **Medium** | Import linter gaps | Extend contracts for all feature modules |
+| 16 | **Medium** | `raise None` in adapters | Guard against zero retry attempts |
+| 17 | **Medium** | Cloud manifest tier mismatch | Change to `tier="infra"` |
+| 18 | **Medium** | Tray toggle wrong JSON key | Change `is_running` to `running` |
+| 19 | **Medium** | Chat endpoint wrong field names | Use correct `ChatResponse` fields |
+| 20 | **Medium** | TTS code duplication (~150 lines) | Extract shared sentence-buffering helper |
+| 21 | **Medium** | Voice resource leak on stop | Close httpx clients, Fish Speech process |
+| 22 | **Low** | Empty auth token default | Validate at startup |
+| 23 | **Low** | Python version mismatch | Ensure CI uses Python 3.12+ |
+| 24 | **Low** | APU docstring contradicts code | Fix "never evicted" claim |
+| 25 | **Low** | Cloud `_load_key` prefix matching | Use exact key match |
+| 26 | **Low** | Deprecated `asyncio.get_event_loop()` in voice | Use `get_running_loop()` |
+| 27 | **Low** | Voice chat API accesses private `_router` | Add public property |
