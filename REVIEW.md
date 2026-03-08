@@ -9,7 +9,7 @@
 
 Alchemy is a well-architected local-first AI engine with strong modular isolation enforced by import-linter contracts. The manifest/registry/contract system is a solid foundation for plugin-style extensibility. The APU orchestrator's tier-based eviction and dual-GPU placement logic is thoughtfully designed.
 
-However, several critical issues need attention — most urgently around **security** (no auth enforcement, dangerous CORS), **configuration drift** (nested vs flat settings divergence), and **version inconsistency**. Below are findings organized by severity.
+However, **37 issues** need attention — most urgently around **security** (no auth enforcement, multiple fail-open safety gates, dangerous CORS), **configuration drift** (nested vs flat settings divergence), and **runtime bugs** (missing modules, wrong field names, broken drag). Below are findings organized by severity.
 
 ---
 
@@ -305,6 +305,85 @@ When stopping, `VoiceSystem` sets `self._pipeline = None` but doesn't close the 
 
 ---
 
+## App Modules — Detailed Findings
+
+### 31. ApprovalGate Safe-Override Masks Irreversible Actions (Security Bug)
+
+**File:** `alchemy/core/approval.py`
+
+The safe override check runs before the irreversible keyword check. A phrase like "cancel subscription" matches the safe override "cancel" and returns `False` (not irreversible) before the irreversible pattern "cancel subscription" is ever evaluated.
+
+**Recommendation:** Check irreversible patterns first, then safe overrides.
+
+### 32. GateReviewer Fails-Open on Timeout and LLM Error (Security)
+
+**File:** `alchemy/gate/reviewer.py`
+
+Both the timeout path and the exception handler return `accepted=True`. If the Ollama model is down or slow, every request is auto-approved, undermining the gate's entire purpose.
+
+**Recommendation:** Fail-closed (deny) on timeout/error.
+
+### 33. FlowVS Defaults to APPROVE on Decision Error (Security)
+
+**File:** `alchemy/desktop/flowvs.py`
+
+When the LLM safety decision call fails or returns unparseable output, the code defaults to `APPROVE`. A security gate should fail-closed (DENY), not fail-open.
+
+### 34. Drag Action Does Click + Move Instead of Proper Drag (Bug)
+
+**File:** `alchemy/click/flow/action_executor.py`
+
+The drag implementation calls `controller.click()` then `controller.move_to()`, which performs a click-release followed by a move — not a mousedown-drag-mouseup sequence. The element will not actually be dragged.
+
+### 35. No Input Size Limits on `/v1/vision/analyze` (Security)
+
+**File:** `alchemy/api/vision.py`
+
+The `/analyze` endpoint accepts a base64-encoded screenshot with no size validation. An attacker can send arbitrarily large payloads to exhaust memory.
+
+### 36. In-Memory Task Stores Grow Without Bound (Memory Leak)
+
+**Files:** `alchemy/api/click_api.py`, `desktop_api.py`, `playwright_api.py`, `vision.py`, `research_api.py`
+
+Every API module uses a module-level `_tasks: dict` that grows without bound. Completed tasks are never evicted. Over time this is a memory leak exploitable by repeatedly submitting tasks.
+
+**Recommendation:** Add TTL-based eviction or a max-size cap.
+
+### 37. `dispatch_browser()` Is a Stub That Never Starts Work
+
+**File:** `alchemy/click/functions.py`
+
+`dispatch_browser()` creates a task entry but never actually starts a Playwright agent. Callers get a task ID for a job that never runs.
+
+---
+
+## Test Coverage Analysis
+
+### Well-Tested Areas
+- **Desktop controller** (`test_desktop/test_controller.py`) — thorough SendInput coverage
+- **Desktop agent** (`test_desktop/test_agent.py`) — good response format parsing coverage
+- **Gate policies** (`test_gate/test_policies.py`) — excellent parametrized tests for safe/dangerous/ambiguous commands
+- **Playwright escalation** (`test_playwright/test_escalation.py`) — comprehensive stuck detection and vision fallback tests
+- **Playwright snapshot** (`test_playwright/test_snapshot.py`) — real accessibility tree fixtures from actual sites
+- **Research** (`test_research/`) — solid edge case coverage (empty results, partial failures, bad JSON)
+
+### Missing Test Coverage (High Risk)
+
+| Component | Path | Risk Level |
+|-----------|------|------------|
+| PlaywrightAgent main loop | `alchemy/core/agent.py` | **High** — core automation, untested |
+| ApprovalGate | `alchemy/core/approval.py` | **High** — safety-critical, has ordering bug |
+| FlowVS safety gate | `alchemy/desktop/flowvs.py` | **High** — security gate, has fail-open bug |
+| VisionAgent main loop | `alchemy/click/flow/vision_agent.py` | **High** — core automation loop |
+| All API route endpoints | `alchemy/api/*.py` | **Medium** — no endpoint-level tests at all |
+| TaskManager | `alchemy/click/task_manager.py` | **Medium** — concurrent access |
+| OmniParser v2 pipeline | `alchemy/click/flow/omniparser.py` | **Medium** — complex ML pipeline |
+
+### Lateral Import Compliance
+No lateral import violations found across feature modules. All cross-module wiring goes through `server.py` and the API layer, consistent with CLAUDE.md rules.
+
+---
+
 ## Architecture Observations (Positive)
 
 ### Import Boundary Contracts
@@ -362,19 +441,27 @@ The `.importlinter` contracts have a few gaps relative to CLAUDE.md conventions:
 | 9 | **High** | Router imports from feature module | Lift `classify_tier` to shared module |
 | 10 | **High** | Missing `bridge` module crashes `AlchemyProvider` | Create module or remove dead import |
 | 11 | **High** | Auto-approve fallback bypasses safety gates | Default to deny when tray unavailable |
-| 12 | **Medium** | Private attribute access | Expose via public properties |
-| 13 | **Medium** | Monolithic lifespan | Extract init helpers |
-| 14 | **Medium** | No settings validation | Add `@field_validator` for bounded values |
-| 15 | **Medium** | Import linter gaps | Extend contracts for all feature modules |
-| 16 | **Medium** | `raise None` in adapters | Guard against zero retry attempts |
-| 17 | **Medium** | Cloud manifest tier mismatch | Change to `tier="infra"` |
-| 18 | **Medium** | Tray toggle wrong JSON key | Change `is_running` to `running` |
-| 19 | **Medium** | Chat endpoint wrong field names | Use correct `ChatResponse` fields |
-| 20 | **Medium** | TTS code duplication (~150 lines) | Extract shared sentence-buffering helper |
-| 21 | **Medium** | Voice resource leak on stop | Close httpx clients, Fish Speech process |
-| 22 | **Low** | Empty auth token default | Validate at startup |
-| 23 | **Low** | Python version mismatch | Ensure CI uses Python 3.12+ |
-| 24 | **Low** | APU docstring contradicts code | Fix "never evicted" claim |
-| 25 | **Low** | Cloud `_load_key` prefix matching | Use exact key match |
-| 26 | **Low** | Deprecated `asyncio.get_event_loop()` in voice | Use `get_running_loop()` |
-| 27 | **Low** | Voice chat API accesses private `_router` | Add public property |
+| 12 | **High** | ApprovalGate safe-override masks irreversible actions | Check irreversible patterns first |
+| 13 | **High** | GateReviewer fails-open on timeout/error | Fail-closed (deny) on error |
+| 14 | **High** | FlowVS defaults to APPROVE on error | Fail-closed (deny) on error |
+| 15 | **High** | Drag action is click+move, not actual drag | Implement mousedown-drag-mouseup |
+| 16 | **Medium** | Private attribute access | Expose via public properties |
+| 17 | **Medium** | Monolithic lifespan | Extract init helpers |
+| 18 | **Medium** | No settings validation | Add `@field_validator` for bounded values |
+| 19 | **Medium** | Import linter gaps | Extend contracts for all feature modules |
+| 20 | **Medium** | `raise None` in adapters | Guard against zero retry attempts |
+| 21 | **Medium** | Cloud manifest tier mismatch | Change to `tier="infra"` |
+| 22 | **Medium** | Tray toggle wrong JSON key | Change `is_running` to `running` |
+| 23 | **Medium** | Chat endpoint wrong field names | Use correct `ChatResponse` fields |
+| 24 | **Medium** | TTS code duplication (~150 lines) | Extract shared sentence-buffering helper |
+| 25 | **Medium** | Voice resource leak on stop | Close httpx clients, Fish Speech process |
+| 26 | **Medium** | No input size limits on `/v1/vision/analyze` | Add payload size validation |
+| 27 | **Medium** | In-memory task stores grow unbounded | Add TTL eviction or max-size cap |
+| 28 | **Medium** | No tests for safety-critical gates | Add tests for ApprovalGate, FlowVS, API routes |
+| 29 | **Low** | Empty auth token default | Validate at startup |
+| 30 | **Low** | Python version mismatch | Ensure CI uses Python 3.12+ |
+| 31 | **Low** | APU docstring contradicts code | Fix "never evicted" claim |
+| 32 | **Low** | Cloud `_load_key` prefix matching | Use exact key match |
+| 33 | **Low** | Deprecated `asyncio.get_event_loop()` in voice | Use `get_running_loop()` |
+| 34 | **Low** | Voice chat API accesses private `_router` | Add public property |
+| 35 | **Low** | `dispatch_browser()` stub never starts work | Implement or remove |
