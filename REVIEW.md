@@ -193,6 +193,60 @@ Once populated, `discover()` never re-scans. The `reset()` function exists but i
 
 Binding to all interfaces by default is convenient for development but risky in production. Combined with the lack of auth, this means any device on the network can control the system.
 
+### 16. Cloud API Keys Stored with World-Readable Permissions (Security)
+
+**File:** `alchemy/cloud/setup.py:69`
+
+`env_file.write_text(...)` uses default file permissions (typically 0644 on Linux), meaning any user on the system can read API keys from `~/.alchemy/cloud/*.env`.
+
+**Recommendation:** Use `os.open()` with mode `0o600` or `Path.chmod(0o600)` after writing.
+
+### 17. Arbitrary Environment Variable Injection via Cloud Config
+
+**File:** `alchemy/cloud/setup.py` (`load_all_keys` method)
+
+The method reads any `KEY=VALUE` line from `.env` files in the cloud config directory and blindly sets it in `os.environ`. If an attacker can write to `~/.alchemy/cloud/`, they can inject arbitrary environment variables (e.g., `LD_PRELOAD`, `PATH`, `PYTHONPATH`) — a privilege escalation vector.
+
+**Recommendation:** Validate that the key name matches a known `env_key` from the provider registry before setting it.
+
+### 18. Router Imports from Feature Module (Import Rule Violation)
+
+**File:** `alchemy/router/tier.py:12`
+
+```python
+from alchemy.click.action_parser import classify_tier
+```
+
+The router is `infra` tier. CLAUDE.md states infrastructure modules should not import from features. This creates a dependency inversion: router (infra) depends on click (core feature). The `.importlinter` config doesn't explicitly forbid this, but it violates the documented conventions.
+
+**Recommendation:** Lift `classify_tier` to a shared module (e.g., `alchemy/schemas.py`).
+
+### 19. `raise None` Crash in Adapters When `retry_attempts <= 0`
+
+**Files:** `alchemy/adapters/ollama.py:110`, `alchemy/adapters/vllm.py:117`
+
+If `retry_attempts` is 0 or negative, the retry for-loop never executes, `last_exc` remains `None`, and `raise None` produces `TypeError: exceptions must derive from BaseException`. Same pattern in `chat_think` and `chat_stream`.
+
+**Recommendation:** Initialize `last_exc` to a meaningful exception or add a guard.
+
+### 20. Cloud Module Manifest Tier Mismatch
+
+**File:** `alchemy/cloud/manifest.py`
+
+The manifest declares `tier="core"` but CLAUDE.md lists Cloud AI Bridge as `infra` tier. This mismatch could affect eviction ordering if the cloud module ever declares model requirements.
+
+### 21. APU Orchestrator Docstring Contradicts Implementation
+
+**File:** `alchemy/apu/orchestrator.py:4`
+
+The docstring says "P0 RESIDENT = never evicted" but `_make_room` Pass 2 (lines 432-447) will evict any model including residents. The `eviction_candidates` docstring in `registry.py` correctly says "No model is immune." The orchestrator docstring is misleading.
+
+### 22. Cloud `_load_key` Uses Prefix Matching Instead of Exact Match
+
+**File:** `alchemy/cloud/setup.py` (`_load_key` method)
+
+`line.startswith(provider.env_key)` matches `ANTHROPIC_API_KEY_OLD=...` as well as `ANTHROPIC_API_KEY=...`. Should use `line.startswith(provider.env_key + "=")` or split-then-compare.
+
 ---
 
 ## Architecture Observations (Positive)
@@ -247,9 +301,16 @@ The `.importlinter` contracts have a few gaps relative to CLAUDE.md conventions:
 | 4 | **High** | Voice imports crash without deps | Guard with conditional import |
 | 5 | **High** | Three version strings | Single source via `importlib.metadata` |
 | 6 | **High** | No async locking in APU | Add `asyncio.Lock` to orchestrator |
-| 7 | **Medium** | Private attribute access | Expose via public properties |
-| 8 | **Medium** | Monolithic lifespan | Extract init helpers |
-| 9 | **Medium** | No settings validation | Add `@field_validator` for bounded values |
-| 10 | **Medium** | Import linter gaps | Extend contracts for all feature modules |
-| 11 | **Low** | Empty auth token default | Validate at startup |
-| 12 | **Low** | Python version mismatch | Ensure CI uses Python 3.12+ |
+| 7 | **High** | Cloud API keys world-readable | Write with `0o600` permissions |
+| 8 | **High** | Arbitrary env var injection via cloud config | Validate keys against provider registry |
+| 9 | **High** | Router imports from feature module | Lift `classify_tier` to shared module |
+| 10 | **Medium** | Private attribute access | Expose via public properties |
+| 11 | **Medium** | Monolithic lifespan | Extract init helpers |
+| 12 | **Medium** | No settings validation | Add `@field_validator` for bounded values |
+| 13 | **Medium** | Import linter gaps | Extend contracts for all feature modules |
+| 14 | **Medium** | `raise None` in adapters | Guard against zero retry attempts |
+| 15 | **Medium** | Cloud manifest tier mismatch | Change to `tier="infra"` |
+| 16 | **Low** | Empty auth token default | Validate at startup |
+| 17 | **Low** | Python version mismatch | Ensure CI uses Python 3.12+ |
+| 18 | **Low** | APU docstring contradicts code | Fix "never evicted" claim |
+| 19 | **Low** | Cloud `_load_key` prefix matching | Use exact key match |
