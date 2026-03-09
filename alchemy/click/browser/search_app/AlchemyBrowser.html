@@ -589,6 +589,17 @@
       word-break: break-word;
     }
     .ai-feed-text:empty { display: none; }
+    .ai-feed-text a.cite-link {
+      color: inherit;
+      text-decoration: none;
+      cursor: text;
+      border-bottom: 1px solid transparent;
+      transition: border-color 0.2s ease, cursor 0s;
+    }
+    .ai-feed-text a.cite-link:hover {
+      cursor: pointer;
+      border-bottom-color: var(--text-3);
+    }
     .ai-feed-sources {
       display: flex;
       flex-direction: column;
@@ -1507,7 +1518,7 @@
         return;
       }
 
-      // Typing animation
+      // Typing animation — word by word first, then link sentences to sources
       textEl.classList.add('ai-answer-typing');
       const words = data.answer.split(' ');
       let shown = '';
@@ -1518,6 +1529,30 @@
         await new Promise(r => setTimeout(r, 20));
       }
       textEl.classList.remove('ai-answer-typing');
+
+      // After typing completes, silently link sentences to sources
+      const sources = data.sources || [];
+      if (sources.length && sources[0].snippet) {
+        const sentences = data.answer.split(/(?<=[.!?])\s+/).filter(s => s.trim());
+        const linked = sentences.map(sentence => {
+          // Find best matching source by word overlap
+          const sWords = new Set(sentence.toLowerCase().split(/\W+/).filter(w => w.length > 3));
+          let bestIdx = 0, bestScore = 0;
+          sources.forEach((src, idx) => {
+            const srcText = (src.snippet + ' ' + src.title).toLowerCase();
+            const srcWords = new Set(srcText.split(/\W+/).filter(w => w.length > 3));
+            let score = 0;
+            sWords.forEach(w => { if (srcWords.has(w)) score++; });
+            if (score > bestScore) { bestScore = score; bestIdx = idx; }
+          });
+          if (bestScore > 0) {
+            const s = sources[bestIdx];
+            return `<a class="cite-link" href="${s.url}" target="_blank" rel="noopener" title="${s.domain}">${sentence}</a>`;
+          }
+          return sentence;
+        });
+        textEl.innerHTML = linked.join(' ');
+      }
       header.classList.add('done');
 
       // Source reference links

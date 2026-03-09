@@ -440,7 +440,12 @@ async def ai_answer(req: AIAnswerRequest):
         text = (content or r.get("description", ""))[:1000]
         if text:
             context += f"\n[Source {i+1}: {r['title']}]\n{text}\n"
-            sources.append({"title": r["title"], "url": r["url"], "domain": _domain(r["url"])})
+            sources.append({
+                "title": r["title"],
+                "url": r["url"],
+                "domain": _domain(r["url"]),
+                "snippet": text[:300],
+            })
 
     if not context.strip():
         return {"answer": "", "sources": []}
