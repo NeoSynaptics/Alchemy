@@ -577,6 +577,155 @@ async def _ollama(prompt: str) -> str:
 
 PORT = 8055
 
+# ── CHROME SHADOW SEARCH ──────────────────────────────────────────────
+
+_pw_browser = None  # lazy singleton
+
+
+async def _get_browser():
+    """Lazy-init a headless Chromium browser via Playwright."""
+    global _pw_browser
+    if _pw_browser is None:
+        from playwright.async_api import async_playwright
+        pw = await async_playwright().start()
+        _pw_browser = await pw.chromium.launch(headless=True)
+    return _pw_browser
+
+
+def _query_variations(query: str) -> list[str]:
+    """Generate 5 search variations from the original query."""
+    words = query.split()
+    variations = [query]
+    # Add "best" prefix
+    variations.append(f"best {query}")
+    # Add "explained" suffix
+    variations.append(f"{query} explained")
+    # Add "reddit" suffix for real opinions
+    variations.append(f"{query} reddit")
+    # Rephrase: "what is <query>"
+    if not query.lower().startswith(("what", "how", "why", "who", "when")):
+        variations.append(f"what is {query}")
+    else:
+        variations.append(f"{query} 2025")
+    return variations[:5]
+
+
+def _bing_resolve_url(href: str) -> str:
+    """Extract real URL from Bing redirect links."""
+    if "bing.com/ck/a" in href:
+        from urllib.parse import urlparse, parse_qs, unquote
+        import base64
+        parsed = parse_qs(urlparse(href).query)
+        if "u" in parsed:
+            encoded = parsed["u"][0]
+            # Bing encodes as a1<base64url>
+            if encoded.startswith("a1"):
+                try:
+                    decoded = base64.urlsafe_b64decode(encoded[2:] + "==").decode("utf-8", errors="ignore")
+                    if decoded.startswith("http"):
+                        return decoded
+                except Exception:
+                    pass
+    return href
+
+
+async def _bing_scrape(page, query: str) -> list[dict]:
+    """Search Bing in a Playwright page, return scraped results."""
+    results = []
+    try:
+        url = f"https://www.bing.com/search?q={query}&setlang=en&cc=us"
+        await page.goto(url, wait_until="domcontentloaded", timeout=10000)
+        await page.wait_for_selector("#b_results", timeout=5000)
+
+        items = await page.query_selector_all("li.b_algo")
+        for item in items[:8]:
+            try:
+                link_el = await item.query_selector("h2 a")
+                snippet_el = await item.query_selector("p, .b_caption p")
+                if not link_el:
+                    continue
+                href = await link_el.get_attribute("href") or ""
+                title = await link_el.inner_text()
+                snippet = ""
+                if snippet_el:
+                    snippet = await snippet_el.inner_text()
+                # Resolve Bing redirect URLs to actual URLs
+                real_url = _bing_resolve_url(href)
+                if real_url and real_url.startswith("http") and title:
+                    results.append({
+                        "url": real_url,
+                        "title": title,
+                        "description": snippet or "",
+                        "domain": _domain(real_url),
+                    })
+            except Exception:
+                continue
+    except Exception as e:
+        logger.warning(f"Chrome scrape failed for '{query}': {e}")
+    return results
+
+
+class ChromeSearchRequest(BaseModel):
+    query: str
+
+
+@app.post("/api/chrome-search")
+async def chrome_search(req: ChromeSearchRequest):
+    """Shadow Chrome search: 5 parallel Google searches with query variations."""
+    browser = await _get_browser()
+    variations = _query_variations(req.query)
+
+    async def search_one(q: str) -> list[dict]:
+        ctx = await browser.new_context(
+            user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/122.0.0.0 Safari/537.36"
+            ),
+            locale="en-US",
+        )
+        page = await ctx.new_page()
+        try:
+            return await _bing_scrape(page, q)
+        finally:
+            await ctx.close()
+
+    # Fire all 5 searches in parallel
+    all_results = await asyncio.gather(
+        *[search_one(q) for q in variations],
+        return_exceptions=True,
+    )
+
+    # Flatten and deduplicate by URL, keep first occurrence
+    seen_urls = set()
+    merged = []
+    for batch in all_results:
+        if isinstance(batch, Exception):
+            continue
+        for r in batch:
+            if r["url"] not in seen_urls and not _has_cjk(r["title"]):
+                seen_urls.add(r["url"])
+                merged.append(r)
+
+    # RRF-style scoring: results appearing in more searches rank higher
+    url_counts = {}
+    for batch in all_results:
+        if isinstance(batch, Exception):
+            continue
+        for i, r in enumerate(batch):
+            url = r["url"]
+            if url not in url_counts:
+                url_counts[url] = {"count": 0, "best_rank": 999}
+            url_counts[url]["count"] += 1
+            url_counts[url]["best_rank"] = min(url_counts[url]["best_rank"], i)
+
+    # Sort: more engines first, then best rank
+    merged.sort(key=lambda r: (-url_counts.get(r["url"], {}).get("count", 0),
+                                url_counts.get(r["url"], {}).get("best_rank", 999)))
+
+    return {"results": merged[:6], "variations": variations}
+
+
 def _kill_stale_server():
     """Kill any process already holding our port so we never get stuck."""
     import subprocess, sys

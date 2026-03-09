@@ -1555,7 +1555,7 @@
       }
       header.classList.add('done');
 
-      // Source reference links
+      // Source reference links (initial — from DDG scrape)
       if (data.sources && data.sources.length) {
         srcEl.innerHTML = data.sources.map(s =>
           `<a class="ai-feed-source" href="${s.url}" target="_blank" rel="noopener">
@@ -1564,10 +1564,39 @@
           </a>`
         ).join('');
       }
+
+      // Fire Chrome shadow search async — replaces source links when ready
+      fetchChromeLinks(query, srcEl, signal);
     } catch (err) {
       if (err.name === 'AbortError') return;
       skeleton.innerHTML = '';
       panel.style.display = 'none';
+    }
+  }
+
+  // ── CHROME SHADOW SEARCH ─────────────────────────────────────────────
+  async function fetchChromeLinks(query, srcEl, signal) {
+    try {
+      const resp = await fetch(`${API}/api/chrome-search`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query }),
+        signal,
+      });
+      if (!resp.ok || signal.aborted) return;
+      const data = await resp.json();
+      if (!data.results || !data.results.length || signal.aborted) return;
+
+      // Replace source links with Chrome results
+      srcEl.innerHTML = data.results.map(r =>
+        `<a class="ai-feed-source" href="${r.url}" target="_blank" rel="noopener">
+          <img src="https://www.google.com/s2/favicons?domain=${r.domain}&sz=16" alt="">
+          <span class="ai-feed-source-domain">${r.domain}</span>
+          <span class="ai-feed-source-desc">${r.title}</span>
+        </a>`
+      ).join('');
+    } catch (err) {
+      // Silent fail — keep original DDG source links
     }
   }
 
