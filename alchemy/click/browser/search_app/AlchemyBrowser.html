@@ -360,6 +360,20 @@
       color: var(--text-3);
       margin-bottom: 6px;
     }
+    .did-you-mean {
+      font-size: 14px;
+      color: var(--text-2);
+      margin-bottom: 10px;
+      animation: cascadeIn 300ms ease forwards;
+    }
+    .did-you-mean span {
+      color: var(--accent);
+      cursor: pointer;
+      font-weight: 500;
+    }
+    .did-you-mean span:hover {
+      text-decoration: underline;
+    }
     .ai-status {
       display: flex;
       align-items: center;
@@ -969,6 +983,7 @@
   <div class="results-body tab-content" id="tab-web">
     <div id="results-main">
       <div class="results-meta" id="results-meta"></div>
+      <div class="did-you-mean" id="did-you-mean" style="display:none"></div>
       <div class="ai-status" id="ai-status">
         <div class="ai-status-dot"></div>
         <span id="ai-status-text">AI is analyzing results…</span>
@@ -1182,8 +1197,13 @@
 
     document.getElementById('results-meta').textContent = 'Searching…';
 
-    // Reset AI feed panel
+    // Reset did-you-mean and AI feed panel
+    document.getElementById('did-you-mean').style.display = 'none';
+    document.getElementById('did-you-mean').innerHTML = '';
     document.getElementById('ai-feed-panel').style.display = 'none';
+
+    // Fire spellcheck in parallel (doesn't block anything)
+    fetchSpellcheck(query, signal);
     document.getElementById('ai-feed-text').innerHTML = '';
     document.getElementById('ai-feed-sources').innerHTML = '';
     document.getElementById('ai-feed-skeleton').innerHTML = '';
@@ -1569,6 +1589,28 @@
       if (err.name === 'AbortError') return;
       skeleton.innerHTML = '';
       panel.style.display = 'none';
+    }
+  }
+
+  // ── SPELLCHECK ──────────────────────────────────────────────────────
+  async function fetchSpellcheck(query, signal) {
+    try {
+      const resp = await fetch(`${API}/api/spellcheck`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query }),
+        signal,
+      });
+      if (!resp.ok || signal.aborted) return;
+      const data = await resp.json();
+      if (!data.suggestion || signal.aborted) return;
+
+      const el = document.getElementById('did-you-mean');
+      const safe = data.suggestion.replace(/'/g, "\\'");
+      el.innerHTML = `Did you mean: <span onclick="document.getElementById('results-input').value='${safe}'; document.getElementById('home-input').value='${safe}'; activeInput='results'; doSearch()">${data.suggestion}</span>`;
+      el.style.display = '';
+    } catch (err) {
+      // Silent fail
     }
   }
 

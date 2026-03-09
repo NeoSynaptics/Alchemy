@@ -463,6 +463,45 @@ async def ai_answer(req: AIAnswerRequest):
     return {"answer": answer, "sources": sources}
 
 
+# ── SPELLCHECK ────────────────────────────────────────────────────────
+
+from spellchecker import SpellChecker
+_spell = SpellChecker()
+
+
+class SpellcheckRequest(BaseModel):
+    query: str
+
+
+@app.post("/api/spellcheck")
+async def spellcheck(req: SpellcheckRequest):
+    """Instant spellcheck — pyspellchecker, no LLM. Skips proper nouns."""
+    words = req.query.split()
+    if not words:
+        return {"suggestion": None}
+
+    corrected = []
+    has_fix = False
+    for w in words:
+        # Skip capitalized words (likely proper nouns/names)
+        if w[0].isupper():
+            corrected.append(w)
+            continue
+        if w.lower() in _spell:
+            corrected.append(w)
+        else:
+            fix = _spell.correction(w.lower())
+            if fix and fix != w.lower():
+                corrected.append(fix)
+                has_fix = True
+            else:
+                corrected.append(w)
+
+    if has_fix:
+        return {"suggestion": " ".join(corrected)}
+    return {"suggestion": None}
+
+
 async def _ollama_answer(prompt: str) -> str:
     """Ollama call for AI answer box — medium length."""
     try:
@@ -593,18 +632,15 @@ async def _get_browser():
 
 
 def _query_variations(query: str) -> list[str]:
-    """Generate 5 search variations from the original query."""
+    """Generate 5 search variations. Keeps entity intact with quotes for multi-word."""
     words = query.split()
-    variations = [query]
-    # Add "best" prefix
-    variations.append(f"best {query}")
-    # Add "explained" suffix
-    variations.append(f"{query} explained")
-    # Add "reddit" suffix for real opinions
-    variations.append(f"{query} reddit")
-    # Rephrase: "what is <query>"
+    q = f'"{query}"' if len(words) >= 2 else query
+    variations = [query]  # always search exact query first
+    variations.append(q)  # quoted exact match
+    variations.append(f"{q} wiki OR wikipedia")  # encyclopedic
+    variations.append(f"{q} site:reddit.com")  # real opinions
     if not query.lower().startswith(("what", "how", "why", "who", "when")):
-        variations.append(f"what is {query}")
+        variations.append(f"who is {query}" if len(words) >= 2 else f"what is {query}")
     else:
         variations.append(f"{query} 2025")
     return variations[:5]
