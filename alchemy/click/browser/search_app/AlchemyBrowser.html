@@ -342,6 +342,66 @@
       .curated-panel { display: none; }
     }
 
+    /* ── AI ANSWER BOX ── */
+    .ai-answer-box {
+      background: var(--ai-bg);
+      border: 1px solid var(--ai-border);
+      border-radius: 10px;
+      padding: 18px 22px;
+      margin-bottom: 20px;
+      display: none;
+      animation: answerFadeIn 400ms ease forwards;
+    }
+    .ai-answer-box.visible { display: block; }
+    @keyframes answerFadeIn {
+      from { opacity: 0; transform: translateY(-8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .ai-answer-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 10px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--ai-text);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .ai-answer-header svg { width: 16px; height: 16px; }
+    .ai-answer-text {
+      font-size: 14.5px;
+      line-height: 1.65;
+      color: var(--text-1);
+    }
+    .ai-answer-sources {
+      display: flex;
+      gap: 12px;
+      margin-top: 12px;
+      flex-wrap: wrap;
+    }
+    .ai-answer-source {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11.5px;
+      color: var(--text-3);
+      text-decoration: none;
+      padding: 4px 10px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      transition: border-color var(--transition);
+    }
+    .ai-answer-source:hover { border-color: var(--accent); color: var(--accent); }
+    .ai-answer-source img { width: 14px; height: 14px; border-radius: 2px; }
+    .ai-answer-typing::after {
+      content: '▌';
+      animation: blink 0.8s infinite;
+      color: var(--ai-text);
+    }
+    @keyframes blink { 50% { opacity: 0; } }
+
     /* ── RESULTS META ── */
     .results-meta {
       font-size: 13px;
@@ -951,6 +1011,14 @@
   <div class="results-body tab-content" id="tab-web">
     <div id="results-main">
       <div class="results-meta" id="results-meta"></div>
+      <div class="ai-answer-box" id="ai-answer-box">
+        <div class="ai-answer-header">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+          <span>AI Answer</span>
+        </div>
+        <div class="ai-answer-text" id="ai-answer-text"></div>
+        <div class="ai-answer-sources" id="ai-answer-sources"></div>
+      </div>
       <div class="ai-status" id="ai-status">
         <div class="ai-status-dot"></div>
         <span id="ai-status-text">AI is analyzing results…</span>
@@ -1141,6 +1209,7 @@
     document.getElementById('curated-cards').innerHTML = '';
     document.getElementById('curated-skeleton').innerHTML = '';
     document.getElementById('curated-header').style.display = 'none';
+    document.getElementById('ai-answer-box').classList.remove('visible');
     activeInput = 'home';
     setTimeout(() => results.style.display = 'none', 300);
   }
@@ -1159,6 +1228,12 @@
     requestAnimationFrame(() => results.classList.add('visible'));
 
     document.getElementById('results-meta').textContent = 'Searching…';
+
+    // Reset AI answer box
+    const answerBox = document.getElementById('ai-answer-box');
+    answerBox.classList.remove('visible');
+    document.getElementById('ai-answer-text').innerHTML = '';
+    document.getElementById('ai-answer-sources').innerHTML = '';
 
     // AI status
     const aiStatus = document.getElementById('ai-status');
@@ -1258,6 +1333,9 @@
 
     // Fire curated feed async (right panel fills independently)
     fetchCuratedFeed(query, items, signal);
+
+    // Fire AI answer box async
+    fetchAIAnswer(query, items, signal);
   }
 
   // ── AI Summary ────────────────────────────────────────────────────────
@@ -1398,13 +1476,15 @@
   function formatTimeAgo(dateStr) {
     try {
       const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return dateStr || '';
       const now = new Date();
       const diff = Math.floor((now - d) / 1000);
+      if (diff < 0) return d.toLocaleDateString();
       if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
       if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
       if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
       return d.toLocaleDateString();
-    } catch { return dateStr; }
+    } catch { return dateStr || ''; }
   }
 
   // ── IMAGES TAB ─────────────────────────────────────────────────────
@@ -1518,6 +1598,56 @@
       if (err.name === 'AbortError') return;
       skeleton.innerHTML = '';
       header.style.display = 'none';
+    }
+  }
+
+  // ── AI ANSWER BOX ──────────────────────────────────────────────────────
+  async function fetchAIAnswer(query, items, signal) {
+    const box      = document.getElementById('ai-answer-box');
+    const textEl   = document.getElementById('ai-answer-text');
+    const sourcesEl = document.getElementById('ai-answer-sources');
+
+    if (!items.length) return;
+
+    const payload = items.slice(0, 3).map(r => ({
+      url: r.url, title: r.title, description: r.description
+    }));
+
+    try {
+      const resp = await fetch(`${API}/api/ai-answer`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query, results: payload }),
+        signal,
+      });
+      if (!resp.ok) return;
+      const data = await resp.json();
+      if (signal.aborted || !data.answer) return;
+
+      // Typing animation
+      box.classList.add('visible');
+      textEl.classList.add('ai-answer-typing');
+      const words = data.answer.split(' ');
+      let shown = '';
+      for (let i = 0; i < words.length; i++) {
+        if (signal.aborted) return;
+        shown += (i ? ' ' : '') + words[i];
+        textEl.textContent = shown;
+        await new Promise(r => setTimeout(r, 25));
+      }
+      textEl.classList.remove('ai-answer-typing');
+
+      // Sources
+      if (data.sources && data.sources.length) {
+        sourcesEl.innerHTML = data.sources.map(s =>
+          `<a class="ai-answer-source" href="${s.url}" target="_blank" rel="noopener">
+            <img src="https://www.google.com/s2/favicons?domain=${s.domain}&sz=16" alt="">
+            ${s.domain}
+          </a>`
+        ).join('');
+      }
+    } catch (err) {
+      if (err.name === 'AbortError') return;
     }
   }
 

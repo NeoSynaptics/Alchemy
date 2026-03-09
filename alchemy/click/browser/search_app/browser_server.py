@@ -417,6 +417,72 @@ def _parse_curated(ai_text: str, results: list[dict]) -> list[dict]:
     return cards
 
 
+class AIAnswerRequest(BaseModel):
+    query:   str
+    results: list[dict]   # top search results [{url, title, description}, ...]
+
+@app.post("/api/ai-answer")
+async def ai_answer(req: AIAnswerRequest):
+    """Generate a direct AI answer from top search results."""
+    if not req.results:
+        return {"answer": "", "sources": []}
+
+    top = req.results[:3]
+
+    # Scrape pages in parallel
+    scrape_tasks = [_scrape(r["url"]) for r in top]
+    scraped = await asyncio.gather(*scrape_tasks)
+
+    # Build context
+    context = ""
+    sources = []
+    for i, (r, content) in enumerate(zip(top, scraped)):
+        text = (content or r.get("description", ""))[:1000]
+        if text:
+            context += f"\n[Source {i+1}: {r['title']}]\n{text}\n"
+            sources.append({"title": r["title"], "url": r["url"], "domain": _domain(r["url"])})
+
+    if not context.strip():
+        return {"answer": "", "sources": []}
+
+    prompt = (
+        f'User question: "{req.query}"\n\n'
+        f"Sources:\n{context}\n\n"
+        f"Write a direct, helpful answer in 3-5 sentences based on the sources above. "
+        f"Be specific and factual. No intro phrases like 'Based on...' or 'According to...'. "
+        f"Just answer the question directly. If the query is not a question, give a brief "
+        f"informative overview. Output only the answer text."
+    )
+
+    answer = await _ollama_answer(prompt)
+    return {"answer": answer, "sources": sources}
+
+
+async def _ollama_answer(prompt: str) -> str:
+    """Ollama call for AI answer box — medium length."""
+    try:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            resp = await client.post(
+                OLLAMA_URL,
+                json={
+                    "model":   MODEL,
+                    "prompt":  prompt,
+                    "stream":  False,
+                    "think":   False,
+                    "options": {
+                        "temperature": 0.3,
+                        "num_predict": 200,
+                    },
+                },
+            )
+            data = resp.json()
+            text = data.get("response", "").strip()
+            text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+            return text
+    except Exception:
+        return ""
+
+
 async def _ollama_long(prompt: str) -> str:
     """Ollama call with higher token limit for curated feed."""
     try:
