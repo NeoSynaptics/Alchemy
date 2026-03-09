@@ -48,6 +48,27 @@ _PROVIDERS: dict[str, CloudProvider] = {
         validate_url=None,
         setup_instructions="Get your API key at aistudio.google.com/apikey",
     ),
+    "google_cse": CloudProvider(
+        id="google_cse",
+        name="Google Custom Search",
+        vscode_extension=None,
+        env_key="GOOGLE_CSE_API_KEY",
+        validate_url=None,
+        setup_instructions=(
+            "1. Get API key at console.cloud.google.com/apis/credentials\n"
+            "2. Create CSE at programmablesearchengine.google.com\n"
+            "3. Store both GOOGLE_CSE_API_KEY and GOOGLE_CSE_ID"
+        ),
+        extra_config={"cse_id_key": "GOOGLE_CSE_ID"},
+    ),
+    "bing_search": CloudProvider(
+        id="bing_search",
+        name="Bing Web Search",
+        vscode_extension=None,
+        env_key="BING_SEARCH_KEY",
+        validate_url="https://api.bing.microsoft.com/v7.0/search",
+        setup_instructions="Get your key at portal.azure.com → Bing Search v7",
+    ),
 }
 
 

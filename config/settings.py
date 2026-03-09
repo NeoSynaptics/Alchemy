@@ -136,6 +136,21 @@ class ResearchSettings(BaseModel):
     top_k: int = 5
 
 
+class BrowserSettings(BaseModel):
+    """AlchemyBrowser — human-facing AI search browser."""
+    port: int = 8055
+    google_cse_enabled: bool = True
+    bing_enabled: bool = True
+    ddg_enabled: bool = True
+    rrf_k: int = 60
+    max_results: int = 10
+    scrape_chars: int = 1500
+    summary_words: int = 20
+    summary_model: str = "qwen3:14b"
+    ai_rerank_enabled: bool = False
+    memory_enabled: bool = True
+
+
 class WordSettings(BaseModel):
     """AlchemyWord AI text editor."""
     enabled: bool = True
@@ -224,6 +239,42 @@ class AgentsSettings(BaseModel):
     flow_vs: FlowVSAgentSettings = FlowVSAgentSettings()
 
 
+class MemorySettings(BaseModel):
+    """AlchemyMemory — two-layer persistent memory + AI-native search UI."""
+    enabled: bool = True
+
+    # Screenshot capture
+    screenshot_interval_active: int = 30      # seconds when user is active
+    screenshot_interval_idle: int = 300       # seconds when idle
+    idle_threshold_seconds: int = 60          # no input for this long = idle
+
+    # Storage
+    storage_path: str = "D:/AlchemyMemory"
+    screenshot_quality: int = 70             # JPEG quality (lower = smaller files)
+
+    # Long-term memory (timeline)
+    ltm_db: str = "timeline.db"             # relative to storage_path
+    chroma_path: str = "D:/AlchemyMemory/chroma"
+    chroma_collection: str = "alchemy_timeline"
+
+    # Short-term memory (cache)
+    stm_db: str = "stm.db"                  # relative to storage_path
+    cache_ttl_days: int = 4
+    stm_purge_interval_seconds: int = 60
+
+    # Models
+    summarizer_model: str = "qwen2.5vl:7b"
+    embedder_model: str = "nomic-embed-text"
+    synthesis_model: str = "qwen3:14b"
+    classifier_model: str = "qwen3:3b"
+    synthesis_think: bool = True             # qwen3:14b think=true for search synthesis
+
+    # Search
+    max_ltm_results: int = 10
+    max_stm_results: int = 5
+    max_internet_results: int = 5
+
+
 # --- Root settings (composes all groups) ---
 
 class Settings(BaseSettings):
@@ -250,6 +301,8 @@ class Settings(BaseSettings):
     voice: VoiceSettings = VoiceSettings()
     connect: ConnectSettings = ConnectSettings()
     agents: AgentsSettings = AgentsSettings()
+    memory: MemorySettings = MemorySettings()
+    browser: BrowserSettings = BrowserSettings()
 
     # === Flat fields (backward compat -- used by server.py and existing code) ===
 

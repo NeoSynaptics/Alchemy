@@ -48,10 +48,13 @@ class SearchProvider:
 
     def _search_sync(self, query: str) -> list[dict]:
         """Synchronous DDG search — called via to_thread."""
-        from duckduckgo_search import DDGS
+        try:
+            from ddgs import DDGS
+        except ImportError:
+            from duckduckgo_search import DDGS
 
         with DDGS() as ddgs:
-            return ddgs.text(query, max_results=self._max_results)
+            return list(ddgs.text(query, region="wt-wt", safesearch="moderate", max_results=self._max_results))
 
     async def search_many(self, queries: list[str]) -> list[SearchResult]:
         """Run multiple queries in parallel, dedup by URL.

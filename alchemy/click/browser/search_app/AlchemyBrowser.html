@@ -339,7 +339,7 @@
     }
     @media (max-width: 900px) {
       .results-body { grid-template-columns: 1fr; }
-      .knowledge-panel { display: none; }
+      .curated-panel { display: none; }
     }
 
     /* ── RESULTS META ── */
@@ -471,6 +471,29 @@
       100% { transform: scale(1); opacity: 1; }
     }
 
+    /* ── ENGINE BADGES ── */
+    .engine-badges {
+      display: inline-flex;
+      gap: 4px;
+      margin-left: 8px;
+      vertical-align: middle;
+    }
+    .engine-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 18px; height: 18px;
+      border-radius: 3px;
+      font-size: 9px;
+      font-weight: 700;
+      border: 1px solid var(--border);
+      color: var(--text-3);
+      background: var(--bg-subtle);
+    }
+    .engine-badge.google  { color: #4285F4; border-color: #4285F4; background: color-mix(in srgb, #4285F4 8%, var(--bg)); }
+    .engine-badge.bing    { color: #00809D; border-color: #00809D; background: color-mix(in srgb, #00809D 8%, var(--bg)); }
+    .engine-badge.duckduckgo { color: #DE5833; border-color: #DE5833; background: color-mix(in srgb, #DE5833 8%, var(--bg)); }
+
     /* ── SKELETON ── */
     .skeleton-list { display: flex; flex-direction: column; gap: 0; }
     .skeleton-item {
@@ -495,60 +518,112 @@
       100% { background-position: -200% 0; }
     }
 
-    /* ── KNOWLEDGE PANEL ── */
-    .knowledge-panel {
+    /* ── CURATED FEED (right panel) ── */
+    .curated-panel {
       position: sticky;
       top: 80px;
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      overflow: hidden;
-      opacity: 0;
-      transform: translateY(8px);
-      transition: opacity 400ms ease 600ms, transform 400ms ease 600ms;
     }
-    .knowledge-panel.visible { opacity: 1; transform: translateY(0); }
-    .kp-image {
-      width: 100%;
-      aspect-ratio: 16/9;
-      background: var(--bg-subtle);
-      border-bottom: 1px solid var(--border);
+    .curated-header {
       display: flex;
       align-items: center;
-      justify-content: center;
-      font-size: 48px;
-      color: var(--text-3);
-    }
-    .kp-body { padding: 18px; }
-    .kp-name {
-      font-size: 20px;
-      font-weight: 600;
-      letter-spacing: -0.03em;
-      margin-bottom: 4px;
-    }
-    .kp-type {
-      font-size: 13px;
-      color: var(--text-3);
+      gap: 8px;
       margin-bottom: 14px;
-    }
-    .kp-desc {
       font-size: 13px;
-      color: var(--text-2);
-      line-height: 1.65;
-      margin-bottom: 16px;
-      border-bottom: 1px solid var(--border);
-      padding-bottom: 16px;
+      font-weight: 600;
+      color: var(--ai-text);
+      letter-spacing: 0.03em;
     }
-    .kp-stat {
+    .curated-header-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--ai-text);
+      animation: status-blink 1.4s ease infinite;
+    }
+    .curated-header.done .curated-header-dot { animation: none; opacity: 0.4; }
+    .curated-header.done { color: var(--text-3); }
+
+    .curated-card {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+      margin-bottom: 12px;
+      background: var(--bg);
+      cursor: pointer;
+      transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    .curated-card.loaded {
+      opacity: 1;
+      transform: translateY(0);
+      transition: opacity 300ms ease, transform 300ms ease, border-color 180ms ease, box-shadow 180ms ease;
+    }
+    .curated-card:hover {
+      border-color: var(--accent);
+      box-shadow: 0 2px 12px color-mix(in srgb, var(--accent) 10%, transparent);
+      transform: translateY(-1px);
+    }
+    .curated-card-domain {
       display: flex;
-      justify-content: space-between;
-      align-items: baseline;
-      padding: 7px 0;
-      font-size: 13px;
-      border-bottom: 1px solid var(--border);
+      align-items: center;
+      gap: 7px;
+      margin-bottom: 8px;
     }
-    .kp-stat:last-child { border-bottom: none; }
-    .kp-stat-label { color: var(--text-3); }
-    .kp-stat-value { color: var(--text-1); font-weight: 500; }
+    .curated-card-favicon {
+      width: 16px; height: 16px;
+      border-radius: 3px;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+    .curated-card-favicon img { width: 100%; height: 100%; object-fit: cover; }
+    .curated-card-host {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--url-green);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .curated-card-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text-1);
+      margin-bottom: 6px;
+      line-height: 1.3;
+      letter-spacing: -0.02em;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .curated-card-desc {
+      font-size: 12.5px;
+      color: var(--ai-text);
+      line-height: 1.5;
+      margin-bottom: 8px;
+    }
+    .curated-card-preview {
+      font-size: 12px;
+      color: var(--text-3);
+      line-height: 1.55;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    /* Curated skeleton */
+    .curated-skeleton-card {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+      margin-bottom: 12px;
+    }
+    .curated-skeleton-card .skeleton-line { margin-bottom: 8px; }
+    .curated-skeleton-card .skeleton-line.host  { width: 120px; height: 10px; }
+    .curated-skeleton-card .skeleton-line.ctitle { width: 85%; height: 14px; }
+    .curated-skeleton-card .skeleton-line.cdesc  { width: 100%; height: 10px; }
+    .curated-skeleton-card .skeleton-line.cprev  { width: 90%; height: 10px; }
 
     /* ── DIVIDER ── */
     .divider { width: 1px; height: 20px; background: var(--border); }
@@ -671,8 +746,15 @@
       </div>
     </div>
 
-    <!-- Knowledge Panel (dynamically populated in future) -->
-    <div class="knowledge-panel" id="knowledge-panel"></div>
+    <!-- AI Curated Feed -->
+    <div class="curated-panel" id="curated-panel">
+      <div class="curated-header" id="curated-header" style="display:none">
+        <div class="curated-header-dot"></div>
+        <span id="curated-header-text">AI is curating top picks…</span>
+      </div>
+      <div id="curated-skeleton"></div>
+      <div id="curated-cards"></div>
+    </div>
   </div>
 </div>
 
@@ -802,6 +884,9 @@
     results.classList.add('hidden');
     home.classList.remove('hidden');
     document.getElementById('home-input').value = '';
+    document.getElementById('curated-cards').innerHTML = '';
+    document.getElementById('curated-skeleton').innerHTML = '';
+    document.getElementById('curated-header').style.display = 'none';
     activeInput = 'home';
     setTimeout(() => results.style.display = 'none', 300);
   }
@@ -820,7 +905,6 @@
     requestAnimationFrame(() => results.classList.add('visible'));
 
     document.getElementById('results-meta').textContent = 'Searching…';
-    document.getElementById('knowledge-panel').classList.remove('visible');
 
     // AI status
     const aiStatus = document.getElementById('ai-status');
@@ -848,8 +932,9 @@
       const data = await resp.json();
       items = data.results || [];
       const elapsed = ((Date.now() - t0) / 1000).toFixed(2);
+      const enginesUsed = (data.engines || ['duckduckgo']).join(' + ');
       document.getElementById('results-meta').textContent =
-        `About ${(Math.random() * 60 + 10).toFixed(1)}M results (${elapsed} seconds)`;
+        `${data.count} results via ${enginesUsed} (${elapsed}s)`;
     } catch (err) {
       if (err.name === 'AbortError') return;
       skList.innerHTML = '';
@@ -881,12 +966,17 @@
       const item = document.createElement('div');
       item.className = 'result-item';
       const displayUrl = r.url.replace(/^https?:\/\//, '').replace(/\/$/, '');
+      const engineBadges = (r.engines || []).map(e => {
+        const label = e === 'google' ? 'G' : e === 'bing' ? 'B' : 'D';
+        return `<span class="engine-badge ${e}" title="${e}">${label}</span>`;
+      }).join('');
       item.innerHTML = `
         <div class="result-domain">
           <div class="result-favicon">
             <img src="${r.favicon_url}" onerror="this.parentElement.textContent='${(r.domain[0]||'?').toUpperCase()}'">
           </div>
           <div class="result-url">${displayUrl}</div>
+          <span class="engine-badges">${engineBadges}</span>
         </div>
         <a class="result-title" href="${r.url}" target="_blank" rel="noopener">${r.title}</a>
         <div class="result-desc-wrap">
@@ -912,8 +1002,8 @@
       }, i * 300);
     });
 
-    // Knowledge panel — future: generate dynamically via AI
-    // document.getElementById('knowledge-panel') — left empty for now
+    // Fire curated feed async (right panel fills independently)
+    fetchCuratedFeed(query, items, signal);
   }
 
   // ── AI Summary ────────────────────────────────────────────────────────
@@ -944,6 +1034,80 @@
       badge.classList.add('visible');
       desc.style.opacity = '1';
     }, 260);
+  }
+
+  // ── CURATED FEED ────────────────────────────────────────────────────
+  async function fetchCuratedFeed(query, items, signal) {
+    const header   = document.getElementById('curated-header');
+    const skeleton = document.getElementById('curated-skeleton');
+    const cards    = document.getElementById('curated-cards');
+
+    // Reset
+    cards.innerHTML = '';
+    header.style.display = 'flex';
+    header.classList.remove('done');
+    document.getElementById('curated-header-text').textContent = 'AI is curating top picks…';
+
+    // Show skeleton cards
+    skeleton.innerHTML = Array(3).fill(0).map(() => `
+      <div class="curated-skeleton-card">
+        <div class="skeleton-line host"></div>
+        <div class="skeleton-line ctitle"></div>
+        <div class="skeleton-line cdesc"></div>
+        <div class="skeleton-line cprev"></div>
+      </div>
+    `).join('');
+
+    // Send top results to curated feed endpoint
+    const payload = items.slice(0, 5).map(r => ({
+      url: r.url, title: r.title, description: r.description
+    }));
+
+    try {
+      const resp = await fetch(`${API}/api/curated-feed`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query, results: payload }),
+        signal,
+      });
+      if (!resp.ok) throw new Error('Feed failed');
+      const data = await resp.json();
+      if (signal.aborted) return;
+
+      skeleton.innerHTML = '';
+
+      if (!data.cards || !data.cards.length) {
+        header.style.display = 'none';
+        return;
+      }
+
+      document.getElementById('curated-header-text').textContent =
+        `${data.cards.length} curated picks`;
+      header.classList.add('done');
+
+      data.cards.forEach((c, i) => {
+        const card = document.createElement('div');
+        card.className = 'curated-card';
+        card.onclick = () => window.open(c.url, '_blank');
+        card.innerHTML = `
+          <div class="curated-card-domain">
+            <div class="curated-card-favicon">
+              <img src="${c.favicon_url}" onerror="this.parentElement.textContent='${(c.domain[0]||'?').toUpperCase()}'">
+            </div>
+            <div class="curated-card-host">${c.domain}</div>
+          </div>
+          <div class="curated-card-title">${c.title}</div>
+          <div class="curated-card-desc">${c.description}</div>
+          <div class="curated-card-preview">${c.preview}</div>
+        `;
+        cards.appendChild(card);
+        setTimeout(() => card.classList.add('loaded'), i * 120);
+      });
+    } catch (err) {
+      if (err.name === 'AbortError') return;
+      skeleton.innerHTML = '';
+      header.style.display = 'none';
+    }
   }
 
   // ── INIT ──────────────────────────────────────────────────────────────

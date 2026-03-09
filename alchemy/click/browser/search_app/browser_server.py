@@ -1,26 +1,24 @@
 """
-AlchemyBrowser — Search + AI Summary Server
+AlchemyBrowser — Multi-Engine AI Search Server
 Port: 8055
-Search: DuckDuckGo (no API key needed)
-AI:     Ollama Qwen3 14B (think:false for speed)
-Scrape: trafilatura (clean text extraction)
+Engines: Google CSE (primary) + Bing (secondary) + DuckDuckGo (fallback)
+Fusion:  Reciprocal Rank Fusion (RRF)
+AI:      Ollama Qwen3 14B (think:false for speed)
+Scrape:  trafilatura (clean text extraction)
 """
 
 import asyncio
-import json
+import logging
 import re
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 import httpx
 import trafilatura
-try:
-    from ddgs import DDGS
-except ImportError:
-    from duckduckgo_search import DDGS
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="AlchemyBrowser Server")
 
@@ -31,10 +29,38 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-OLLAMA_URL   = "http://localhost:11434/api/generate"
-MODEL        = "qwen3:14b"
-SCRAPE_CHARS  = 1500  # max content chars sent to model
-SUMMARY_WORDS = 20    # hard max words for AI summary
+OLLAMA_URL    = "http://localhost:11434/api/generate"
+MODEL         = "qwen3:14b"
+SCRAPE_CHARS  = 1500
+SUMMARY_WORDS = 20
+
+# Initialized on startup
+_searcher = None
+
+
+# ── Startup ───────────────────────────────────────────────────────────────────
+
+@app.on_event("startup")
+async def _init_searcher():
+    """Load API keys and initialize multi-engine searcher."""
+    global _searcher
+
+    # Try loading keys from Alchemy cloud setup
+    try:
+        from alchemy.cloud.setup import CloudSetup
+        CloudSetup().load_all_keys()
+        logger.info("Loaded cloud API keys")
+    except Exception:
+        logger.info("CloudSetup not available — using env vars directly")
+
+    # Import and init multi-searcher (gracefully handles missing keys)
+    try:
+        from alchemy.research.multi_search import MultiSearcher
+        _searcher = MultiSearcher()
+        logger.info("MultiSearcher engines: %s", _searcher.available_engines)
+    except ImportError:
+        logger.warning("MultiSearcher not available — falling back to DDG only")
+        _searcher = None
 
 
 # ── Serve the HTML ────────────────────────────────────────────────────────────
@@ -46,7 +72,17 @@ async def serve_app():
     return FileResponse(HERE / "AlchemyBrowser.html")
 
 
-# ── Autocomplete suggestions ──────────────────────────────────────────────────
+# ── Engine status ─────────────────────────────────────────────────────────────
+
+@app.get("/api/engines")
+async def engines():
+    """Report which search engines are available."""
+    if _searcher:
+        return {"engines": _searcher.available_engines}
+    return {"engines": ["duckduckgo"]}
+
+
+# ── Autocomplete suggestions ─────────────────────────────────────────────────
 
 @app.get("/api/suggest")
 async def suggest(q: str):
@@ -61,7 +97,6 @@ async def suggest(q: str):
                 headers={"User-Agent": "Mozilla/5.0"},
             )
             data = resp.json()
-            # DuckDuckGo returns [query, [suggestions]]
             if isinstance(data, list) and len(data) >= 2:
                 return [s["phrase"] for s in data[1] if isinstance(s, dict)]
             return []
@@ -69,18 +104,60 @@ async def suggest(q: str):
         return []
 
 
-# ── Search ────────────────────────────────────────────────────────────────────
+# ── Search (multi-engine + RRF) ──────────────────────────────────────────────
 
 @app.get("/api/search")
 async def search(q: str, count: int = 10):
     if not q.strip():
         raise HTTPException(400, "Empty query")
 
+    # Multi-engine path
+    if _searcher:
+        try:
+            ranked = await _searcher.search(q.strip(), max_results=count)
+            results = [
+                {
+                    "url":         r.url,
+                    "title":       r.title,
+                    "description": r.snippet,
+                    "domain":      r.domain,
+                    "favicon_url": r.favicon_url,
+                    "engines":     r.engines,
+                    "rrf_score":   round(r.rrf_score, 5),
+                }
+                for r in ranked
+            ]
+            engines_used = _searcher.available_engines
+        except Exception as e:
+            logger.error("MultiSearcher failed: %s", e)
+            raise HTTPException(502, f"Search failed: {e}")
+    else:
+        # Fallback: DDG only
+        results, engines_used = await _search_ddg_fallback(q.strip(), count)
+
+    # Filter non-Latin results (CJK, Arabic, etc.)
+    results = [r for r in results if not _has_cjk(r.get("title", "") + r.get("description", ""))]
+
+    return {
+        "query": q,
+        "count": len(results),
+        "engines": engines_used,
+        "results": results,
+    }
+
+
+async def _search_ddg_fallback(q: str, count: int) -> tuple[list, list]:
+    """Fallback DDG search when MultiSearcher isn't available."""
+    try:
+        from ddgs import DDGS
+    except ImportError:
+        from duckduckgo_search import DDGS
+
     results = []
     try:
         with DDGS() as ddgs:
-            for r in ddgs.text(q.strip(), max_results=count):
-                href   = r.get("href", "")
+            for r in ddgs.text(q, region="wt-wt", max_results=count):
+                href = r.get("href", "")
                 domain = _domain(href)
                 results.append({
                     "url":         href,
@@ -88,11 +165,13 @@ async def search(q: str, count: int = 10):
                     "description": r.get("body", ""),
                     "domain":      domain,
                     "favicon_url": f"https://www.google.com/s2/favicons?domain={domain}&sz=32",
+                    "engines":     ["duckduckgo"],
+                    "rrf_score":   0,
                 })
     except Exception as e:
         raise HTTPException(502, f"Search failed: {e}")
 
-    return {"query": q, "count": len(results), "results": results}
+    return results, ["duckduckgo"]
 
 
 # ── Summarize ─────────────────────────────────────────────────────────────────
@@ -106,7 +185,6 @@ class SummarizeRequest(BaseModel):
 async def summarize(req: SummarizeRequest):
     content = await _scrape(req.url)
 
-    # Fall back to original description if scrape failed
     source_text = content if content else req.original_desc
     source_text = source_text[:SCRAPE_CHARS]
 
@@ -122,7 +200,110 @@ async def summarize(req: SummarizeRequest):
     return {"ai_text": ai_text, "scraped": bool(content)}
 
 
+# ── Curated Feed (AI picks best pages) ────────────────────────────────────────
+
+class CuratedFeedRequest(BaseModel):
+    query:   str
+    results: list[dict]   # top search results [{url, title, description}, ...]
+
+@app.post("/api/curated-feed")
+async def curated_feed(req: CuratedFeedRequest):
+    """Scrape top results, ask AI to pick best pages and generate curated cards."""
+    if not req.results:
+        return {"cards": []}
+
+    top = req.results[:5]
+
+    # Scrape all pages in parallel
+    scrape_tasks = [_scrape(r["url"]) for r in top]
+    scraped = await asyncio.gather(*scrape_tasks)
+
+    # Build context for AI
+    pages_context = ""
+    for i, (r, content) in enumerate(zip(top, scraped)):
+        text = (content or r.get("description", ""))[:800]
+        pages_context += (
+            f"\n--- Page {i+1} ---\n"
+            f"URL: {r['url']}\n"
+            f"Title: {r['title']}\n"
+            f"Content: {text}\n"
+        )
+
+    prompt = (
+        f'User searched: "{req.query}"\n\n'
+        f"Here are the top search results with their page content:\n"
+        f"{pages_context}\n\n"
+        f"Pick the 3-5 MOST USEFUL pages for this query. For each, output EXACTLY this format "
+        f"(one per line, pipe-separated, no extra text):\n"
+        f"PAGE_NUMBER|One sentence description (max 15 words)|Two-three sentence preview of what the page covers.\n\n"
+        f"Output ONLY the lines, nothing else. No numbering, no intro."
+    )
+
+    ai_resp = await _ollama_long(prompt)
+    cards = _parse_curated(ai_resp, top)
+    return {"cards": cards}
+
+
+def _parse_curated(ai_text: str, results: list[dict]) -> list[dict]:
+    """Parse AI response into curated cards."""
+    cards = []
+    for line in ai_text.strip().splitlines():
+        line = line.strip()
+        if not line or "|" not in line:
+            continue
+        parts = line.split("|", 2)
+        if len(parts) < 3:
+            continue
+        try:
+            idx = int(parts[0].strip()) - 1
+            if 0 <= idx < len(results):
+                r = results[idx]
+                domain = _domain(r["url"])
+                cards.append({
+                    "url":         r["url"],
+                    "title":       r["title"],
+                    "domain":      domain,
+                    "favicon_url": f"https://www.google.com/s2/favicons?domain={domain}&sz=32",
+                    "description": parts[1].strip(),
+                    "preview":     parts[2].strip(),
+                })
+        except (ValueError, IndexError):
+            continue
+    return cards
+
+
+async def _ollama_long(prompt: str) -> str:
+    """Ollama call with higher token limit for curated feed."""
+    try:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            resp = await client.post(
+                OLLAMA_URL,
+                json={
+                    "model":   MODEL,
+                    "prompt":  prompt,
+                    "stream":  False,
+                    "think":   False,
+                    "options": {
+                        "temperature": 0.3,
+                        "num_predict": 300,
+                    },
+                },
+            )
+            data = resp.json()
+            text = data.get("response", "").strip()
+            text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+            return text
+    except Exception:
+        return ""
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
+_CJK_RE = re.compile(r"[\u2E80-\u9FFF\uAC00-\uD7AF\u3040-\u309F\u30A0-\u30FF\u0600-\u06FF]")
+
+def _has_cjk(text: str) -> bool:
+    """Check if text contains CJK/Arabic characters (non-Latin results)."""
+    return bool(_CJK_RE.search(text))
 
 def _domain(url: str) -> str:
     m = re.match(r"https?://([^/]+)", url)
@@ -161,7 +342,7 @@ async def _ollama(prompt: str) -> str:
                     "model":   MODEL,
                     "prompt":  prompt,
                     "stream":  False,
-                    "think":   False,   # top-level — disables CoT for Qwen3
+                    "think":   False,
                     "options": {
                         "temperature": 0.2,
                         "num_predict": 60,
@@ -170,11 +351,9 @@ async def _ollama(prompt: str) -> str:
             )
             data = resp.json()
             text = data.get("response", "").strip()
-            # Strip any <think>...</think> block Qwen3 may prepend
-            import re as _re
-            text = _re.sub(r"<think>.*?</think>", "", text, flags=_re.DOTALL).strip()
+            text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
             return text
-    except Exception as e:
+    except Exception:
         return ""
 
 
