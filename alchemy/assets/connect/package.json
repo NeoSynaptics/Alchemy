@@ -1,0 +1,16 @@
+{
+  "name": "@alchemy/connect",
+  "version": "1.0.0",
+  "description": "AlchemyConnect WebSocket client — text, images, audio, files.",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "files": ["src"],
+  "keywords": ["alchemy", "websocket", "realtime", "binary"],
+  "license": "MIT",
+  "peerDependencies": {
+    "react-native": ">=0.70.0"
+  },
+  "peerDependenciesMeta": {
+    "react-native": { "optional": true }
+  }
+}
