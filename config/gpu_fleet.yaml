@@ -30,46 +30,16 @@ models:
     default_tier: resident
     capabilities: [conversation, reasoning, agent, gate]
 
-  - name: "gui-actor-7b"
-    display_name: "GUI-Actor 7B (Screen Clicker)"
-    backend: vllm
-    vram_mb: 4096
-    ram_mb: 4096
-    disk_mb: 4096
-    preferred_gpu: 1
-    default_tier: resident
-    capabilities: [vision, clicking]
-
   # ===== P0 RESIDENT — GPU 0 (Voice stack) =====
-  - name: "whisper-large-v3"
-    display_name: "Whisper Large V3 (STT)"
-    backend: subprocess
-    vram_mb: 1024
-    ram_mb: 1024
-    disk_mb: 3072
-    preferred_gpu: 0
-    default_tier: resident
-    capabilities: [voice, stt]
-
-  - name: "qwen3:3b"
-    display_name: "Qwen3 3B (Fast Chat)"
+  - name: "qwen3:1.7b"
+    display_name: "Qwen3 1.7B (Fast Chat)"
     backend: ollama
-    vram_mb: 2048
-    ram_mb: 2048
-    disk_mb: 2048
+    vram_mb: 1400
+    ram_mb: 1400
+    disk_mb: 1400
     preferred_gpu: 0
     default_tier: resident
     capabilities: [conversation]
-
-  - name: "fish-speech-s1"
-    display_name: "Fish Speech S1-mini (TTS)"
-    backend: subprocess
-    vram_mb: 5120
-    ram_mb: 5120
-    disk_mb: 5120
-    preferred_gpu: 0
-    default_tier: resident
-    capabilities: [voice, tts]
 
   # ===== P0 RESIDENT — GPU 0 or 1 (Vision fallback) =====
   - name: "qwen2.5vl:7b"
@@ -83,26 +53,6 @@ models:
     capabilities: [vision, escalation, desktop]
 
   # ===== P3 WARM — CPU RAM fleet =====
-  - name: "deepseek-r1:14b"
-    display_name: "DeepSeek R1 14B (Deep Reasoning)"
-    backend: ollama
-    vram_mb: 9216
-    ram_mb: 9216
-    disk_mb: 9216
-    preferred_gpu: null
-    default_tier: warm
-    capabilities: [reasoning, distillation]
-
-  - name: "qwen2.5-coder:14b"
-    display_name: "Qwen2.5 Coder 14B"
-    backend: ollama
-    vram_mb: 9216
-    ram_mb: 9216
-    disk_mb: 9216
-    preferred_gpu: null
-    default_tier: warm
-    capabilities: [coding]
-
   - name: "nomic-embed-text"
     display_name: "Nomic Embed Text"
     backend: ollama
@@ -112,16 +62,6 @@ models:
     preferred_gpu: null
     default_tier: warm
     capabilities: [embedding]
-
-  - name: "deberta-v3-router"
-    display_name: "DeBERTa v3 (Intent Router)"
-    backend: subprocess
-    vram_mb: 256
-    ram_mb: 256
-    disk_mb: 512
-    preferred_gpu: null
-    default_tier: warm
-    capabilities: [routing, classification]
 
   - name: "starcoder2:3b"
     display_name: "StarCoder2 3B"

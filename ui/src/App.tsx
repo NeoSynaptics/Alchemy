@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { DashboardPage } from '@/pages/Dashboard'
 import { SettingsPage } from '@/pages/Settings'
+import { MemoryPage } from '@/pages/Memory'
 import { useHealth } from '@/hooks/useAlchemy'
 
 function NavItem({ to, children }: { to: string; children: React.ReactNode }) {
@@ -52,6 +53,7 @@ export default function App() {
               <span className="text-lg font-bold tracking-tight">Alchemy</span>
               <nav className="flex items-center gap-1">
                 <NavItem to="/">Dashboard</NavItem>
+                <NavItem to="/memory">Memory</NavItem>
                 <NavItem to="/settings">Settings</NavItem>
               </nav>
             </div>
@@ -60,6 +62,7 @@ export default function App() {
           <main className="container mx-auto px-6 py-8">
             <Routes>
               <Route path="/" element={<DashboardPage />} />
+              <Route path="/memory" element={<MemoryPage />} />
               <Route path="/settings" element={<SettingsPage />} />
             </Routes>
           </main>

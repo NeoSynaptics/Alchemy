@@ -47,8 +47,12 @@ tray = [
 planner = [
     "chromadb",
 ]
+memory = [
+    "chromadb",
+    "Pillow",
+]
 all = [
-    "alchemy[voice,voice-piper,tray,planner]",
+    "alchemy[voice,voice-piper,tray,planner,memory]",
 ]
 dev = [
     "pytest",

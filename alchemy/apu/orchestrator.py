@@ -146,11 +146,54 @@ class StackOrchestrator:
 
     async def status(self) -> StackStatus:
         snapshot = await self._monitor.snapshot()
+        await self._sync_ollama_state(snapshot)
         return StackStatus(
             snapshot=snapshot,
             models=self._registry.all_models(),
             mode=self._mode,
         )
+
+    async def _sync_ollama_state(self, snapshot: HardwareSnapshot) -> None:
+        """Reconcile registry with Ollama's actual loaded models."""
+        import httpx
+
+        try:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(5.0, connect=2.0)) as client:
+                resp = await client.get(f"{self._ollama_host}/api/ps")
+                resp.raise_for_status()
+                ps_data = resp.json()
+        except Exception:
+            return  # Can't reach Ollama — skip sync
+
+        # Build set of models Ollama actually has loaded
+        ollama_loaded: set[str] = set()
+        for m in ps_data.get("models", []):
+            name = m.get("name", "")
+            # Normalize: strip ":latest" suffix
+            if name.endswith(":latest"):
+                name = name[: -len(":latest")]
+            ollama_loaded.add(name)
+
+        # Update registry to match reality
+        for card in self._registry.all_models():
+            if card.backend != ModelBackend.OLLAMA:
+                continue
+
+            name = card.name
+            in_ollama = name in ollama_loaded or f"{name}:latest" in ollama_loaded
+
+            if in_ollama and not card.current_location.is_gpu:
+                # Ollama has it loaded but we think it's not on GPU — fix
+                # Try to figure out which GPU from VRAM usage
+                gpu_idx = card.preferred_gpu if card.preferred_gpu is not None else 0
+                location = ModelLocation.GPU_0 if gpu_idx == 0 else ModelLocation.GPU_1
+                tier = card.current_tier if card.current_tier.priority <= ModelTier.AGENT.priority else card.default_tier
+                self._registry.update_location(name, location, tier)
+                logger.debug("Sync: %s found in Ollama, updated to %s", name, location.value)
+            elif not in_ollama and card.current_location.is_gpu:
+                # We think it's on GPU but Ollama doesn't have it — demote to warm
+                self._registry.update_location(name, ModelLocation.CPU_RAM, ModelTier.WARM)
+                logger.debug("Sync: %s not in Ollama, demoted to CPU_RAM", name)
 
     async def gpu_status(self) -> list[GPUInfo]:
         snap = await self._monitor.snapshot()

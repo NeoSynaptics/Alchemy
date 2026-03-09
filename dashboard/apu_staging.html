@@ -653,26 +653,18 @@ let frozenSaveStatus = '';
 // Fleet fallback — used when server is offline
 const FLEET_FALLBACK = [
   { name:'qwen3:14b', display_name:'Qwen3 14B (Agent Brain)', vram_mb:9216, default_tier:'resident', preferred_gpu:1, capabilities:['conversation','reasoning','agent','gate'] },
-  { name:'gui-actor-7b', display_name:'GUI-Actor 7B (Screen Clicker)', vram_mb:4096, default_tier:'resident', preferred_gpu:1, capabilities:['vision','clicking'] },
-  { name:'whisper-large-v3', display_name:'Whisper Large V3 (STT)', vram_mb:1024, default_tier:'resident', preferred_gpu:0, capabilities:['voice','stt'] },
-  { name:'qwen3:3b', display_name:'Qwen3 3B (Fast Chat)', vram_mb:2048, default_tier:'resident', preferred_gpu:0, capabilities:['conversation'] },
-  { name:'fish-speech-s1', display_name:'Fish Speech S1-mini (TTS)', vram_mb:5120, default_tier:'resident', preferred_gpu:0, capabilities:['voice','tts'] },
+  { name:'qwen3:1.7b', display_name:'Qwen3 1.7B (Fast Chat)', vram_mb:1400, default_tier:'resident', preferred_gpu:0, capabilities:['conversation'] },
   { name:'qwen2.5vl:7b', display_name:'Qwen2.5-VL 7B (Vision Escalation)', vram_mb:4480, default_tier:'warm', preferred_gpu:null, capabilities:['vision','escalation'] },
-  { name:'deepseek-r1:14b', display_name:'DeepSeek R1 14B (Deep Reasoning)', vram_mb:9216, default_tier:'warm', preferred_gpu:null, capabilities:['reasoning'] },
-  { name:'qwen2.5-coder:14b', display_name:'Qwen2.5 Coder 14B', vram_mb:9216, default_tier:'warm', preferred_gpu:null, capabilities:['coding'] },
   { name:'nomic-embed-text', display_name:'Nomic Embed Text', vram_mb:512, default_tier:'warm', preferred_gpu:null, capabilities:['embedding'] },
-  { name:'deberta-v3-router', display_name:'DeBERTa v3 (Intent Router)', vram_mb:256, default_tier:'warm', preferred_gpu:null, capabilities:['routing'] },
   { name:'starcoder2:3b', display_name:'StarCoder2 3B', vram_mb:2048, default_tier:'warm', preferred_gpu:null, capabilities:['coding','completion'] },
 ];
 
 async function loadFrozenSetup() {
-  // Step 1: Get model list — try API first, fall back to lastData from monitor
-  if (!allModels.length) {
-    try {
-      const r = await fetch(API_BASE + '/models', { signal: AbortSignal.timeout(4000) });
-      if (r.ok) allModels = (await r.json()).map(norm);
-    } catch { /* fall through */ }
-  }
+  // Step 1: Get model list — always try API fresh, fall back to lastData or FLEET_FALLBACK
+  try {
+    const r = await fetch(API_BASE + '/models', { signal: AbortSignal.timeout(4000) });
+    if (r.ok) allModels = (await r.json()).map(norm);
+  } catch { /* fall through */ }
   if (!allModels.length && lastData && lastData.models) {
     allModels = lastData.models.map(norm);
   }
@@ -916,10 +908,11 @@ async function resetFrozenToDefaults() {
   // Reset to fleet defaults: resident → GPU, warm → RAM
   frozenState = { gpu_0: [], gpu_1: [], ram: [] };
   for (const m of allModels) {
-    if (m.tier === 'RESIDENT' || (m.default_tier && m.default_tier.toUpperCase() === 'RESIDENT')) {
+    const dt = (m.default_tier || '').toUpperCase();
+    if (dt === 'RESIDENT') {
       const gpu = m.preferred_gpu != null ? `gpu_${m.preferred_gpu}` : 'gpu_1';
       frozenState[gpu].push(m.name);
-    } else if (m.tier === 'WARM' || (m.default_tier && m.default_tier.toUpperCase() === 'WARM')) {
+    } else {
       frozenState.ram.push(m.name);
     }
   }
@@ -929,16 +922,25 @@ async function resetFrozenToDefaults() {
 
 async function loadFrozenNow() {
   try {
-    frozenSaveStatus = 'Loading models...';
+    frozenSaveStatus = 'Saving & loading models...';
     renderFrozenSetup();
+    // Save first so the server has the latest config
+    const sr = await fetch(API_BASE + '/frozen', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(frozenState),
+      signal: AbortSignal.timeout(4000),
+    });
+    if (!sr.ok) throw new Error('Save failed');
+    // Then restore
     const r = await fetch(API_BASE + '/frozen/restore', { method: 'POST' });
     if (!r.ok) throw new Error('Restore failed');
     const data = await r.json();
     frozenSaveStatus = `Loaded (${(data.actions || []).length} actions)`;
     renderFrozenSetup();
     setTimeout(() => { frozenSaveStatus = ''; renderFrozenSetup(); }, 5000);
-  } catch {
-    frozenSaveStatus = 'Load failed';
+  } catch (e) {
+    frozenSaveStatus = 'Load failed: ' + e.message;
     renderFrozenSetup();
   }
 }

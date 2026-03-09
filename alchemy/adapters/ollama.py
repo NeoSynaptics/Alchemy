@@ -267,6 +267,38 @@ class OllamaClient:
                 if line.strip():
                     yield json.loads(line)
 
+    async def embed(self, model: str, text: str) -> list[float]:
+        """Generate an embedding vector for the given text.
+
+        Uses Ollama's /api/embeddings endpoint (not /api/chat).
+        Returns a list of floats (768-dim for nomic-embed-text).
+
+        Raises:
+            After exhausting retries: the last exception encountered.
+        """
+        client = self._ensure_client()
+        payload = {"model": model, "prompt": text}
+
+        last_exc: Exception | None = None
+        for attempt in range(self._retry_attempts):
+            try:
+                resp = await client.post("/api/embeddings", json=payload)
+                resp.raise_for_status()
+                return resp.json()["embedding"]
+            except (httpx.TimeoutException, httpx.HTTPStatusError) as e:
+                last_exc = e
+                if attempt < self._retry_attempts - 1:
+                    delay = self._retry_delay * (2 ** attempt)
+                    logger.warning(
+                        "Ollama embed attempt %d/%d failed (%s), retrying in %.1fs",
+                        attempt + 1, self._retry_attempts, e, delay,
+                    )
+                    await asyncio.sleep(delay)
+                else:
+                    logger.error("Ollama embed failed after %d attempts: %s", self._retry_attempts, e)
+
+        raise last_exc  # type: ignore[misc]
+
     async def list_models(self) -> list[dict]:
         """List locally available models."""
         client = self._ensure_client()

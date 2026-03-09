@@ -82,6 +82,7 @@ class ModelCard(BaseModel):
     last_used: datetime | None = None
     owner_app: str | None = None
     module_tier: str = "app"  # "core" | "infra" | "app" — affects eviction order, not immunity
+    app_priority: int = 50  # 0=highest priority (never evict first), 100=lowest. Default 50.
 
     def touch(self) -> None:
         """Update last_used timestamp."""
@@ -134,22 +135,27 @@ class ModelRegistry:
     def find_by_capability(self, capability: str) -> list[ModelCard]:
         return [m for m in self._models.values() if capability in m.capabilities]
 
-    def eviction_candidates(self, gpu_index: int) -> list[ModelCard]:
+    def eviction_candidates(
+        self, gpu_index: int, app_priorities: dict[str, int] | None = None,
+    ) -> list[ModelCard]:
         """Models on this GPU sorted for eviction. No model is immune.
 
         Eviction order (first evicted → last evicted):
         1. Higher tier number first (WARM > AGENT > USER_ACTIVE > RESIDENT)
-        2. Within same tier: app models before infra before core
-        3. Within same module tier: least-recently-used first
+        2. Higher app priority number = lower importance = evict first
+        3. Within same tier: app models before infra before core
+        4. Within same module tier: least-recently-used first
 
         Core models are evicted LAST, but they CAN be evicted.
         Evicted models go to RAM (warm), not disk -- fast reload.
         """
+        prios = app_priorities or {}
         on_gpu = self.models_on_gpu(gpu_index)
         return sorted(
             on_gpu,
             key=lambda m: (
                 -m.current_tier.priority,  # Higher number = more evictable = first
+                -(prios.get(m.owner_app or "", m.app_priority)),  # App priority (higher = evict first)
                 _MODULE_TIER_EVICTION_ORDER.get(m.module_tier, 0),  # app=0, core=2
                 m.last_used or datetime.min.replace(tzinfo=timezone.utc),  # Older = first
             ),

@@ -296,6 +296,28 @@ async def lifespan(app: FastAPI):
         except Exception:
             logger.exception("AlchemyConnect failed to start")
 
+    # --- AlchemyMemory (persistent memory system) ---
+    app.state.memory_system = None
+    if settings.memory.enabled:
+        try:
+            from alchemy.memory import MemorySystem
+
+            desktop_ctrl = getattr(
+                getattr(app.state, "desktop_agent", None),
+                "_controller", None,
+            )
+            memory = MemorySystem(
+                ollama=ollama,
+                orchestrator=app.state.orchestrator,
+                controller=desktop_ctrl,
+                settings=settings.memory,
+            )
+            await memory.start()
+            app.state.memory_system = memory
+            logger.info("AlchemyMemory started (storage=%s)", settings.memory.storage_path)
+        except Exception:
+            logger.exception("AlchemyMemory failed to start")
+
     # --- Constitution (approval defense) ---
     app.state.constitution = None
     try:
@@ -319,6 +341,10 @@ async def lifespan(app: FastAPI):
     yield
 
     # Cleanup
+    if getattr(app.state, "memory_system", None):
+        await app.state.memory_system.stop()
+        logger.info("AlchemyMemory stopped")
+
     if getattr(app.state, "connect", None):
         await app.state.connect.stop()
         logger.info("AlchemyConnect stopped")
@@ -388,6 +414,10 @@ app.include_router(voice_callbacks.router, prefix="/v1")
 app.include_router(voice_chat.router, prefix="/v1")
 app.include_router(voice_control.router, prefix="/v1")
 
+# AlchemyMemory routes
+from alchemy.memory.api.memory_api import router as memory_router
+app.include_router(memory_router)
+
 
 @app.get("/health")
 async def health():
@@ -417,5 +447,6 @@ async def health():
         "voice_enabled": voice_ok,
         "connect_enabled": connect_ok,
         "connect_devices": connect.connected_devices if connect else 0,
+        "memory_enabled": getattr(app.state, "memory_system", None) is not None,
         "vision_model": settings.pw_escalation_model,
     }

@@ -274,6 +274,12 @@ class MemorySettings(BaseModel):
     max_stm_results: int = 5
     max_internet_results: int = 5
 
+    # Phone import
+    phone_import_enabled: bool = True
+    vlm_worker_batch_size: int = 50
+    vlm_worker_delay: float = 0.5         # seconds between VLM calls
+    vlm_auto_start: bool = True           # auto-start VLM worker after import
+
 
 # --- Root settings (composes all groups) ---
 
