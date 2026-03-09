@@ -329,72 +329,24 @@
 
     /* ── RESULTS LAYOUT ── */
     .results-body {
-      max-width: 1200px;
+      width: 100%;
       margin: 0 auto;
-      padding: 24px 24px 60px;
+      padding: 20px 24px 60px;
       display: grid;
-      grid-template-columns: 1fr 320px;
-      gap: 48px;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
       align-items: start;
     }
-    @media (max-width: 900px) {
+    #results-main {
+      min-width: 0;  /* allow flex/grid children to shrink below content size */
+      overflow: hidden;
+    }
+    @media (max-width: 768px) {
       .results-body { grid-template-columns: 1fr; }
-      .curated-panel { display: none; }
+      .ai-feed-panel { position: static; }
     }
 
-    /* ── AI ANSWER BOX ── */
-    .ai-answer-box {
-      background: var(--ai-bg);
-      border: 1px solid var(--ai-border);
-      border-radius: 10px;
-      padding: 18px 22px;
-      margin-bottom: 20px;
-      display: none;
-      animation: answerFadeIn 400ms ease forwards;
-    }
-    .ai-answer-box.visible { display: block; }
-    @keyframes answerFadeIn {
-      from { opacity: 0; transform: translateY(-8px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-    .ai-answer-header {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-bottom: 10px;
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--ai-text);
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-    }
-    .ai-answer-header svg { width: 16px; height: 16px; }
-    .ai-answer-text {
-      font-size: 14.5px;
-      line-height: 1.65;
-      color: var(--text-1);
-    }
-    .ai-answer-sources {
-      display: flex;
-      gap: 12px;
-      margin-top: 12px;
-      flex-wrap: wrap;
-    }
-    .ai-answer-source {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 11.5px;
-      color: var(--text-3);
-      text-decoration: none;
-      padding: 4px 10px;
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: 20px;
-      transition: border-color var(--transition);
-    }
-    .ai-answer-source:hover { border-color: var(--accent); color: var(--accent); }
-    .ai-answer-source img { width: 14px; height: 14px; border-radius: 2px; }
+    /* ── AI ANSWER (right panel) ── */
     .ai-answer-typing::after {
       content: '▌';
       animation: blink 0.8s infinite;
@@ -434,11 +386,13 @@
 
     /* ── RESULT ITEM ── */
     .result-item {
-      padding: 14px 0;
+      padding: 10px 0;
       border-bottom: 1px solid var(--border);
       opacity: 0;
       transform: translateY(6px);
       transition: background var(--transition);
+      min-width: 0;
+      overflow: hidden;
     }
     .result-item.loaded {
       opacity: 1;
@@ -453,6 +407,8 @@
       align-items: center;
       gap: 7px;
       margin-bottom: 3px;
+      min-width: 0;
+      overflow: hidden;
     }
     .result-favicon {
       width: 16px; height: 16px;
@@ -478,25 +434,31 @@
       white-space: nowrap;
     }
     .result-title {
-      font-size: 18px;
+      font-size: 16px;
       font-weight: 500;
       color: var(--accent);
       text-decoration: none;
       line-height: 1.3;
       display: block;
-      margin-bottom: 5px;
+      margin-bottom: 3px;
       letter-spacing: -0.02em;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
     .result-title:hover { text-decoration: underline; }
     .result-desc-wrap {
       position: relative;
-      min-height: 2.8em;
     }
     .result-desc {
-      font-size: 13.5px;
+      font-size: 13px;
       color: var(--text-2);
-      line-height: 1.6;
+      line-height: 1.5;
       transition: opacity 280ms ease;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
     }
     .result-desc.swapping { opacity: 0; }
     .result-desc.ai-text {
@@ -578,116 +540,93 @@
       100% { background-position: -200% 0; }
     }
 
-    /* ── CURATED FEED (right panel) ── */
-    .curated-panel {
+    /* ── AI FEED PANEL (right side) ── */
+    .ai-feed-panel {
       position: sticky;
       top: 80px;
+      background: var(--ai-bg);
+      border: 1px solid var(--ai-border);
+      border-radius: 12px;
+      padding: 20px 22px;
+      min-width: 0;
+      width: 100%;
+      box-sizing: border-box;
+      overflow-wrap: break-word;
+      word-wrap: break-word;
+      animation: feedFadeIn 500ms ease forwards;
     }
-    .curated-header {
+    @keyframes feedFadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .ai-feed-header {
       display: flex;
       align-items: center;
       gap: 8px;
       margin-bottom: 14px;
-      font-size: 13px;
+      font-size: 12px;
       font-weight: 600;
       color: var(--ai-text);
-      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
     }
-    .curated-header-dot {
+    .ai-feed-header svg { width: 16px; height: 16px; }
+    .ai-feed-header.done { color: var(--text-3); }
+    .ai-feed-status-dot {
       width: 6px; height: 6px;
       border-radius: 50%;
       background: var(--ai-text);
       animation: status-blink 1.4s ease infinite;
+      margin-left: auto;
     }
-    .curated-header.done .curated-header-dot { animation: none; opacity: 0.4; }
-    .curated-header.done { color: var(--text-3); }
-
-    .curated-card {
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 16px;
-      margin-bottom: 12px;
-      background: var(--bg);
-      cursor: pointer;
-      transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
-      opacity: 0;
-      transform: translateY(8px);
+    .ai-feed-header.done .ai-feed-status-dot { animation: none; opacity: 0.3; }
+    .ai-feed-text {
+      font-size: 14px;
+      line-height: 1.7;
+      color: var(--text-1);
+      margin-bottom: 16px;
+      overflow-wrap: break-word;
+      word-break: break-word;
     }
-    .curated-card.loaded {
-      opacity: 1;
-      transform: translateY(0);
-      transition: opacity 300ms ease, transform 300ms ease, border-color 180ms ease, box-shadow 180ms ease;
+    .ai-feed-text:empty { display: none; }
+    .ai-feed-sources {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
     }
-    .curated-card:hover {
-      border-color: var(--accent);
-      box-shadow: 0 2px 12px color-mix(in srgb, var(--accent) 10%, transparent);
-      transform: translateY(-1px);
-    }
-    .curated-card-domain {
+    .ai-feed-source {
       display: flex;
       align-items: center;
-      gap: 7px;
-      margin-bottom: 8px;
-    }
-    .curated-card-favicon {
-      width: 16px; height: 16px;
-      border-radius: 3px;
-      overflow: hidden;
-      flex-shrink: 0;
-    }
-    .curated-card-favicon img { width: 100%; height: 100%; object-fit: cover; }
-    .curated-card-host {
-      font-family: var(--mono);
-      font-size: 11px;
-      color: var(--url-green);
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-    .curated-card-title {
-      font-size: 15px;
-      font-weight: 600;
-      color: var(--text-1);
-      margin-bottom: 6px;
-      line-height: 1.3;
-      letter-spacing: -0.02em;
-      display: -webkit-box;
-      -webkit-line-clamp: 2;
-      -webkit-box-orient: vertical;
-      overflow: hidden;
-    }
-    .curated-card-desc {
+      gap: 8px;
       font-size: 12.5px;
-      color: var(--ai-text);
-      line-height: 1.5;
-      margin-bottom: 8px;
-    }
-    .curated-card-preview {
-      font-size: 12px;
-      color: var(--text-3);
-      line-height: 1.55;
-      display: -webkit-box;
-      -webkit-line-clamp: 3;
-      -webkit-box-orient: vertical;
+      color: var(--text-2);
+      text-decoration: none;
+      padding: 8px 12px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      transition: border-color var(--transition), background var(--transition);
+      min-width: 0;
       overflow: hidden;
     }
-
-    /* Curated skeleton */
-    .curated-skeleton-card {
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 16px;
-      margin-bottom: 12px;
+    .ai-feed-source:hover { border-color: var(--accent); color: var(--accent); background: var(--bg-hover); }
+    .ai-feed-source img { width: 16px; height: 16px; border-radius: 3px; flex-shrink: 0; }
+    .ai-feed-source-domain { font-family: var(--mono); font-size: 11px; color: var(--url-green); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ai-feed-source-desc { color: var(--text-3); font-size: 11.5px; margin-left: auto; text-align: right; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ai-feed-skeleton {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
     }
-    .curated-skeleton-card .skeleton-line { margin-bottom: 8px; }
-    .curated-skeleton-card .skeleton-line.host  { width: 120px; height: 10px; }
-    .curated-skeleton-card .skeleton-line.ctitle { width: 85%; height: 14px; }
-    .curated-skeleton-card .skeleton-line.cdesc  { width: 100%; height: 10px; }
-    .curated-skeleton-card .skeleton-line.cprev  { width: 90%; height: 10px; }
+    .ai-feed-skeleton .skeleton-line { border-radius: 4px; }
+    .ai-feed-skeleton .skeleton-line.text1 { width: 100%; height: 12px; }
+    .ai-feed-skeleton .skeleton-line.text2 { width: 90%; height: 12px; }
+    .ai-feed-skeleton .skeleton-line.text3 { width: 75%; height: 12px; }
+    .ai-feed-skeleton .skeleton-line.src   { width: 100%; height: 36px; border-radius: 8px; }
 
     /* ── MEDIA BODY (shared for video/news/images tabs) ── */
     .media-body {
-      max-width: 1000px;
+      max-width: 100%;
       margin: 0 auto;
       padding: 24px 24px 60px;
     }
@@ -1011,14 +950,6 @@
   <div class="results-body tab-content" id="tab-web">
     <div id="results-main">
       <div class="results-meta" id="results-meta"></div>
-      <div class="ai-answer-box" id="ai-answer-box">
-        <div class="ai-answer-header">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
-          <span>AI Answer</span>
-        </div>
-        <div class="ai-answer-text" id="ai-answer-text"></div>
-        <div class="ai-answer-sources" id="ai-answer-sources"></div>
-      </div>
       <div class="ai-status" id="ai-status">
         <div class="ai-status-dot"></div>
         <span id="ai-status-text">AI is analyzing results…</span>
@@ -1026,13 +957,15 @@
       <div id="skeleton-list" class="skeleton-list"></div>
       <div id="results-list"></div>
     </div>
-    <div class="curated-panel" id="curated-panel">
-      <div class="curated-header" id="curated-header" style="display:none">
-        <div class="curated-header-dot"></div>
-        <span id="curated-header-text">AI is curating top picks…</span>
+    <div class="ai-feed-panel" id="ai-feed-panel" style="display:none">
+      <div class="ai-feed-header" id="ai-feed-header">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+        <span>Alchemy AI</span>
+        <div class="ai-feed-status-dot" id="ai-feed-dot"></div>
       </div>
-      <div id="curated-skeleton"></div>
-      <div id="curated-cards"></div>
+      <div id="ai-feed-skeleton" class="ai-feed-skeleton"></div>
+      <div class="ai-feed-text" id="ai-feed-text"></div>
+      <div class="ai-feed-sources" id="ai-feed-sources"></div>
     </div>
   </div>
 
@@ -1151,7 +1084,8 @@
     document.querySelector(`.tab[data-tab="${tab}"]`).classList.add('active');
 
     document.querySelectorAll('.tab-content').forEach(tc => tc.style.display = 'none');
-    document.getElementById(`tab-${tab}`).style.display = '';
+    const tabEl = document.getElementById(`tab-${tab}`);
+    tabEl.style.display = tab === 'web' ? 'grid' : '';
 
     currentTab = tab;
     if (!currentQuery) return;
@@ -1206,10 +1140,10 @@
     results.classList.add('hidden');
     home.classList.remove('hidden');
     document.getElementById('home-input').value = '';
-    document.getElementById('curated-cards').innerHTML = '';
-    document.getElementById('curated-skeleton').innerHTML = '';
-    document.getElementById('curated-header').style.display = 'none';
-    document.getElementById('ai-answer-box').classList.remove('visible');
+    document.getElementById('ai-feed-panel').style.display = 'none';
+    document.getElementById('ai-feed-text').innerHTML = '';
+    document.getElementById('ai-feed-sources').innerHTML = '';
+    document.getElementById('ai-feed-skeleton').innerHTML = '';
     activeInput = 'home';
     setTimeout(() => results.style.display = 'none', 300);
   }
@@ -1229,11 +1163,11 @@
 
     document.getElementById('results-meta').textContent = 'Searching…';
 
-    // Reset AI answer box
-    const answerBox = document.getElementById('ai-answer-box');
-    answerBox.classList.remove('visible');
-    document.getElementById('ai-answer-text').innerHTML = '';
-    document.getElementById('ai-answer-sources').innerHTML = '';
+    // Reset AI feed panel
+    document.getElementById('ai-feed-panel').style.display = 'none';
+    document.getElementById('ai-feed-text').innerHTML = '';
+    document.getElementById('ai-feed-sources').innerHTML = '';
+    document.getElementById('ai-feed-skeleton').innerHTML = '';
 
     // AI status
     const aiStatus = document.getElementById('ai-status');
@@ -1331,11 +1265,8 @@
       }, i * 300);
     });
 
-    // Fire curated feed async (right panel fills independently)
-    fetchCuratedFeed(query, items, signal);
-
-    // Fire AI answer box async
-    fetchAIAnswer(query, items, signal);
+    // Fire AI feed panel async (right side)
+    fetchAIFeed(query, items, signal);
   }
 
   // ── AI Summary ────────────────────────────────────────────────────────
@@ -1527,89 +1458,34 @@
     }
   }
 
-  // ── CURATED FEED ────────────────────────────────────────────────────
-  async function fetchCuratedFeed(query, items, signal) {
-    const header   = document.getElementById('curated-header');
-    const skeleton = document.getElementById('curated-skeleton');
-    const cards    = document.getElementById('curated-cards');
-
-    // Reset
-    cards.innerHTML = '';
-    header.style.display = 'flex';
-    header.classList.remove('done');
-    document.getElementById('curated-header-text').textContent = 'AI is curating top picks…';
-
-    // Show skeleton cards
-    skeleton.innerHTML = Array(3).fill(0).map(() => `
-      <div class="curated-skeleton-card">
-        <div class="skeleton-line host"></div>
-        <div class="skeleton-line ctitle"></div>
-        <div class="skeleton-line cdesc"></div>
-        <div class="skeleton-line cprev"></div>
-      </div>
-    `).join('');
-
-    // Send top results to curated feed endpoint
-    const payload = items.slice(0, 5).map(r => ({
-      url: r.url, title: r.title, description: r.description
-    }));
-
-    try {
-      const resp = await fetch(`${API}/api/curated-feed`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query, results: payload }),
-        signal,
-      });
-      if (!resp.ok) throw new Error('Feed failed');
-      const data = await resp.json();
-      if (signal.aborted) return;
-
-      skeleton.innerHTML = '';
-
-      if (!data.cards || !data.cards.length) {
-        header.style.display = 'none';
-        return;
-      }
-
-      document.getElementById('curated-header-text').textContent =
-        `${data.cards.length} curated picks`;
-      header.classList.add('done');
-
-      data.cards.forEach((c, i) => {
-        const card = document.createElement('div');
-        card.className = 'curated-card';
-        card.onclick = () => window.open(c.url, '_blank');
-        card.innerHTML = `
-          <div class="curated-card-domain">
-            <div class="curated-card-favicon">
-              <img src="${c.favicon_url}" onerror="this.parentElement.textContent='${(c.domain[0]||'?').toUpperCase()}'">
-            </div>
-            <div class="curated-card-host">${c.domain}</div>
-          </div>
-          <div class="curated-card-title">${c.title}</div>
-          <div class="curated-card-desc">${c.description}</div>
-          <div class="curated-card-preview">${c.preview}</div>
-        `;
-        cards.appendChild(card);
-        setTimeout(() => card.classList.add('loaded'), i * 120);
-      });
-    } catch (err) {
-      if (err.name === 'AbortError') return;
-      skeleton.innerHTML = '';
-      header.style.display = 'none';
-    }
-  }
-
-  // ── AI ANSWER BOX ──────────────────────────────────────────────────────
-  async function fetchAIAnswer(query, items, signal) {
-    const box      = document.getElementById('ai-answer-box');
-    const textEl   = document.getElementById('ai-answer-text');
-    const sourcesEl = document.getElementById('ai-answer-sources');
+  // ── AI FEED (right panel — answer + sources) ───────────────────────
+  async function fetchAIFeed(query, items, signal) {
+    const panel   = document.getElementById('ai-feed-panel');
+    const header  = document.getElementById('ai-feed-header');
+    const skeleton = document.getElementById('ai-feed-skeleton');
+    const textEl  = document.getElementById('ai-feed-text');
+    const srcEl   = document.getElementById('ai-feed-sources');
 
     if (!items.length) return;
 
-    const payload = items.slice(0, 3).map(r => ({
+    // Show panel with skeleton
+    panel.style.display = '';
+    header.classList.remove('done');
+    textEl.innerHTML = '';
+    srcEl.innerHTML = '';
+    skeleton.innerHTML = `
+      <div class="skeleton-line text1"></div>
+      <div class="skeleton-line text2"></div>
+      <div class="skeleton-line text3"></div>
+      <div class="skeleton-line text1"></div>
+      <div class="skeleton-line text2"></div>
+      <div style="height:8px"></div>
+      <div class="skeleton-line src"></div>
+      <div class="skeleton-line src"></div>
+      <div class="skeleton-line src"></div>
+    `;
+
+    const payload = items.slice(0, 5).map(r => ({
       url: r.url, title: r.title, description: r.description
     }));
 
@@ -1620,12 +1496,18 @@
         body: JSON.stringify({ query, results: payload }),
         signal,
       });
-      if (!resp.ok) return;
+      if (!resp.ok) throw new Error('AI feed failed');
       const data = await resp.json();
-      if (signal.aborted || !data.answer) return;
+      if (signal.aborted) return;
+
+      skeleton.innerHTML = '';
+
+      if (!data.answer) {
+        panel.style.display = 'none';
+        return;
+      }
 
       // Typing animation
-      box.classList.add('visible');
       textEl.classList.add('ai-answer-typing');
       const words = data.answer.split(' ');
       let shown = '';
@@ -1633,21 +1515,24 @@
         if (signal.aborted) return;
         shown += (i ? ' ' : '') + words[i];
         textEl.textContent = shown;
-        await new Promise(r => setTimeout(r, 25));
+        await new Promise(r => setTimeout(r, 20));
       }
       textEl.classList.remove('ai-answer-typing');
+      header.classList.add('done');
 
-      // Sources
+      // Source reference links
       if (data.sources && data.sources.length) {
-        sourcesEl.innerHTML = data.sources.map(s =>
-          `<a class="ai-answer-source" href="${s.url}" target="_blank" rel="noopener">
+        srcEl.innerHTML = data.sources.map(s =>
+          `<a class="ai-feed-source" href="${s.url}" target="_blank" rel="noopener">
             <img src="https://www.google.com/s2/favicons?domain=${s.domain}&sz=16" alt="">
-            ${s.domain}
+            <span class="ai-feed-source-domain">${s.domain}</span>
           </a>`
         ).join('');
       }
     } catch (err) {
       if (err.name === 'AbortError') return;
+      skeleton.innerHTML = '';
+      panel.style.display = 'none';
     }
   }
 

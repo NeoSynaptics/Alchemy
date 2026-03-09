@@ -427,7 +427,7 @@ async def ai_answer(req: AIAnswerRequest):
     if not req.results:
         return {"answer": "", "sources": []}
 
-    top = req.results[:3]
+    top = req.results[:5]
 
     # Scrape pages in parallel
     scrape_tasks = [_scrape(r["url"]) for r in top]
