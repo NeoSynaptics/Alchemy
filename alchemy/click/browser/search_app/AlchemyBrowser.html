@@ -620,6 +620,14 @@
       min-width: 0;
       overflow: hidden;
     }
+    .ai-feed-source.cascade-in {
+      opacity: 0;
+      transform: translateY(8px);
+      animation: cascadeIn 300ms ease forwards;
+    }
+    @keyframes cascadeIn {
+      to { opacity: 1; transform: translateY(0); }
+    }
     .ai-feed-source:hover { border-color: var(--accent); color: var(--accent); background: var(--bg-hover); }
     .ai-feed-source img { width: 16px; height: 16px; border-radius: 3px; flex-shrink: 0; }
     .ai-feed-source-domain { font-family: var(--mono); font-size: 11px; color: var(--url-green); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1555,17 +1563,7 @@
       }
       header.classList.add('done');
 
-      // Source reference links (initial — from DDG scrape)
-      if (data.sources && data.sources.length) {
-        srcEl.innerHTML = data.sources.map(s =>
-          `<a class="ai-feed-source" href="${s.url}" target="_blank" rel="noopener">
-            <img src="https://www.google.com/s2/favicons?domain=${s.domain}&sz=16" alt="">
-            <span class="ai-feed-source-domain">${s.domain}</span>
-          </a>`
-        ).join('');
-      }
-
-      // Fire Chrome shadow search async — replaces source links when ready
+      // Fire Chrome shadow search — Bing links cascade in below AI text
       fetchChromeLinks(query, srcEl, signal);
     } catch (err) {
       if (err.name === 'AbortError') return;
@@ -1587,16 +1585,25 @@
       const data = await resp.json();
       if (!data.results || !data.results.length || signal.aborted) return;
 
-      // Replace source links with Chrome results
-      srcEl.innerHTML = data.results.map(r =>
-        `<a class="ai-feed-source" href="${r.url}" target="_blank" rel="noopener">
+      // Cascade Bing links in one by one
+      srcEl.innerHTML = '';
+      for (let i = 0; i < data.results.length; i++) {
+        if (signal.aborted) return;
+        const r = data.results[i];
+        const a = document.createElement('a');
+        a.className = 'ai-feed-source cascade-in';
+        a.href = r.url;
+        a.target = '_blank';
+        a.rel = 'noopener';
+        a.style.animationDelay = `${i * 80}ms`;
+        a.innerHTML = `
           <img src="https://www.google.com/s2/favicons?domain=${r.domain}&sz=16" alt="">
           <span class="ai-feed-source-domain">${r.domain}</span>
-          <span class="ai-feed-source-desc">${r.title}</span>
-        </a>`
-      ).join('');
+          <span class="ai-feed-source-desc">${r.title}</span>`;
+        srcEl.appendChild(a);
+      }
     } catch (err) {
-      // Silent fail — keep original DDG source links
+      // Silent fail — no links shown
     }
   }
 
