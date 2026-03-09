@@ -625,6 +625,223 @@
     .curated-skeleton-card .skeleton-line.cdesc  { width: 100%; height: 10px; }
     .curated-skeleton-card .skeleton-line.cprev  { width: 90%; height: 10px; }
 
+    /* ── MEDIA BODY (shared for video/news/images tabs) ── */
+    .media-body {
+      max-width: 1000px;
+      margin: 0 auto;
+      padding: 24px 24px 60px;
+    }
+
+    /* ── VIDEO GRID ── */
+    .video-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 20px;
+    }
+    .video-card {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      cursor: pointer;
+      transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    .video-card.loaded {
+      opacity: 1;
+      transform: translateY(0);
+      transition: opacity 240ms ease, transform 240ms ease, border-color 180ms ease, box-shadow 180ms ease;
+    }
+    .video-card:hover {
+      border-color: var(--accent);
+      box-shadow: 0 2px 12px color-mix(in srgb, var(--accent) 10%, transparent);
+      transform: translateY(-2px);
+    }
+    .video-thumb {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 16/9;
+      background: var(--bg-subtle);
+      overflow: hidden;
+    }
+    .video-thumb img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .video-duration {
+      position: absolute;
+      bottom: 6px;
+      right: 6px;
+      background: rgba(0,0,0,.82);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: var(--mono);
+    }
+    .video-play-icon {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 48px;
+      height: 48px;
+      background: rgba(0,0,0,.6);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      transition: opacity 180ms ease;
+    }
+    .video-card:hover .video-play-icon { opacity: 1; }
+    .video-play-icon svg { width: 20px; height: 20px; color: #fff; margin-left: 2px; }
+    .video-info {
+      padding: 12px 14px;
+    }
+    .video-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-1);
+      line-height: 1.3;
+      margin-bottom: 6px;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .video-meta {
+      font-size: 12px;
+      color: var(--text-3);
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .video-meta span { white-space: nowrap; }
+
+    /* ── NEWS LIST ── */
+    .news-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
+    .news-item {
+      display: flex;
+      gap: 16px;
+      padding: 16px 0;
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+      transition: background var(--transition);
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    .news-item.loaded {
+      opacity: 1;
+      transform: translateY(0);
+      transition: opacity 240ms ease, transform 240ms ease;
+    }
+    .news-item:hover { background: transparent; }
+    .news-item:last-child { border-bottom: none; }
+    .news-image {
+      width: 180px;
+      height: 110px;
+      border-radius: 8px;
+      overflow: hidden;
+      flex-shrink: 0;
+      background: var(--bg-subtle);
+    }
+    .news-image img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .news-content { flex: 1; min-width: 0; }
+    .news-source {
+      font-size: 12px;
+      color: var(--text-3);
+      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .news-source-favicon {
+      width: 14px; height: 14px;
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    .news-source-favicon img { width: 100%; height: 100%; }
+    .news-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text-1);
+      line-height: 1.3;
+      margin-bottom: 6px;
+      letter-spacing: -0.02em;
+    }
+    .news-title:hover { color: var(--accent); }
+    .news-body {
+      font-size: 13px;
+      color: var(--text-2);
+      line-height: 1.5;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .news-date {
+      font-size: 11px;
+      color: var(--text-3);
+      margin-top: 6px;
+    }
+    @media (max-width: 600px) {
+      .news-image { width: 100px; height: 70px; }
+    }
+
+    /* ── IMAGE GRID ── */
+    .image-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 8px;
+    }
+    .image-card {
+      border-radius: 8px;
+      overflow: hidden;
+      cursor: pointer;
+      position: relative;
+      aspect-ratio: 1;
+      background: var(--bg-subtle);
+      opacity: 0;
+      transition: opacity 240ms ease, transform 180ms ease;
+    }
+    .image-card.loaded { opacity: 1; }
+    .image-card:hover { transform: scale(1.02); }
+    .image-card img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .image-card-overlay {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      padding: 8px 10px;
+      background: linear-gradient(transparent, rgba(0,0,0,.7));
+      opacity: 0;
+      transition: opacity 180ms ease;
+    }
+    .image-card:hover .image-card-overlay { opacity: 1; }
+    .image-card-title {
+      font-size: 11px;
+      color: #fff;
+      line-height: 1.3;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
     /* ── DIVIDER ── */
     .divider { width: 1px; height: 20px; background: var(--border); }
   </style>
@@ -724,29 +941,23 @@
   </div>
 
   <div class="tabs">
-    <div class="tab active">Web</div>
-    <div class="tab">Images</div>
-    <div class="tab">News</div>
-    <div class="tab">Videos</div>
-    <div class="tab">Maps</div>
+    <div class="tab active" data-tab="web" onclick="switchTab('web')">Web</div>
+    <div class="tab" data-tab="images" onclick="switchTab('images')">Images</div>
+    <div class="tab" data-tab="news" onclick="switchTab('news')">News</div>
+    <div class="tab" data-tab="videos" onclick="switchTab('videos')">Videos</div>
   </div>
 
-  <div class="results-body">
+  <!-- WEB TAB -->
+  <div class="results-body tab-content" id="tab-web">
     <div id="results-main">
       <div class="results-meta" id="results-meta"></div>
       <div class="ai-status" id="ai-status">
         <div class="ai-status-dot"></div>
         <span id="ai-status-text">AI is analyzing results…</span>
       </div>
-      <div id="skeleton-list" class="skeleton-list">
-        <!-- Skeletons injected by JS -->
-      </div>
-      <div id="results-list">
-        <!-- Results injected by JS -->
-      </div>
+      <div id="skeleton-list" class="skeleton-list"></div>
+      <div id="results-list"></div>
     </div>
-
-    <!-- AI Curated Feed -->
     <div class="curated-panel" id="curated-panel">
       <div class="curated-header" id="curated-header" style="display:none">
         <div class="curated-header-dot"></div>
@@ -754,6 +965,30 @@
       </div>
       <div id="curated-skeleton"></div>
       <div id="curated-cards"></div>
+    </div>
+  </div>
+
+  <!-- VIDEOS TAB -->
+  <div class="tab-content" id="tab-videos" style="display:none">
+    <div class="media-body">
+      <div class="results-meta" id="videos-meta"></div>
+      <div id="videos-list" class="video-grid"></div>
+    </div>
+  </div>
+
+  <!-- NEWS TAB -->
+  <div class="tab-content" id="tab-news" style="display:none">
+    <div class="media-body">
+      <div class="results-meta" id="news-meta"></div>
+      <div id="news-list" class="news-list"></div>
+    </div>
+  </div>
+
+  <!-- IMAGES TAB -->
+  <div class="tab-content" id="tab-images" style="display:none">
+    <div class="media-body">
+      <div class="results-meta" id="images-meta"></div>
+      <div id="images-list" class="image-grid"></div>
     </div>
   </div>
 </div>
@@ -840,12 +1075,26 @@
   });
 
   // ── TABS ──────────────────────────────────────────────────────────────
-  document.querySelectorAll('.tab').forEach(tab => {
-    tab.addEventListener('click', () => {
-      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-      tab.classList.add('active');
-    });
-  });
+  let currentTab = 'web';
+  const tabCache = {};   // cache tab results per query
+
+  function switchTab(tab) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelector(`.tab[data-tab="${tab}"]`).classList.add('active');
+
+    document.querySelectorAll('.tab-content').forEach(tc => tc.style.display = 'none');
+    document.getElementById(`tab-${tab}`).style.display = '';
+
+    currentTab = tab;
+    if (!currentQuery) return;
+
+    const cacheKey = `${tab}:${currentQuery}`;
+    if (tabCache[cacheKey]) return;  // already loaded
+
+    if (tab === 'videos') loadVideos(currentQuery);
+    else if (tab === 'news') loadNews(currentQuery);
+    else if (tab === 'images') loadImages(currentQuery);
+  }
 
   // ── MIC ───────────────────────────────────────────────────────────────
   function toggleMic(btn) {
@@ -873,6 +1122,11 @@
     document.getElementById('results-input').value = query;
     currentQuery = query;
 
+    // Clear tab cache for new query
+    Object.keys(tabCache).forEach(k => delete tabCache[k]);
+
+    // Always switch to web tab on new search
+    switchTab('web');
     showResults(query);
   }
 
@@ -1034,6 +1288,163 @@
       badge.classList.add('visible');
       desc.style.opacity = '1';
     }, 260);
+  }
+
+  // ── VIDEOS TAB ──────────────────────────────────────────────────────
+  async function loadVideos(query) {
+    const meta = document.getElementById('videos-meta');
+    const list = document.getElementById('videos-list');
+    meta.textContent = 'Loading videos…';
+    list.innerHTML = '';
+    const cacheKey = `videos:${query}`;
+
+    try {
+      const t0 = Date.now();
+      const resp = await fetch(`${API}/api/videos?q=${encodeURIComponent(query)}&count=12`);
+      const data = await resp.json();
+      const elapsed = ((Date.now() - t0) / 1000).toFixed(2);
+      meta.textContent = `${data.count} videos (${elapsed}s)`;
+      tabCache[cacheKey] = true;
+
+      if (!data.results.length) {
+        list.innerHTML = '<div style="color:var(--text-3);padding:40px 0">No videos found.</div>';
+        return;
+      }
+
+      const playSvg = '<svg viewBox="0 0 24 24" fill="white"><polygon points="5 3 19 12 5 21 5 3"/></svg>';
+
+      data.results.forEach((v, i) => {
+        const card = document.createElement('div');
+        card.className = 'video-card';
+        card.onclick = () => window.open(v.url, '_blank');
+
+        const views = v.views ? `${Number(v.views).toLocaleString()} views` : '';
+        const published = v.published ? new Date(v.published).toLocaleDateString() : '';
+
+        card.innerHTML = `
+          <div class="video-thumb">
+            <img src="${v.thumbnail}" onerror="this.style.display='none'" alt="">
+            <div class="video-play-icon">${playSvg}</div>
+            ${v.duration ? `<div class="video-duration">${v.duration}</div>` : ''}
+          </div>
+          <div class="video-info">
+            <div class="video-title">${v.title}</div>
+            <div class="video-meta">
+              ${v.uploader ? `<span>${v.uploader}</span>` : ''}
+              ${views ? `<span>${views}</span>` : ''}
+              ${published ? `<span>${published}</span>` : ''}
+            </div>
+          </div>
+        `;
+        list.appendChild(card);
+        setTimeout(() => card.classList.add('loaded'), i * 60);
+      });
+    } catch {
+      meta.textContent = '';
+      list.innerHTML = '<div style="color:var(--text-3);padding:40px 0">Could not load videos.</div>';
+    }
+  }
+
+  // ── NEWS TAB ───────────────────────────────────────────────────────
+  async function loadNews(query) {
+    const meta = document.getElementById('news-meta');
+    const list = document.getElementById('news-list');
+    meta.textContent = 'Loading news…';
+    list.innerHTML = '';
+    const cacheKey = `news:${query}`;
+
+    try {
+      const t0 = Date.now();
+      const resp = await fetch(`${API}/api/news?q=${encodeURIComponent(query)}&count=10`);
+      const data = await resp.json();
+      const elapsed = ((Date.now() - t0) / 1000).toFixed(2);
+      meta.textContent = `${data.count} articles (${elapsed}s)`;
+      tabCache[cacheKey] = true;
+
+      if (!data.results.length) {
+        list.innerHTML = '<div style="color:var(--text-3);padding:40px 0">No news found.</div>';
+        return;
+      }
+
+      data.results.forEach((n, i) => {
+        const item = document.createElement('div');
+        item.className = 'news-item';
+        item.onclick = () => window.open(n.url, '_blank');
+
+        const timeAgo = n.date ? formatTimeAgo(n.date) : '';
+        const faviconUrl = `https://www.google.com/s2/favicons?domain=${n.domain}&sz=32`;
+
+        item.innerHTML = `
+          ${n.image ? `<div class="news-image"><img src="${n.image}" onerror="this.parentElement.style.display='none'" alt=""></div>` : ''}
+          <div class="news-content">
+            <div class="news-source">
+              <div class="news-source-favicon"><img src="${faviconUrl}" alt=""></div>
+              ${n.source || n.domain}
+            </div>
+            <div class="news-title">${n.title}</div>
+            <div class="news-body">${n.body}</div>
+            ${timeAgo ? `<div class="news-date">${timeAgo}</div>` : ''}
+          </div>
+        `;
+        list.appendChild(item);
+        setTimeout(() => item.classList.add('loaded'), i * 60);
+      });
+    } catch {
+      meta.textContent = '';
+      list.innerHTML = '<div style="color:var(--text-3);padding:40px 0">Could not load news.</div>';
+    }
+  }
+
+  function formatTimeAgo(dateStr) {
+    try {
+      const d = new Date(dateStr);
+      const now = new Date();
+      const diff = Math.floor((now - d) / 1000);
+      if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+      if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+      if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
+      return d.toLocaleDateString();
+    } catch { return dateStr; }
+  }
+
+  // ── IMAGES TAB ─────────────────────────────────────────────────────
+  async function loadImages(query) {
+    const meta = document.getElementById('images-meta');
+    const list = document.getElementById('images-list');
+    meta.textContent = 'Loading images…';
+    list.innerHTML = '';
+    const cacheKey = `images:${query}`;
+
+    try {
+      const t0 = Date.now();
+      const resp = await fetch(`${API}/api/images?q=${encodeURIComponent(query)}&count=20`);
+      const data = await resp.json();
+      const elapsed = ((Date.now() - t0) / 1000).toFixed(2);
+      meta.textContent = `${data.count} images (${elapsed}s)`;
+      tabCache[cacheKey] = true;
+
+      if (!data.results.length) {
+        list.innerHTML = '<div style="color:var(--text-3);padding:40px 0">No images found. Image search may be temporarily unavailable.</div>';
+        return;
+      }
+
+      data.results.forEach((img, i) => {
+        const card = document.createElement('div');
+        card.className = 'image-card';
+        card.onclick = () => window.open(img.url || img.image, '_blank');
+        card.innerHTML = `
+          <img src="${img.thumbnail || img.image}" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22/>';" alt="${img.title}">
+          <div class="image-card-overlay">
+            <div class="image-card-title">${img.title}</div>
+          </div>
+        `;
+        list.appendChild(card);
+        setTimeout(() => card.classList.add('loaded'), i * 30);
+      });
+    } catch {
+      meta.textContent = '';
+      list.innerHTML = '<div style="color:var(--text-3);padding:40px 0">Could not load images.</div>';
+    }
   }
 
   // ── CURATED FEED ────────────────────────────────────────────────────

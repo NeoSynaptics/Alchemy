@@ -174,6 +174,151 @@ async def _search_ddg_fallback(q: str, count: int) -> tuple[list, list]:
     return results, ["duckduckgo"]
 
 
+# ── Video Search ─────────────────────────────────────────────────────────────
+
+@app.get("/api/videos")
+async def video_search(q: str, count: int = 10):
+    """Search for videos via DuckDuckGo."""
+    if not q.strip():
+        raise HTTPException(400, "Empty query")
+
+    try:
+        results = await asyncio.to_thread(_video_search_sync, q.strip(), count)
+        results = [r for r in results if not _has_cjk(r.get("title", ""))]
+        return {"query": q, "count": len(results), "results": results}
+    except Exception as e:
+        raise HTTPException(502, f"Video search failed: {e}")
+
+
+def _video_search_sync(q: str, count: int) -> list[dict]:
+    try:
+        from ddgs import DDGS
+    except ImportError:
+        from duckduckgo_search import DDGS
+
+    with DDGS() as ddgs:
+        raw = list(ddgs.videos(q, max_results=count))
+
+    results = []
+    for v in raw:
+        # Parse images dict (comes as string sometimes)
+        images = v.get("images", {})
+        if isinstance(images, str):
+            try:
+                import ast
+                images = ast.literal_eval(images)
+            except Exception:
+                images = {}
+
+        # Parse statistics
+        stats = v.get("statistics", {})
+        if isinstance(stats, str):
+            try:
+                import ast
+                stats = ast.literal_eval(stats)
+            except Exception:
+                stats = {}
+
+        thumbnail = ""
+        if isinstance(images, dict):
+            thumbnail = images.get("large", "") or images.get("medium", "") or images.get("small", "")
+
+        results.append({
+            "title":       v.get("title", ""),
+            "url":         v.get("content", ""),
+            "description": v.get("description", ""),
+            "duration":    v.get("duration", ""),
+            "thumbnail":   thumbnail,
+            "embed_url":   v.get("embed_url", ""),
+            "publisher":   v.get("publisher", ""),
+            "uploader":    v.get("uploader", ""),
+            "published":   v.get("published", ""),
+            "views":       stats.get("viewCount", 0) if isinstance(stats, dict) else 0,
+        })
+    return results
+
+
+# ── News Search ──────────────────────────────────────────────────────────────
+
+@app.get("/api/news")
+async def news_search(q: str, count: int = 10):
+    """Search for news via DuckDuckGo."""
+    if not q.strip():
+        raise HTTPException(400, "Empty query")
+
+    try:
+        results = await asyncio.to_thread(_news_search_sync, q.strip(), count)
+        results = [r for r in results if not _has_cjk(r.get("title", ""))]
+        return {"query": q, "count": len(results), "results": results}
+    except Exception as e:
+        raise HTTPException(502, f"News search failed: {e}")
+
+
+def _news_search_sync(q: str, count: int) -> list[dict]:
+    try:
+        from ddgs import DDGS
+    except ImportError:
+        from duckduckgo_search import DDGS
+
+    with DDGS() as ddgs:
+        raw = list(ddgs.news(q, max_results=count))
+
+    return [
+        {
+            "title":   n.get("title", ""),
+            "url":     n.get("url", ""),
+            "body":    n.get("body", ""),
+            "source":  n.get("source", ""),
+            "date":    n.get("date", ""),
+            "image":   n.get("image", ""),
+            "domain":  _domain(n.get("url", "")),
+        }
+        for n in raw
+    ]
+
+
+# ── Image Search ─────────────────────────────────────────────────────────────
+
+@app.get("/api/images")
+async def image_search(q: str, count: int = 20):
+    """Search for images via DuckDuckGo."""
+    if not q.strip():
+        raise HTTPException(400, "Empty query")
+
+    try:
+        results = await asyncio.to_thread(_image_search_sync, q.strip(), count)
+        results = [r for r in results if not _has_cjk(r.get("title", ""))]
+        return {"query": q, "count": len(results), "results": results}
+    except Exception as e:
+        raise HTTPException(502, f"Image search failed: {e}")
+
+
+def _image_search_sync(q: str, count: int) -> list[dict]:
+    try:
+        from ddgs import DDGS
+    except ImportError:
+        from duckduckgo_search import DDGS
+
+    try:
+        with DDGS() as ddgs:
+            raw = list(ddgs.images(q, max_results=count))
+    except Exception:
+        return []  # ddgs v9 images sometimes fails
+
+    return [
+        {
+            "title":     img.get("title", ""),
+            "url":       img.get("url", ""),
+            "image":     img.get("image", ""),
+            "thumbnail": img.get("thumbnail", ""),
+            "source":    img.get("source", ""),
+            "width":     img.get("width", 0),
+            "height":    img.get("height", 0),
+        }
+        for img in raw
+    ]
+
+
 # ── Summarize ─────────────────────────────────────────────────────────────────
 
 class SummarizeRequest(BaseModel):
