@@ -636,13 +636,14 @@ def _query_variations(query: str) -> list[str]:
     words = query.split()
     q = f'"{query}"' if len(words) >= 2 else query
     variations = [query]  # always search exact query first
-    variations.append(q)  # quoted exact match
+    if len(words) >= 2:
+        variations.append(q)  # quoted exact match
     variations.append(f"{q} wiki OR wikipedia")  # encyclopedic
     variations.append(f"{q} site:reddit.com")  # real opinions
     if not query.lower().startswith(("what", "how", "why", "who", "when")):
-        variations.append(f"who is {query}" if len(words) >= 2 else f"what is {query}")
+        variations.append(f"who is {q}")
     else:
-        variations.append(f"{query} 2025")
+        variations.append(f"{query} 2026")
     return variations[:5]
 
 
@@ -732,6 +733,17 @@ async def chrome_search(req: ChromeSearchRequest):
         return_exceptions=True,
     )
 
+    # Build relevance filter from original query words
+    query_words = {w.lower() for w in req.query.split() if len(w) > 2}
+
+    def _is_relevant(r: dict) -> bool:
+        """Result must mention at least half the query words in title or description."""
+        if not query_words:
+            return True
+        text = (r["title"] + " " + r.get("description", "")).lower()
+        hits = sum(1 for w in query_words if w in text)
+        return hits >= max(1, len(query_words) // 2)
+
     # Flatten and deduplicate by URL, keep first occurrence
     seen_urls = set()
     merged = []
@@ -739,7 +751,7 @@ async def chrome_search(req: ChromeSearchRequest):
         if isinstance(batch, Exception):
             continue
         for r in batch:
-            if r["url"] not in seen_urls and not _has_cjk(r["title"]):
+            if r["url"] not in seen_urls and not _has_cjk(r["title"]) and _is_relevant(r):
                 seen_urls.add(r["url"])
                 merged.append(r)
 
