@@ -10,8 +10,10 @@ Core philosophy: VRAM flows like water.
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from alchemy.apu.monitor import GPUMonitor, HardwareSnapshot, GPUInfo, RAMInfo
 from alchemy.apu.registry import (
@@ -59,34 +61,81 @@ class StackOrchestrator:
 
         # Track which apps have activated models
         self._app_models: dict[str, list[str]] = {}
+        # App-level priority: 0 = highest (evicted last), 100 = lowest
+        self._app_priority: dict[str, int] = {}
+        # Frozen baseline config — models that auto-load on boot / task release
+        self._frozen_config: dict[str, list[str]] = {
+            "gpu_0": [],
+            "gpu_1": [],
+            "ram": [],
+        }
+        self._frozen_config_path = Path("config/frozen_baseline.json")
+        self._load_frozen_config()
+
+        # Known apps with default priorities
+        self._default_app_priority: dict[str, int] = {
+            "voice": 10,     # Voice pipeline — always responsive
+            "click": 15,     # GUI automation — near-real-time
+            "core": 20,      # Agent kernel
+            "router": 30,    # Request routing
+            "research": 40,  # AlchemyBrowser
+            "word": 50,      # AlchemyWord
+            "memory": 50,    # AlchemyMemory
+            "desktop": 50,   # Desktop agent
+            "gate": 60,      # Gate reviewer
+        }
+
+    # --- App Priority ---
+
+    def get_app_priority(self, app_name: str) -> int:
+        """Get an app's priority. 0=highest, 100=lowest."""
+        return self._app_priority.get(
+            app_name, self._default_app_priority.get(app_name, 50)
+        )
+
+    def set_app_priority(self, app_name: str, priority: int) -> None:
+        """Set an app's priority. 0=highest, 100=lowest."""
+        self._app_priority[app_name] = max(0, min(100, priority))
+
+    def all_app_priorities(self) -> dict[str, int]:
+        """Return all known apps with their effective priority."""
+        apps: dict[str, int] = {}
+        # Defaults first
+        for name, prio in self._default_app_priority.items():
+            apps[name] = prio
+        # Active apps from app_models
+        for name in self._app_models:
+            if name not in apps:
+                apps[name] = 50
+        # User overrides
+        apps.update(self._app_priority)
+        return dict(sorted(apps.items(), key=lambda x: x[1]))
+
+    def set_app_gpu(self, app_name: str, gpu: int | None) -> None:
+        """Set preferred GPU for an app. Affects all its models."""
+        models = self._app_models.get(app_name, [])
+        for model_name in models:
+            card = self._registry.get(model_name)
+            if card:
+                card.preferred_gpu = gpu
 
     # --- Lifecycle ---
 
     async def start(self) -> None:
-        """Initialize monitor and auto-load P0 resident models."""
+        """Initialize monitor and restore frozen baseline models."""
         await self._monitor.start()
         self._started = True
 
-        # Auto-load residents in order: GPU 1 first (higher VRAM), then GPU 0
-        residents = self._registry.models_by_tier(ModelTier.RESIDENT)
-        # Sort: preferred_gpu=1 first, then preferred_gpu=0, then None
-        residents.sort(key=lambda m: (-(m.preferred_gpu or -1),))
-
-        for model in residents:
-            result = await self.load_model(model.name, gpu=model.preferred_gpu)
-            if result.success:
-                logger.info(
-                    "Resident model loaded: %s → %s", model.name, result.location
-                )
-            else:
-                logger.warning(
-                    "Failed to load resident model %s: %s", model.name, result.error
-                )
+        # Restore frozen baseline (replaces old hardcoded resident loading)
+        actions = await self.restore_frozen_baseline()
+        for action in actions:
+            logger.info("Boot: %s", action)
 
         logger.info(
-            "Stack orchestrator started (mode=%s, models=%d)",
+            "Stack orchestrator started (mode=%s, models=%d, frozen=%d)",
             self._mode,
             len(self._registry.all_models()),
+            sum(len(v) for v in self._frozen_config.values()),
         )
 
     async def close(self) -> None:
@@ -332,7 +381,11 @@ class StackOrchestrator:
         )
 
     async def app_deactivate(self, app_name: str) -> list[str]:
-        """Deactivate an app. Demote its models back to WARM (not cold)."""
+        """Deactivate an app. Demote its models back to WARM, then restore frozen baseline.
+
+        Models that belonged to the deactivated app are excluded from the
+        restore pass — they were just intentionally released.
+        """
         model_names = self._app_models.pop(app_name, [])
         demoted: list[str] = []
 
@@ -345,6 +398,12 @@ class StackOrchestrator:
             ok = await self.demote(name)
             if ok:
                 demoted.append(name)
+
+        # Repopulate frozen baseline models after task release
+        # (skip models that were just deactivated — they were released intentionally)
+        restore_actions = await self.restore_frozen_baseline(exclude=set(model_names))
+        for action in restore_actions:
+            logger.info("Post-deactivate restore: %s", action)
 
         return demoted
 
@@ -371,6 +430,97 @@ class StackOrchestrator:
                     card.current_tier = ModelTier.USER_ACTIVE
                 promoted.append(name)
         return promoted
+
+    # --- Frozen Baseline ---
+
+    def _load_frozen_config(self) -> None:
+        """Load frozen baseline from disk. Falls back to fleet defaults if missing."""
+        try:
+            if self._frozen_config_path.exists():
+                data = json.loads(self._frozen_config_path.read_text())
+                self._frozen_config = {
+                    "gpu_0": data.get("gpu_0", []),
+                    "gpu_1": data.get("gpu_1", []),
+                    "ram": data.get("ram", []),
+                }
+                logger.info("Frozen baseline loaded: %s", self._frozen_config_path)
+            else:
+                # Build default from fleet config: resident models go to their preferred GPU
+                for card in self._registry.all_models():
+                    if card.default_tier == ModelTier.RESIDENT:
+                        key = f"gpu_{card.preferred_gpu}" if card.preferred_gpu is not None else "gpu_1"
+                        self._frozen_config[key].append(card.name)
+                    elif card.default_tier == ModelTier.WARM:
+                        self._frozen_config["ram"].append(card.name)
+        except Exception as e:
+            logger.warning("Failed to load frozen config: %s", e)
+
+    def get_frozen_config(self) -> dict[str, list[str]]:
+        """Return current frozen baseline configuration."""
+        return {k: list(v) for k, v in self._frozen_config.items()}
+
+    def save_frozen_config(self, config: dict[str, list[str]]) -> None:
+        """Save frozen baseline to disk."""
+        self._frozen_config = {
+            "gpu_0": config.get("gpu_0", []),
+            "gpu_1": config.get("gpu_1", []),
+            "ram": config.get("ram", []),
+        }
+        # Validate all model names exist
+        for slot, names in self._frozen_config.items():
+            for name in names:
+                if self._registry.get(name) is None:
+                    logger.warning("Frozen config: unknown model '%s' in %s", name, slot)
+        try:
+            self._frozen_config_path.parent.mkdir(parents=True, exist_ok=True)
+            self._frozen_config_path.write_text(
+                json.dumps(self._frozen_config, indent=2)
+            )
+            logger.info("Frozen baseline saved: %s", self._frozen_config_path)
+        except Exception as e:
+            logger.error("Failed to save frozen config: %s", e)
+
+    async def restore_frozen_baseline(self, exclude: set[str] | None = None) -> list[str]:
+        """Load all frozen baseline models into their assigned slots.
+
+        Called on boot and after a task releases models.
+        Args:
+            exclude: model names to skip (e.g. just-deactivated models).
+        Returns list of actions taken.
+        """
+        actions: list[str] = []
+        skip = exclude or set()
+
+        # GPU models first
+        for slot in ("gpu_0", "gpu_1"):
+            gpu_index = int(slot[-1])
+            for model_name in self._frozen_config.get(slot, []):
+                if model_name in skip:
+                    continue
+                card = self._registry.get(model_name)
+                if card is None:
+                    continue
+                if card.current_location.is_gpu and card.current_location.gpu_index == gpu_index:
+                    continue  # Already where it should be
+                result = await self.load_model(model_name, gpu=gpu_index)
+                if result.success:
+                    actions.append(f"Restored {model_name} → GPU {gpu_index}")
+                else:
+                    actions.append(f"Failed to restore {model_name} → GPU {gpu_index}: {result.error}")
+
+        # RAM models — just make sure they're at least warm (not cold)
+        for model_name in self._frozen_config.get("ram", []):
+            if model_name in skip:
+                continue
+            card = self._registry.get(model_name)
+            if card is None:
+                continue
+            if card.current_location != ModelLocation.DISK:
+                continue  # Already in RAM or GPU, fine
+            self._registry.update_location(model_name, ModelLocation.CPU_RAM, ModelTier.WARM)
+            actions.append(f"Warmed {model_name} → CPU RAM")
+
+        return actions
 
     # --- Internal Helpers ---
 
@@ -412,7 +562,9 @@ class StackOrchestrator:
             return []  # Already enough room
 
         evicted: list[str] = []
-        candidates = self._registry.eviction_candidates(gpu_index)
+        candidates = self._registry.eviction_candidates(
+            gpu_index, app_priorities=self.all_app_priorities(),
+        )
 
         # Pass 1: evict lower-priority models first
         for candidate in candidates:
@@ -457,9 +609,15 @@ class StackOrchestrator:
                 logger.info("vLLM model %s: load requested (GPU %d)", card.name, gpu_index)
                 return True
             elif card.backend == ModelBackend.SUBPROCESS:
-                # Subprocess models (Whisper, Fish Speech) managed externally
-                logger.info("Subprocess model %s: marking as loaded", card.name)
-                return True
+                # Subprocess models (Whisper, Fish Speech) are managed by external
+                # processes. We can't load them — only detect if they're already
+                # running on GPU via pynvml process list.
+                on_gpu = await self._subprocess_on_gpu(card, gpu_index)
+                if on_gpu:
+                    logger.info("Subprocess model %s: detected on GPU %d", card.name, gpu_index)
+                else:
+                    logger.info("Subprocess model %s: not detected on GPU — marking as disk", card.name)
+                return on_gpu
             else:
                 logger.warning("Unknown backend for %s: %s", card.name, card.backend)
                 return False
@@ -483,6 +641,30 @@ class StackOrchestrator:
         except Exception as e:
             logger.error("Backend unload failed for %s: %s", card.name, e)
             return False
+
+    async def _subprocess_on_gpu(self, card: ModelCard, gpu_index: int) -> bool:
+        """Check if a subprocess model is actually consuming VRAM on a GPU.
+
+        Maps known model names to their process names and checks pynvml
+        process list for meaningful VRAM usage (>10MB to filter noise).
+        """
+        # Known subprocess model → process name patterns
+        _PROCESS_HINTS: dict[str, list[str]] = {
+            "whisper-large-v3": ["whisper", "faster-whisper", "faster_whisper"],
+            "fish-speech-s1": ["fish", "fish_speech", "fish-speech"],
+        }
+
+        snap = await self._monitor.snapshot()
+        gpu = next((g for g in snap.gpus if g.index == gpu_index), None)
+        if gpu is None:
+            return False
+
+        hints = _PROCESS_HINTS.get(card.name, [card.name.replace(":", "-")])
+        for proc in getattr(gpu, "processes", []):
+            proc_lower = proc.name.lower()
+            if proc.vram_mb > 10 and any(h in proc_lower for h in hints):
+                return True
+        return False
 
     async def _ollama_load(self, model_name: str) -> bool:
         """Warm-load an Ollama model by sending a dummy generate request."""

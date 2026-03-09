@@ -17,6 +17,12 @@ router = APIRouter(prefix="/apu", tags=["apu"])
 # --- Response models ---
 
 
+class GPUProcessResponse(BaseModel):
+    pid: int
+    name: str
+    vram_mb: int
+
+
 class GPUInfoResponse(BaseModel):
     index: int
     name: str
@@ -25,6 +31,7 @@ class GPUInfoResponse(BaseModel):
     free_vram_mb: int
     temperature_c: int
     utilization_pct: int
+    processes: list[GPUProcessResponse] = []
 
 
 class RAMInfoResponse(BaseModel):
@@ -48,6 +55,7 @@ class ModelCardResponse(BaseModel):
     capabilities: list[str]
     last_used: str | None
     owner_app: str | None
+    app_priority: int = 50
 
 
 class StackStatusResponse(BaseModel):
@@ -117,6 +125,7 @@ def _model_to_response(card: Any) -> ModelCardResponse:
         capabilities=card.capabilities,
         last_used=card.last_used.isoformat() if card.last_used else None,
         owner_app=card.owner_app,
+        app_priority=card.app_priority,
     )
 
 
@@ -138,6 +147,10 @@ async def gpu_stack_status(request: Request) -> StackStatusResponse:
             free_vram_mb=g.free_vram_mb,
             temperature_c=g.temperature_c,
             utilization_pct=g.utilization_pct,
+            processes=[
+                GPUProcessResponse(pid=p.pid, name=p.name, vram_mb=p.vram_mb)
+                for p in getattr(g, "processes", [])
+            ],
         )
         for g in status.snapshot.gpus
     ]
@@ -353,3 +366,115 @@ async def app_deactivate(request: Request, app_name: str) -> DemotedResponse:
     orch = _get_orchestrator(request)
     demoted = await orch.app_deactivate(app_name)
     return DemotedResponse(success=True, demoted=demoted)
+
+
+# --- App Priority Management ---
+
+
+class AppPriorityEntry(BaseModel):
+    app_name: str
+    priority: int  # 0=highest, 100=lowest
+    models: list[str] = []  # models currently owned by this app
+    gpu: int | None = None  # preferred GPU if set
+
+
+class AppPriorityListResponse(BaseModel):
+    apps: list[AppPriorityEntry]
+
+
+class SetAppPriorityRequest(BaseModel):
+    priority: int  # 0 = highest, 100 = lowest
+
+
+class SetAppGPURequest(BaseModel):
+    gpu: int | None  # 0, 1, or null for auto
+
+
+class FrozenConfigResponse(BaseModel):
+    gpu_0: list[str] = []
+    gpu_1: list[str] = []
+    ram: list[str] = []
+
+
+class FrozenConfigRequest(BaseModel):
+    gpu_0: list[str] = []
+    gpu_1: list[str] = []
+    ram: list[str] = []
+
+
+class FrozenRestoreResponse(BaseModel):
+    actions: list[str] = []
+
+
+@router.get("/priority", response_model=AppPriorityListResponse)
+async def list_app_priorities(request: Request) -> AppPriorityListResponse:
+    """List all apps with their GPU priority ranking, sorted by priority (0=highest)."""
+    orch = _get_orchestrator(request)
+    prios = orch.all_app_priorities()
+    app_models = orch._app_models
+    entries = []
+    for app_name, prio in prios.items():
+        entries.append(AppPriorityEntry(
+            app_name=app_name,
+            priority=prio,
+            models=app_models.get(app_name, []),
+        ))
+    return AppPriorityListResponse(apps=entries)
+
+
+@router.post("/priority/{app_name}", response_model=AppPriorityEntry)
+async def set_app_priority(
+    request: Request, app_name: str, body: SetAppPriorityRequest,
+) -> AppPriorityEntry:
+    """Set an app's GPU priority. 0 = highest (models evicted last), 100 = lowest."""
+    orch = _get_orchestrator(request)
+    orch.set_app_priority(app_name, body.priority)
+    return AppPriorityEntry(
+        app_name=app_name,
+        priority=orch.get_app_priority(app_name),
+        models=orch._app_models.get(app_name, []),
+    )
+
+
+@router.post("/priority/{app_name}/gpu", response_model=AppPriorityEntry)
+async def set_app_gpu(
+    request: Request, app_name: str, body: SetAppGPURequest,
+) -> AppPriorityEntry:
+    """Set preferred GPU for an app. All its models will prefer this GPU."""
+    orch = _get_orchestrator(request)
+    if body.gpu is not None and body.gpu not in (0, 1):
+        raise HTTPException(status_code=400, detail="GPU must be 0, 1, or null")
+    orch.set_app_gpu(app_name, body.gpu)
+    return AppPriorityEntry(
+        app_name=app_name,
+        priority=orch.get_app_priority(app_name),
+        models=orch._app_models.get(app_name, []),
+        gpu=body.gpu,
+    )
+
+
+# --- Frozen Baseline ---
+
+
+@router.get("/frozen", response_model=FrozenConfigResponse)
+async def get_frozen_config(request: Request) -> FrozenConfigResponse:
+    """Get the current frozen baseline configuration."""
+    orch = _get_orchestrator(request)
+    config = orch.get_frozen_config()
+    return FrozenConfigResponse(**config)
+
+
+@router.post("/frozen", response_model=FrozenConfigResponse)
+async def save_frozen_config(request: Request, body: FrozenConfigRequest) -> FrozenConfigResponse:
+    """Save frozen baseline configuration. These models auto-load on boot and after task release."""
+    orch = _get_orchestrator(request)
+    orch.save_frozen_config(body.model_dump())
+    return FrozenConfigResponse(**orch.get_frozen_config())
+
+
+@router.post("/frozen/restore", response_model=FrozenRestoreResponse)
+async def restore_frozen_baseline(request: Request) -> FrozenRestoreResponse:
+    """Immediately restore the frozen baseline — load all configured models now."""
+    orch = _get_orchestrator(request)
+    actions = await orch.restore_frozen_baseline()
+    return FrozenRestoreResponse(actions=actions)

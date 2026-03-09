@@ -1,0 +1,19 @@
+{
+  "gpu_0": [
+    "whisper-large-v3",
+    "qwen3:3b",
+    "fish-speech-s1"
+  ],
+  "gpu_1": [
+    "qwen3:14b",
+    "gui-actor-7b",
+    "starcoder2:3b"
+  ],
+  "ram": [
+    "qwen2.5vl:7b",
+    "deepseek-r1:14b",
+    "qwen2.5-coder:14b",
+    "nomic-embed-text",
+    "deberta-v3-router"
+  ]
+}
