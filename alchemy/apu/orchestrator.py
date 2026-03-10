@@ -142,6 +142,9 @@ class StackOrchestrator:
         for action in actions:
             logger.info("Boot: %s", action)
 
+        # Start periodic VRAM reconciliation (every 5 minutes)
+        self._reconcile_task = asyncio.create_task(self._periodic_reconcile())
+
         logger.info(
             "Stack orchestrator started (mode=%s, models=%d, frozen=%d)",
             self._mode,
@@ -150,8 +153,25 @@ class StackOrchestrator:
         )
 
     async def close(self) -> None:
+        if hasattr(self, "_reconcile_task") and self._reconcile_task:
+            self._reconcile_task.cancel()
+            try:
+                await self._reconcile_task
+            except asyncio.CancelledError:
+                pass
         await self._monitor.close()
         self._started = False
+
+    async def _periodic_reconcile(self) -> None:
+        """Background task: reconcile VRAM state every 5 minutes."""
+        while self._started:
+            await asyncio.sleep(300)
+            try:
+                actions = await self.reconcile_vram()
+                if actions:
+                    logger.info("Periodic reconcile: %d corrections", len(actions))
+            except Exception as e:
+                logger.warning("Periodic reconcile failed: %s", e)
 
     # --- Status ---
 
@@ -597,7 +617,7 @@ class StackOrchestrator:
             ollama_models = await self._ollama_list_running()
         except Exception as e:
             issues.append(f"Cannot reach Ollama: {e}")
-            ollama_models = set()
+            ollama_models = {}
 
         for card in self._registry.all_models():
             if card.current_location.is_gpu and card.backend == ModelBackend.OLLAMA:
@@ -640,10 +660,11 @@ class StackOrchestrator:
                     self._registry.update_location(card.name, ModelLocation.CPU_RAM, ModelTier.WARM)
                     actions.append(f"Corrected {card.name}: was GPU in registry, not in Ollama → WARM")
                 elif not on_gpu_in_registry and on_gpu_in_ollama:
-                    # Ollama has it loaded but registry doesn't know — update registry
-                    loc = ModelLocation.GPU_0  # default; could be refined with Ollama GPU info
+                    # Ollama has it loaded but registry doesn't know — infer GPU from preferred
+                    inferred_gpu = ollama_models.get(card.name)
+                    loc = ModelLocation.GPU_0 if (inferred_gpu or 0) == 0 else ModelLocation.GPU_1
                     self._registry.update_location(card.name, loc, card.default_tier)
-                    actions.append(f"Discovered {card.name}: loaded in Ollama but not in registry → GPU")
+                    actions.append(f"Discovered {card.name}: loaded in Ollama → GPU {inferred_gpu or 0}")
 
         if actions:
             for a in actions:
@@ -657,16 +678,25 @@ class StackOrchestrator:
         """Called during start() to sync registry with what Ollama actually has loaded."""
         return await self.reconcile_vram()
 
-    async def _ollama_list_running(self) -> set[str]:
-        """Query Ollama /api/ps for currently loaded models."""
+    async def _ollama_list_running(self) -> dict[str, int | None]:
+        """Query Ollama /api/ps for currently loaded models.
+
+        Returns dict of model_name -> gpu_index (None if unknown).
+        """
         import httpx
 
         async with httpx.AsyncClient(timeout=httpx.Timeout(10.0, connect=5.0)) as client:
             resp = await client.get(f"{self._ollama_host}/api/ps")
             resp.raise_for_status()
             data = resp.json()
-            return {m["name"].split(":")[0] if ":" not in m["name"] else m["name"]
-                    for m in data.get("models", [])}
+            result: dict[str, int | None] = {}
+            for m in data.get("models", []):
+                name = m["name"]
+                # Try to infer GPU from size_vram vs registry preferred_gpu
+                card = self._registry.get(name)
+                gpu = card.preferred_gpu if card else None
+                result[name] = gpu
+            return result
 
     # --- Internal Helpers ---
 
