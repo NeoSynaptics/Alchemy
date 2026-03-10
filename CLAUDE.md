@@ -1,5 +1,8 @@
 # Alchemy — Claude Session Guide
 
+## Start Here
+Read `TODO.md` in this repo root for your task list. Do tasks in order, commit and push after each one.
+
 ## What This Is
 Core AI engine. Voice pipeline, click automation, GPU orchestration, research browser, and more. Everything runs from a single server on port 8000.
 
