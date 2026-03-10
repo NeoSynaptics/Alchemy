@@ -94,6 +94,19 @@ async def lifespan(app: FastAPI):
         logger.info("APU started (%d models registered)",
                      len(model_registry.all_models()))
 
+        # Periodic VRAM reconciliation (every 60s)
+        async def _periodic_reconcile():
+            while True:
+                await asyncio.sleep(60)
+                try:
+                    actions = await orchestrator.reconcile_vram()
+                    if actions:
+                        logger.info("VRAM reconciliation: %s", actions)
+                except Exception as e:
+                    logger.debug("VRAM reconciliation skipped: %s", e)
+
+        app.state._reconcile_task = asyncio.create_task(_periodic_reconcile())
+
         # Validate model contracts — apps declare what they need, core checks availability
         from alchemy.contracts import validate_contracts
         reports = validate_contracts(model_registry)
@@ -396,6 +409,10 @@ async def lifespan(app: FastAPI):
         logger.info("AlchemyVoice stopped")
     if getattr(app.state, "voice_ollama", None):
         await app.state.voice_ollama.close()
+
+    reconcile_task = getattr(app.state, "_reconcile_task", None)
+    if reconcile_task:
+        reconcile_task.cancel()
 
     if getattr(app.state, "orchestrator", None):
         await app.state.orchestrator.close()

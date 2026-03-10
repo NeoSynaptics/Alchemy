@@ -611,3 +611,21 @@ async def profile_model(request: Request, model_name: str) -> ModelProfileRespon
         recommended_vram_mb=profile.recommended_vram_mb,
         profiled_at=profile.profiled_at,
     )
+
+
+# --- Health check ---
+
+
+@router.get("/health")
+async def apu_health(request: Request):
+    """Run APU health check: VRAM drift, Ollama sync, model state."""
+    orch = _get_orchestrator(request)
+    return await orch.health_check()
+
+
+@router.post("/reconcile")
+async def apu_reconcile(request: Request):
+    """Manually trigger VRAM reconciliation."""
+    orch = _get_orchestrator(request)
+    actions = await orch.reconcile_vram()
+    return {"actions": actions, "count": len(actions)}

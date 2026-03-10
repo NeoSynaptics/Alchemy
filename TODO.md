@@ -182,3 +182,20 @@ After Tasks 5-7 are solid:
 **Files to modify:**
 - `alchemy/server.py` â€” add background tasks in lifespan
 - APU API routes â€” add health and events endpoints
+
+---
+
+## Completed (from previous codebase review)
+
+### [DONE] Click API tests
+- `tests/test_click_api.py` — 11 tests: auto-routing, flow, browser, functions, contract guard
+
+### [DONE] Desktop API tests
+- `tests/test_desktop/test_desktop_api.py` — 15 tests: task submit, polling, summon/dismiss, mode, 503s, contract guard
+
+### [DONE] Gate API tests
+- `tests/test_gate/test_gate_api.py` — 10 tests: accept/deny/other, fail-open, timeout, validation, contract guard
+
+### [DONE] Legacy playwright cleanup
+- Removed `alchemy/playwright/` and `tests/test_playwright/` — no production imports
+- Cleaned up `.importlinter` reference

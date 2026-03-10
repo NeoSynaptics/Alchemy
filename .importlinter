@@ -41,7 +41,6 @@ forbidden_modules =
     alchemy.router
 
     alchemy.desktop
-    alchemy.playwright
     alchemy.voice
     alchemy.server
 
