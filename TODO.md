@@ -185,7 +185,7 @@ After Tasks 5-7 are solid:
 
 ---
 
-## Task 9: APU Concurrency Fixes — Review Findings
+## [DONE] Task 9: APU Concurrency Fixes — Review Findings
 
 Code review found bugs in the Tasks 5-8 implementation. Fix these before moving on.
 

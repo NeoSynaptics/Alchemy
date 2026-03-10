@@ -293,17 +293,31 @@ class StackOrchestrator:
             if card is None:
                 return False
 
-            gpu_idx = card.current_location.gpu_index
-            if card.current_location.is_gpu:
-                await self._backend_unload(card)
+            if name in self._pending_operations:
+                self._event_log.record("error", model_name=name, success=False, error="Model busy")
+                return False
+            self._pending_operations.add(name)
 
-            self._registry.update_location(name, ModelLocation.DISK, ModelTier.COLD)
-            self._event_log.record(
-                "unload", model_name=name, gpu_index=gpu_idx,
-                vram_expected_mb=card.vram_mb,
-                duration_ms=(time.monotonic() - t0) * 1000,
-            )
-            return True
+            try:
+                gpu_idx = card.current_location.gpu_index
+                if card.current_location.is_gpu:
+                    ok = await self._backend_unload(card)
+                    if not ok:
+                        self._event_log.record(
+                            "error", model_name=name, success=False,
+                            error="Backend unload failed, keeping GPU state",
+                        )
+                        return False
+
+                self._registry.update_location(name, ModelLocation.DISK, ModelTier.COLD)
+                self._event_log.record(
+                    "unload", model_name=name, gpu_index=gpu_idx,
+                    vram_expected_mb=card.vram_mb,
+                    duration_ms=(time.monotonic() - t0) * 1000,
+                )
+                return True
+            finally:
+                self._pending_operations.discard(name)
 
     async def promote(self, name: str, gpu: int | None = None) -> LoadResult:
         """Promote a model from RAM/disk → VRAM."""
@@ -317,17 +331,31 @@ class StackOrchestrator:
             if card is None:
                 return False
 
-            gpu_idx = card.current_location.gpu_index
-            if card.current_location.is_gpu:
-                await self._backend_unload(card)
+            if name in self._pending_operations:
+                self._event_log.record("error", model_name=name, success=False, error="Model busy")
+                return False
+            self._pending_operations.add(name)
 
-            self._registry.update_location(name, ModelLocation.CPU_RAM, ModelTier.WARM)
-            self._event_log.record(
-                "demote", model_name=name, gpu_index=gpu_idx,
-                vram_expected_mb=card.vram_mb,
-                duration_ms=(time.monotonic() - t0) * 1000,
-            )
-            return True
+            try:
+                gpu_idx = card.current_location.gpu_index
+                if card.current_location.is_gpu:
+                    ok = await self._backend_unload(card)
+                    if not ok:
+                        self._event_log.record(
+                            "error", model_name=name, success=False,
+                            error="Backend unload failed, keeping GPU state",
+                        )
+                        return False
+
+                self._registry.update_location(name, ModelLocation.CPU_RAM, ModelTier.WARM)
+                self._event_log.record(
+                    "demote", model_name=name, gpu_index=gpu_idx,
+                    vram_expected_mb=card.vram_mb,
+                    duration_ms=(time.monotonic() - t0) * 1000,
+                )
+                return True
+            finally:
+                self._pending_operations.discard(name)
 
     async def evict_to_disk(self, name: str) -> bool:
         """Move model from VRAM or RAM → disk (cold storage)."""
