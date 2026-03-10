@@ -270,10 +270,12 @@ async def test_unload_failure_keeps_gpu_state():
     # Make unload fail
     orch._backend_unload = AsyncMock(return_value=False)
 
-    # Demote should still proceed (current behavior), but the event log captures the failure
-    await orch.demote(card.name)
+    # Demote should fail and keep GPU state
+    result = await orch.demote(card.name)
+    assert result is False, "Demote should return False when backend unload fails"
+    assert card.current_location.is_gpu, "Model should stay on GPU after unload failure"
     events = orch._event_log.filter(event_type="error")
-    # The _backend_unload failure is now logged
+    assert len(events) >= 1, "Error event should be logged for unload failure"
     await assert_apu_invariants(orch)
 
 
@@ -331,3 +333,55 @@ async def test_event_log_captures_operations():
     assert "demote" in types
     assert "unload" in types
     assert "reconcile" in types
+
+
+@pytest.mark.asyncio
+async def test_concurrent_ensure_loaded_same_model():
+    """Two concurrent ensure_loaded on SAME model — second gets 'busy' error."""
+    card = _make_card("same-model", vram_mb=1000, gpu=0)
+    orch = await _make_orch([card])
+
+    # Simulate first load in progress
+    orch._pending_operations.add("same-model")
+
+    # Second call should get rejected
+    result = await orch._load_model_unlocked("same-model")
+    assert not result.success
+    assert "currently being loaded" in result.error
+
+    # Clean up
+    orch._pending_operations.discard("same-model")
+    await assert_apu_invariants(orch)
+
+
+@pytest.mark.asyncio
+async def test_app_activate_during_restore_frozen_baseline():
+    """app_activate during restore_frozen_baseline — no conflict."""
+    baseline_card = _make_card("baseline-model", vram_mb=1000, gpu=0, tier=ModelTier.RESIDENT)
+    app_card = _make_card("app-model", vram_mb=1000, gpu=1)
+    orch = await _make_orch([baseline_card, app_card])
+
+    # Set frozen baseline
+    orch._frozen_config["gpu_0"] = ["baseline-model"]
+
+    results = await asyncio.gather(
+        orch.restore_frozen_baseline(),
+        orch.app_activate("test-app", ["app-model"]),
+    )
+    await assert_apu_invariants(orch)
+
+
+@pytest.mark.asyncio
+async def test_unload_failure_keeps_gpu_state_unload_method():
+    """unload_model with backend failure — model stays on GPU."""
+    card = _make_card("sticky-unload", vram_mb=1000, gpu=0)
+    orch = await _make_orch([card])
+    await orch.load_model(card.name, gpu=0)
+
+    # Make unload fail
+    orch._backend_unload = AsyncMock(return_value=False)
+
+    result = await orch.unload_model(card.name)
+    assert result is False, "unload_model should return False when backend fails"
+    assert card.current_location.is_gpu, "Model should stay on GPU after unload failure"
+    await assert_apu_invariants(orch)
