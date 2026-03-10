@@ -1,5 +1,28 @@
 # Alchemy — Claude Session Guide
 
+## Task Queue System
+
+Tasks are managed in the **BaratzaMemory** repo at `C:\Users\monic\BaratzaMemory\tasks.json`. This is the shared queue for BOTH repos.
+
+### When the user says "complete next task":
+
+1. `cd C:\Users\monic\BaratzaMemory && git pull origin master`
+2. Read `tasks.json`
+3. Find first task where: `status == "pending"` AND all `depends_on` are `"done"` AND `repo == "Alchemy_explore"`
+4. Update the task: `status = "in_progress"`, `owner = "alchemy-window"`, `started_at = now()`
+5. Commit: `git add tasks.json && git commit -m "Claim task {id}: {title}"` and push
+6. If push fails: `git pull --no-edit`, re-read, pick a different pending task
+7. Switch to `C:\Users\monic\Documents\Alchemy_explore` and do the work
+8. When done: go back to BaratzaMemory, update task `status = "done"`, `commit_hash`, `completed_at`, commit and push
+
+### Rules
+- **NEVER take a task that is `"in_progress"`**
+- **NEVER take a task whose dependencies aren't all `"done"`**
+- **No questions** — execute the task description directly
+- If blocked, set status to `"blocked"` with error in description, pick next task
+
+---
+
 ## What This Is
 Core AI engine. Voice pipeline, click automation, GPU orchestration, research browser, and more. Everything runs from a single server on port 8000.
 
