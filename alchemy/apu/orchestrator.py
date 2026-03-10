@@ -10,6 +10,7 @@ Core philosophy: VRAM flows like water.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from dataclasses import dataclass, field
@@ -58,6 +59,7 @@ class StackOrchestrator:
         self._ollama_host = ollama_host.rstrip("/")
         self._mode = "auto"
         self._started = False
+        self._state_lock = asyncio.Lock()
 
         # Track which apps have activated models
         self._app_models: dict[str, list[str]] = {}
@@ -126,9 +128,14 @@ class StackOrchestrator:
     # --- Lifecycle ---
 
     async def start(self) -> None:
-        """Initialize monitor and restore frozen baseline models."""
+        """Initialize monitor, reconcile with Ollama, and restore frozen baseline."""
         await self._monitor.start()
         self._started = True
+
+        # Reconcile registry with what Ollama actually has loaded
+        reconcile_actions = await self.reconcile_on_startup()
+        for action in reconcile_actions:
+            logger.info("Startup reconcile: %s", action)
 
         # Restore frozen baseline (replaces old hardcoded resident loading)
         actions = await self.restore_frozen_baseline()
@@ -168,6 +175,11 @@ class StackOrchestrator:
 
     async def load_model(self, name: str, gpu: int | None = None) -> LoadResult:
         """Load a model to VRAM. If gpu is None, use preferred_gpu or auto-place."""
+        async with self._state_lock:
+            return await self._load_model_unlocked(name, gpu)
+
+    async def _load_model_unlocked(self, name: str, gpu: int | None = None) -> LoadResult:
+        """Inner load_model without lock (for internal callers already holding lock)."""
         card = self._registry.get(name)
         if card is None:
             return LoadResult(success=False, error=f"Model '{name}' not in registry")
@@ -197,6 +209,17 @@ class StackOrchestrator:
         # Perform the actual load
         ok = await self._backend_load(card, target_gpu)
         if not ok:
+            # Rollback: re-promote evicted models since we failed to use the space
+            for evicted_name in evicted:
+                evicted_card = self._registry.get(evicted_name)
+                if evicted_card:
+                    reload_ok = await self._backend_load(evicted_card, target_gpu)
+                    if reload_ok:
+                        loc = ModelLocation.GPU_0 if target_gpu == 0 else ModelLocation.GPU_1
+                        self._registry.update_location(evicted_name, loc, evicted_card.default_tier)
+                        logger.info("Rollback: restored %s to GPU %d", evicted_name, target_gpu)
+                    else:
+                        logger.warning("Rollback: failed to restore %s", evicted_name)
             return LoadResult(success=False, error=f"Backend load failed for {name}")
 
         location = ModelLocation.GPU_0 if target_gpu == 0 else ModelLocation.GPU_1
@@ -208,15 +231,16 @@ class StackOrchestrator:
 
     async def unload_model(self, name: str) -> bool:
         """Unload a model from VRAM to disk (cold)."""
-        card = self._registry.get(name)
-        if card is None:
-            return False
+        async with self._state_lock:
+            card = self._registry.get(name)
+            if card is None:
+                return False
 
-        if card.current_location.is_gpu:
-            await self._backend_unload(card)
+            if card.current_location.is_gpu:
+                await self._backend_unload(card)
 
-        self._registry.update_location(name, ModelLocation.DISK, ModelTier.COLD)
-        return True
+            self._registry.update_location(name, ModelLocation.DISK, ModelTier.COLD)
+            return True
 
     async def promote(self, name: str, gpu: int | None = None) -> LoadResult:
         """Promote a model from RAM/disk → VRAM."""
@@ -224,17 +248,16 @@ class StackOrchestrator:
 
     async def demote(self, name: str) -> bool:
         """Demote a model from VRAM → RAM (stays warm, not cold)."""
-        card = self._registry.get(name)
-        if card is None:
-            return False
+        async with self._state_lock:
+            card = self._registry.get(name)
+            if card is None:
+                return False
 
-        # All models can be demoted — core models reload fast from RAM
+            if card.current_location.is_gpu:
+                await self._backend_unload(card)
 
-        if card.current_location.is_gpu:
-            await self._backend_unload(card)
-
-        self._registry.update_location(name, ModelLocation.CPU_RAM, ModelTier.WARM)
-        return True
+            self._registry.update_location(name, ModelLocation.CPU_RAM, ModelTier.WARM)
+            return True
 
     async def evict_to_disk(self, name: str) -> bool:
         """Move model from VRAM or RAM → disk (cold storage)."""
@@ -252,35 +275,35 @@ class StackOrchestrator:
         5. Still not enough? → try other GPU
         6. No GPU works? → fail
         """
-        card = self._registry.get(name)
-        if card is None:
-            return LoadResult(success=False, error=f"Model '{name}' not in registry")
+        async with self._state_lock:
+            card = self._registry.get(name)
+            if card is None:
+                return LoadResult(success=False, error=f"Model '{name}' not in registry")
 
-        if card.current_location.is_gpu:
-            card.touch()
-            return LoadResult(success=True, location=card.current_location)
+            if card.current_location.is_gpu:
+                card.touch()
+                return LoadResult(success=True, location=card.current_location)
 
-        # Try preferred GPU first, then the other
-        gpus_to_try = []
-        if card.preferred_gpu is not None:
-            gpus_to_try.append(card.preferred_gpu)
-            other = 1 - card.preferred_gpu
-            gpus_to_try.append(other)
-        else:
-            snap = await self._monitor.snapshot()
-            # Try the GPU with more free VRAM first
-            sorted_gpus = sorted(snap.gpus, key=lambda g: g.free_vram_mb, reverse=True)
-            gpus_to_try = [g.index for g in sorted_gpus]
+            # Try preferred GPU first, then the other
+            gpus_to_try = []
+            if card.preferred_gpu is not None:
+                gpus_to_try.append(card.preferred_gpu)
+                other = 1 - card.preferred_gpu
+                gpus_to_try.append(other)
+            else:
+                snap = await self._monitor.snapshot()
+                sorted_gpus = sorted(snap.gpus, key=lambda g: g.free_vram_mb, reverse=True)
+                gpus_to_try = [g.index for g in sorted_gpus]
 
-        for target in gpus_to_try:
-            result = await self.load_model(name, gpu=target)
-            if result.success:
-                return result
+            for target in gpus_to_try:
+                result = await self._load_model_unlocked(name, gpu=target)
+                if result.success:
+                    return result
 
-        return LoadResult(
-            success=False,
-            error=f"Cannot load {name} ({card.vram_mb}MB) — no GPU has enough space",
-        )
+            return LoadResult(
+                success=False,
+                error=f"Cannot load {name} ({card.vram_mb}MB) — no GPU has enough space",
+            )
 
     async def rebalance(self) -> list[str]:
         """Re-evaluate all placements. Move misplaced models to preferred GPUs."""
@@ -512,8 +535,6 @@ class StackOrchestrator:
         skip = exclude or set()
 
         # GPU models — load all in parallel for speed
-        import asyncio
-
         async def _load_one(model_name: str, gpu_index: int) -> str:
             result = await self.load_model(model_name, gpu=gpu_index)
             if result.success:
@@ -552,6 +573,100 @@ class StackOrchestrator:
             actions.append(f"Warmed {model_name} → CPU RAM")
 
         return actions
+
+    # --- Health & Reconciliation ---
+
+    async def health_check(self) -> dict:
+        """Run a full health check: VRAM drift, Ollama sync, and model state."""
+        issues: list[str] = []
+        snap = await self._monitor.snapshot()
+
+        # Check VRAM drift: compare registry totals vs nvidia-smi actual usage
+        for gpu in snap.gpus:
+            registry_used = self._registry.total_vram_on_gpu(gpu.index)
+            actual_used = gpu.total_vram_mb - gpu.free_vram_mb
+            drift = abs(actual_used - registry_used)
+            if drift > 500:  # >500MB drift is suspicious
+                issues.append(
+                    f"GPU {gpu.index} VRAM drift: registry={registry_used}MB, "
+                    f"actual={actual_used}MB (delta={drift}MB)"
+                )
+
+        # Check for models the registry thinks are on GPU but Ollama doesn't have loaded
+        try:
+            ollama_models = await self._ollama_list_running()
+        except Exception as e:
+            issues.append(f"Cannot reach Ollama: {e}")
+            ollama_models = set()
+
+        for card in self._registry.all_models():
+            if card.current_location.is_gpu and card.backend == ModelBackend.OLLAMA:
+                if card.name not in ollama_models:
+                    issues.append(f"{card.name}: registry says GPU but Ollama doesn't have it loaded")
+
+        return {
+            "healthy": len(issues) == 0,
+            "issues": issues,
+            "gpu_count": len(snap.gpus),
+            "models_on_gpu": sum(
+                1 for c in self._registry.all_models() if c.current_location.is_gpu
+            ),
+            "models_in_ram": sum(
+                1 for c in self._registry.all_models()
+                if c.current_location == ModelLocation.CPU_RAM
+            ),
+        }
+
+    async def reconcile_vram(self) -> list[str]:
+        """Reconcile registry state with actual Ollama state. Fix drift."""
+        actions: list[str] = []
+
+        try:
+            ollama_models = await self._ollama_list_running()
+        except Exception as e:
+            logger.warning("VRAM reconciliation skipped — cannot reach Ollama: %s", e)
+            return [f"Skipped: {e}"]
+
+        async with self._state_lock:
+            for card in self._registry.all_models():
+                if card.backend != ModelBackend.OLLAMA:
+                    continue
+
+                on_gpu_in_registry = card.current_location.is_gpu
+                on_gpu_in_ollama = card.name in ollama_models
+
+                if on_gpu_in_registry and not on_gpu_in_ollama:
+                    # Registry thinks it's loaded but Ollama doesn't — mark as warm
+                    self._registry.update_location(card.name, ModelLocation.CPU_RAM, ModelTier.WARM)
+                    actions.append(f"Corrected {card.name}: was GPU in registry, not in Ollama → WARM")
+                elif not on_gpu_in_registry and on_gpu_in_ollama:
+                    # Ollama has it loaded but registry doesn't know — update registry
+                    loc = ModelLocation.GPU_0  # default; could be refined with Ollama GPU info
+                    self._registry.update_location(card.name, loc, card.default_tier)
+                    actions.append(f"Discovered {card.name}: loaded in Ollama but not in registry → GPU")
+
+        if actions:
+            for a in actions:
+                logger.info("Reconcile: %s", a)
+        else:
+            logger.debug("VRAM reconciliation: no drift detected")
+
+        return actions
+
+    async def reconcile_on_startup(self) -> list[str]:
+        """Called during start() to sync registry with what Ollama actually has loaded."""
+        return await self.reconcile_vram()
+
+    async def _ollama_list_running(self) -> set[str]:
+        """Query Ollama /api/ps for currently loaded models."""
+        import httpx
+
+        async with httpx.AsyncClient(timeout=httpx.Timeout(10.0, connect=5.0)) as client:
+            resp = await client.get(f"{self._ollama_host}/api/ps")
+            resp.raise_for_status()
+            data = resp.json()
+            return {m["name"].split(":")[0] if ":" not in m["name"] else m["name"]
+                    for m in data.get("models", [])}
 
     # --- Internal Helpers ---
 
