@@ -241,6 +241,103 @@ Concurrency test #4 from the Task 7 spec was skipped. Add it.
 
 ---
 
+## Task 10: Portability Pass — No Hardcoded Paths, Zip-and-Ship Ready
+
+Alchemy must be portable. Right now it's welded to one machine. Fix that.
+
+**Critical hardcoded paths to remove:**
+
+1. `alchemy/server.py` line 498: `sys.path.insert(0, r'C:\Users\monic\BaratzaMemory\src')` — replace with `settings.neosy.src_path` (already have `NeosySettings` in config)
+2. `config/settings.py` line 264: `storage_path: str = "D:/AlchemyMemory"` — change default to `./data/memory` (relative)
+3. `config/settings.py` line 269: `chroma_path: str = "D:/AlchemyMemory/chroma"` — derive from `storage_path`
+4. `scripts/migrate_memory_v2.py` line 20: `DB_PATH = Path("D:/AlchemyMemory/timeline.db")` — use settings
+
+**Settings / env var cleanup:**
+
+5. Add `neosy_src_path: str = ""` to `NeosySettings` — empty = NEOSY not mounted. Set via `ALCHEMY_NEOSY_SRC_PATH` env var.
+6. Create `.env.example` at repo root with ALL configurable settings documented:
+   - Ports (8000, 11434, 5432, 6333, etc.)
+   - Paths (storage, NEOSY src, chroma)
+   - GPU settings (device, mode)
+   - Credentials (pg_user, pg_password)
+   - Model names (all the Qwen/Ollama defaults)
+7. Ensure `config/settings.py` reads from env vars for all paths and credentials (most already do via pydantic-settings, verify)
+
+**GPU portability:**
+
+8. `ModelLocation` enum in `alchemy/apu/registry.py` hardcodes `GPU_0` and `GPU_1` — add a comment noting the 2-GPU limit and create a helper `gpu_location(index: int) -> ModelLocation` so the limit is in one place if we expand later. Don't over-engineer — just document the constraint.
+9. `config/settings.py` line 363: `click_omniparser_device: str = "cuda:0"` — already configurable, just ensure it's in `.env.example`
+
+**Files to modify:**
+- `alchemy/server.py` — remove hardcoded BaratzaMemory path, use settings
+- `config/settings.py` — fix default paths to be relative, add neosy_src_path
+- `scripts/migrate_memory_v2.py` — use settings instead of hardcoded path
+- Create `.env.example` (new)
+
+**Commit when done.**
+
+---
+
+## Task 11: Alchemy Dashboard — Connect the Existing UI
+
+There's already a full React UI in `ui/` (Vite + React + TypeScript + shadcn/ui) with Dashboard, Memory, Settings pages and a Vite proxy to the API. There's also a standalone `dashboard/apu_staging.html`. But none of it is wired up for production use.
+
+**Goal:** Make `localhost:8000` serve the dashboard. One command (`make server`) gives you both API and UI.
+
+**Step 1: Build and serve the React UI from FastAPI**
+
+1. Add a build script: `cd ui && npm run build` outputs to `ui/dist/`
+2. Mount the built UI in `server.py`:
+   ```python
+   # Serve React UI (production build)
+   _ui_dist = Path(__file__).parent.parent / "ui" / "dist"
+   if _ui_dist.is_dir():
+       app.mount("/", StaticFiles(directory=str(_ui_dist), html=True), name="ui")
+   ```
+3. API routes at `/v1/*` take priority (they're registered before the catch-all mount)
+4. For development, keep using `npm run dev` on port 5173 with proxy — this mount is for production
+
+**Step 2: Verify the Dashboard page works with real API data**
+
+The `ui/src/pages/Dashboard.tsx` already exists. Verify it calls the right endpoints:
+- `GET /v1/apu/status` — GPU/model status
+- `GET /v1/apu/events` — recent events (new from Task 5)
+- `GET /v1/modules` — module discovery
+- `GET /v1/voice/status` — voice pipeline
+
+If the Dashboard page is a stub/placeholder, flesh it out with:
+- APU status cards (GPU utilization, VRAM, temperature)
+- Model placement table (what's on which GPU, tier, last used)
+- Recent events feed (from event log)
+- Module health indicators
+
+**Step 3: Add to Makefile**
+
+```makefile
+ui-build:
+	cd ui && npm install && npm run build
+
+server: ui-build
+	uvicorn alchemy.server:app --port 8000
+
+dev:
+	cd ui && npm run dev
+```
+
+**Files to modify:**
+- `alchemy/server.py` — add production UI mount
+- `ui/src/pages/Dashboard.tsx` — verify/fix API integration
+- `Makefile` — add ui-build target
+
+**Do NOT:**
+- Rewrite the UI framework — it's React+Vite, keep it
+- Add Jinja2 — the React SPA approach is already set up
+- Add new npm dependencies unless absolutely necessary
+
+**Commit when done.**
+
+---
+
 ## Completed (from previous codebase review)
 
 ### [DONE] Click API tests
