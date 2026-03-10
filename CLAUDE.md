@@ -1,25 +1,58 @@
 # Alchemy — Claude Session Guide
 
-## Task Queue System
+## MANDATORY: Read This First
 
-Tasks are managed in the **BaratzaMemory** repo at `C:\Users\monic\BaratzaMemory\tasks.json`. This is the shared queue for BOTH repos.
+**STOP. Before doing ANYTHING the user asks, you MUST follow the Task Queue System below.**
 
-### When the user says "complete next task":
+When the user says "complete next task", "take a task", "do work", or ANY variation:
 
-1. `cd C:\Users\monic\BaratzaMemory && git pull origin master`
-2. Read `tasks.json`
-3. Find first task where: `status == "pending"` AND all `depends_on` are `"done"` AND `repo == "Alchemy_explore"`
-4. Update the task: `status = "in_progress"`, `owner = "alchemy-window"`, `started_at = now()`
-5. Commit: `git add tasks.json && git commit -m "Claim task {id}: {title}"` and push
-6. If push fails: `git pull --no-edit`, re-read, pick a different pending task
-7. Switch to `C:\Users\monic\Documents\Alchemy_explore` and do the work
-8. When done: go back to BaratzaMemory, update task `status = "done"`, `commit_hash`, `completed_at`, commit and push
+1. **FIRST** run: `cd C:\Users\monic\BaratzaMemory && git pull origin master`
+2. **THEN** read `C:\Users\monic\BaratzaMemory\tasks.json`
+3. **THEN** follow the protocol below — no exceptions
 
-### Rules
-- **NEVER take a task that is `"in_progress"`**
-- **NEVER take a task whose dependencies aren't all `"done"`**
-- **No questions** — execute the task description directly
-- If blocked, set status to `"blocked"` with error in description, pick next task
+Do NOT start coding, do NOT ask questions, do NOT improvise. The task queue is the single source of truth.
+
+## Task Queue Protocol
+
+The shared task queue lives in the **BaratzaMemory** repo: `C:\Users\monic\BaratzaMemory\tasks.json`
+
+### Step-by-step (follow exactly):
+
+```
+STEP 1: Pull latest
+  cd C:\Users\monic\BaratzaMemory
+  git pull origin master
+
+STEP 2: Read tasks.json, find YOUR next task
+  - Status must be "pending"
+  - ALL depends_on tasks must have status "done"
+  - repo must be "Alchemy_explore" (you are an Alchemy window)
+  - If NO tasks available, tell user "No tasks available — dependencies unmet"
+
+STEP 3: Claim the task (THIS IS YOUR LOCK)
+  - Edit tasks.json: set status="in_progress", owner="alchemy-window-N", started_at=ISO timestamp
+  - cd C:\Users\monic\BaratzaMemory
+  - git add tasks.json && git commit -m "Claim task {id}: {title}" && git push origin master
+  - If push FAILS: git pull --no-edit, re-read tasks.json, pick DIFFERENT task
+
+STEP 4: Do the work
+  - Switch to: cd C:\Users\monic\Documents\Alchemy_explore
+  - Read the task "description" field — it tells you exactly what to do
+  - Execute. No questions. If blocked, set status="blocked", pick next.
+
+STEP 5: Mark done
+  - cd C:\Users\monic\BaratzaMemory
+  - git pull origin master
+  - Edit tasks.json: status="done", completed_at=ISO, commit_hash=your commit
+  - git add tasks.json && git commit -m "Complete task {id}: {title}" && git push
+```
+
+### Rules (STRICT)
+- **NEVER take a task with status "in_progress"**
+- **NEVER take a task whose depends_on aren't ALL "done"**
+- **NEVER skip the claim step** — commit+push BEFORE starting work
+- **NEVER ask questions** — task description has everything
+- **Always git pull before reading tasks.json**
 
 ---
 
