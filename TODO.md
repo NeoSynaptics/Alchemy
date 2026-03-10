@@ -6,43 +6,38 @@ Read this file when you start. Do tasks in order, top to bottom. Skip tasks mark
 
 ---
 
-## Task 1: Register NEOSY models in gpu_fleet.yaml
-- Edit `config/gpu_fleet.yaml`
-- BGE-M3 is already there as warm
-- Add siglip2: display_name "SigLIP 2 Image Embedding", backend custom, vram_mb 1500, ram_mb 1500, disk_mb 1500, preferred_gpu 0, default_tier warm, capabilities [embedding, vision]
-- Add clap: display_name "CLAP Audio Embedding", backend custom, vram_mb 800, ram_mb 800, disk_mb 800, preferred_gpu 0, default_tier warm, capabilities [embedding, audio]
+## [DONE] Task 1: Register NEOSY models in gpu_fleet.yaml
+## [DONE] Task 2: Add NEOSY settings to Alchemy config
+## [DONE] Task 3: Mount NEOSY as sub-app in server.py
+## [DONE] Task 4: APU stabilization and self-healing
 
-## Task 2: Add NEOSY settings to Alchemy config
-- Edit `config/settings.py`
-- Add NeosySettings nested BaseModel class with fields:
-  - enabled: bool = True
-  - pg_host: str = "localhost"
-  - pg_port: int = 5432
-  - pg_user: str = "baratza"
-  - pg_password: str = "baratza_dev"
-  - pg_database: str = "baratza_knowledge"
-  - qdrant_host: str = "localhost"
-  - qdrant_port: int = 6333
-- Add `neosy: NeosySettings = NeosySettings()` to the main Settings class
+---
 
-## Task 3: Mount NEOSY as sub-app in server.py
-- Edit `alchemy/server.py`
-- In lifespan, after the AlchemyMemory block (~line 327):
-  - Create asyncpg pool (host=localhost, port=5432, user=baratza, password=baratza_dev, db=baratza_knowledge)
-  - Create QdrantClient(localhost:6333)
-  - Store as app.state.neosy_pool and app.state.neosy_qdrant
-- Mount NEOSY routes at /v1/neosy/* prefix:
-  - Add `sys.path.insert(0, r'C:\Users\monic\BaratzaMemory\src')`
-  - Import from baratza.api.routes
-- Add cleanup in shutdown
-- Add neosy_enabled to /health endpoint
+## Suggested Next Tasks (from codebase review 2026-03-10)
 
-## Task 4: APU stabilization and self-healing
-- Audit `alchemy/apu/orchestrator.py` (~761 lines)
-- Identify: crash points, VRAM tracking drift, race conditions, recovery gaps
-- Fix: add asyncio.Lock for model state transitions
-- Fix: periodic VRAM reconciliation vs nvidia-smi
-- Fix: rollback on failed model loads
-- Fix: startup reconciliation with Ollama actual state
-- Add health_check() method
-- Create `alchemy/apu/CHANGELOG.md` documenting what was broken and fixed
+Codebase health: **8.5/10** — 25,973 lines, 90 test files, 18 modules with manifests, 1020+ tests.
+No TODO/FIXME/HACK comments. API error handling is solid. Main gap = missing tests for 3 automation APIs.
+
+### Task 5 [HIGH]: Add tests for `/v1/click/*` API endpoints
+- Create `tests/test_click_api.py`
+- Cover: `/v1/click/call`, `/v1/click/flow`, `/v1/click/browser`, `/v1/click/functions`
+- Mock Ollama + Playwright, test contract guard, error paths, streaming
+- Reference existing test patterns in `tests/test_apu/`
+
+### Task 6 [HIGH]: Add tests for `/v1/desktop/*` API endpoints
+- Create `tests/test_desktop_api.py`
+- Cover: `/v1/desktop/task`, `/v1/desktop/summon`, `/v1/desktop/dismiss`, `/v1/desktop/mode`
+- Mock SendInput + screenshot capture, test mode switching
+
+### Task 7 [MEDIUM]: Add tests for `/gate/review` API endpoint
+- Create `tests/test_gate_api.py`
+- Cover: gate review with approve/deny/timeout, fail-open behavior
+
+### Task 8 [LOW]: Wire APU health_check into /health and add periodic reconciliation
+- Expose `GET /v1/apu/health` calling `orchestrator.health_check()`
+- Add optional periodic VRAM reconciliation (e.g. every 60s via background task)
+- This builds on the health_check() + reconcile_vram() added in Task 4
+
+### Task 9 [LOW]: Clean up legacy `alchemy/playwright/` module
+- Investigate if anything imports from it (vs `alchemy/core/` which has the active Playwright agent)
+- If unused, remove or archive
