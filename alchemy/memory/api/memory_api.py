@@ -345,21 +345,42 @@ async def import_progress(request: Request) -> dict:
     mem = _get_memory(request)
     return {
         "import": mem.importer.progress.to_dict(),
-        "vlm": mem.vlm_worker.progress.to_dict(),
+        "vlm_gpu": mem.vlm_worker.progress.to_dict(),
+        "vlm_cpu": mem.vlm_worker_cpu.progress.to_dict(),
     }
 
 
 @router.post("/import/vlm/start")
 async def vlm_worker_start(request: Request) -> dict:
-    """Manually start the VLM background classification worker."""
+    """Start VLM classification workers. Pauses screenshot capture to avoid GPU contention."""
     mem = _get_memory(request)
+    # Pause screenshot capture so VLM worker gets full GPU
+    await mem.capture.stop()
     mem.vlm_worker.start()
-    return {"status": "started", "pending": mem.vlm_worker.progress.total_pending}
+    workers = ["gpu"]
+    # CPU worker opt-in (only useful with a second Ollama instance)
+    if request.query_params.get("cpu") == "true":
+        mem.vlm_worker_cpu.start()
+        workers.append("cpu")
+    return {
+        "status": "started",
+        "pending": mem.vlm_worker.progress.total_pending,
+        "workers": workers,
+        "capture_paused": True,
+    }
 
 
 @router.post("/import/vlm/stop")
 async def vlm_worker_stop(request: Request) -> dict:
-    """Stop the VLM background classification worker."""
+    """Stop VLM workers and resume screenshot capture."""
     mem = _get_memory(request)
     mem.vlm_worker.stop()
-    return {"status": "stopped", "processed": mem.vlm_worker.progress.processed}
+    mem.vlm_worker_cpu.stop()
+    # Resume screenshot capture
+    if mem.capture._controller is not None:
+        await mem.capture.start()
+    return {
+        "status": "stopped",
+        "gpu_processed": mem.vlm_worker.progress.processed,
+        "cpu_processed": mem.vlm_worker_cpu.progress.processed,
+    }

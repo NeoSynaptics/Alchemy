@@ -57,7 +57,8 @@ class MemorySystem:
 
         # Timeline (LTM)
         self._timeline = TimelineStore(storage / settings.ltm_db)
-        self._vectors = VectorStore(settings.chroma_path, settings.chroma_collection)
+        # sqlite-vec uses the same DB file as timeline
+        self._vectors = VectorStore(str(storage / settings.ltm_db))
         self._embedder = EmbeddingClient(ollama, settings.embedder_model)
         self._summarizer = ScreenshotSummarizer(ollama, settings.summarizer_model)
         self._searcher = TimelineSearcher(self._timeline, self._vectors, self._embedder)
@@ -89,13 +90,29 @@ class MemorySystem:
             storage_path=storage,
             screenshot_quality=settings.screenshot_quality,
         )
+        # GPU worker — newest-first, no delay
         self._vlm_worker = VLMWorker(
             timeline=self._timeline,
             vectors=self._vectors,
             summarizer=self._summarizer,
             embedder=self._embedder,
             batch_size=settings.vlm_worker_batch_size,
-            delay_between=settings.vlm_worker_delay,
+            delay_between=0.0,
+            order="DESC",
+            use_cpu=False,
+            worker_name="gpu",
+        )
+        # CPU worker — oldest-first, processes from the other end
+        self._vlm_worker_cpu = VLMWorker(
+            timeline=self._timeline,
+            vectors=self._vectors,
+            summarizer=self._summarizer,
+            embedder=self._embedder,
+            batch_size=settings.vlm_worker_batch_size,
+            delay_between=0.0,
+            order="ASC",
+            use_cpu=True,
+            worker_name="cpu",
         )
 
         self._settings = settings
@@ -106,6 +123,12 @@ class MemorySystem:
         self._timeline.init()
         self._stm.init()
         self._vectors.init()
+
+        # Rebuild FTS5 index (catches any rows inserted before triggers existed)
+        try:
+            self._timeline.rebuild_fts()
+        except Exception:
+            logger.debug("FTS rebuild skipped (may be first run)")
 
         # Start background tasks
         self._stm.start_purge_loop()
@@ -123,6 +146,7 @@ class MemorySystem:
     async def stop(self) -> None:
         """Graceful shutdown."""
         self._vlm_worker.stop()
+        self._vlm_worker_cpu.stop()
         await self._capture.stop()
         self._classifier.stop()
         self._apu_signal.stop()
@@ -166,6 +190,14 @@ class MemorySystem:
     @property
     def vlm_worker(self) -> VLMWorker:
         return self._vlm_worker
+
+    @property
+    def vlm_worker_cpu(self) -> VLMWorker:
+        return self._vlm_worker_cpu
+
+    @property
+    def embedder(self) -> EmbeddingClient:
+        return self._embedder
 
     @property
     def settings(self) -> MemorySettings:

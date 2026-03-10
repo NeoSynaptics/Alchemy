@@ -71,6 +71,60 @@ class TimelineStore:
                 "CREATE INDEX IF NOT EXISTS idx_timeline_chroma "
                 "ON timeline_events(chroma_id)"
             )
+
+            # ── Photo tags (token-first search) ──
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS photo_tags (
+                    event_id     INTEGER PRIMARY KEY REFERENCES timeline_events(id),
+                    subject      TEXT    NOT NULL DEFAULT '',
+                    scene        TEXT    NOT NULL DEFAULT '',
+                    activity     TEXT    NOT NULL DEFAULT '',
+                    time_of_day  TEXT    NOT NULL DEFAULT '',
+                    people_count INTEGER NOT NULL DEFAULT 0,
+                    mood         TEXT    NOT NULL DEFAULT '',
+                    time_bucket  INTEGER NOT NULL DEFAULT 0
+                )
+            """)
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_pt_subject "
+                "ON photo_tags(subject)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_pt_scene "
+                "ON photo_tags(scene)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_pt_activity "
+                "ON photo_tags(activity)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_pt_time "
+                "ON photo_tags(time_bucket)"
+            )
+
+            # ── FTS5 full-text index on summaries ──
+            conn.execute("""
+                CREATE VIRTUAL TABLE IF NOT EXISTS events_fts
+                USING fts5(summary, content=timeline_events, content_rowid=id)
+            """)
+            # Triggers to keep FTS5 in sync
+            conn.execute("""
+                CREATE TRIGGER IF NOT EXISTS events_fts_insert
+                AFTER INSERT ON timeline_events BEGIN
+                    INSERT INTO events_fts(rowid, summary)
+                    VALUES (new.id, new.summary);
+                END
+            """)
+            conn.execute("""
+                CREATE TRIGGER IF NOT EXISTS events_fts_update
+                AFTER UPDATE OF summary ON timeline_events BEGIN
+                    INSERT INTO events_fts(events_fts, rowid, summary)
+                    VALUES ('delete', old.id, old.summary);
+                    INSERT INTO events_fts(rowid, summary)
+                    VALUES (new.id, new.summary);
+                END
+            """)
+
             conn.commit()
         logger.info("TimelineStore ready: %s", self._db_path)
 
@@ -264,6 +318,106 @@ class TimelineStore:
                 updated += 1
             conn.commit()
         return updated
+
+    # ── Photo tag methods ──────────────────────────────────────
+
+    def insert_tags(self, event_id: int, tags: dict[str, Any], ts: float = 0.0) -> None:
+        """Insert or replace structured tags for a photo event."""
+        from datetime import datetime
+        time_bucket = 0
+        if ts > 0:
+            dt = datetime.fromtimestamp(ts)
+            time_bucket = dt.year * 100 + dt.isocalendar()[1]  # e.g. 202610
+
+        with sqlite3.connect(self._db_path) as conn:
+            conn.execute(
+                """INSERT OR REPLACE INTO photo_tags
+                   (event_id, subject, scene, activity, time_of_day, people_count, mood, time_bucket)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    event_id,
+                    tags.get("subject", ""),
+                    tags.get("scene", ""),
+                    tags.get("activity", ""),
+                    tags.get("time_of_day", ""),
+                    tags.get("people_count", 0),
+                    tags.get("mood", ""),
+                    time_bucket,
+                ),
+            )
+            conn.commit()
+
+    def search_by_tags(
+        self,
+        subject: str | None = None,
+        scene: str | None = None,
+        activity: str | None = None,
+        limit: int = 50,
+    ) -> list[TimelineEvent]:
+        """Search photos by structured tags. Returns events sorted by ts DESC."""
+        clauses: list[str] = []
+        params: list[Any] = []
+
+        if subject:
+            clauses.append("pt.subject = ?")
+            params.append(subject.lower())
+        if scene:
+            clauses.append("pt.scene = ?")
+            params.append(scene.lower())
+        if activity:
+            clauses.append("pt.activity = ?")
+            params.append(activity.lower())
+
+        if not clauses:
+            return []
+
+        where = " AND ".join(clauses)
+        params.append(limit)
+
+        with sqlite3.connect(self._db_path) as conn:
+            rows = conn.execute(
+                f"SELECT e.id, e.ts, e.event_type, e.source, e.summary, e.raw_text, "
+                f"e.app_name, e.screenshot_path, e.chroma_id, e.meta_json "
+                f"FROM timeline_events e "
+                f"JOIN photo_tags pt ON pt.event_id = e.id "
+                f"WHERE {where} ORDER BY e.ts DESC LIMIT ?",
+                params,
+            ).fetchall()
+        return [self._row_to_event(r) for r in rows]
+
+    def fts_search(self, query: str, limit: int = 20) -> list[TimelineEvent]:
+        """Full-text search on summaries via FTS5."""
+        with sqlite3.connect(self._db_path) as conn:
+            rows = conn.execute(
+                "SELECT e.id, e.ts, e.event_type, e.source, e.summary, e.raw_text, "
+                "e.app_name, e.screenshot_path, e.chroma_id, e.meta_json "
+                "FROM events_fts fts "
+                "JOIN timeline_events e ON e.id = fts.rowid "
+                "WHERE events_fts MATCH ? "
+                "ORDER BY rank LIMIT ?",
+                (query, limit),
+            ).fetchall()
+        return [self._row_to_event(r) for r in rows]
+
+    def rebuild_fts(self) -> None:
+        """Rebuild FTS5 index from scratch (after migration or data import)."""
+        with sqlite3.connect(self._db_path) as conn:
+            conn.execute("INSERT INTO events_fts(events_fts) VALUES('rebuild')")
+            conn.commit()
+
+    def get_all_tags(self) -> list[dict[str, Any]]:
+        """Get distinct tag values for UI filters."""
+        with sqlite3.connect(self._db_path) as conn:
+            subjects = [r[0] for r in conn.execute(
+                "SELECT DISTINCT subject FROM photo_tags WHERE subject != '' ORDER BY subject"
+            ).fetchall()]
+            scenes = [r[0] for r in conn.execute(
+                "SELECT DISTINCT scene FROM photo_tags WHERE scene != '' ORDER BY scene"
+            ).fetchall()]
+            activities = [r[0] for r in conn.execute(
+                "SELECT DISTINCT activity FROM photo_tags WHERE activity != '' ORDER BY activity"
+            ).fetchall()]
+        return {"subjects": subjects, "scenes": scenes, "activities": activities}
 
     @staticmethod
     def _row_to_event(row: tuple) -> TimelineEvent:

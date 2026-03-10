@@ -48,7 +48,7 @@ planner = [
     "chromadb",
 ]
 memory = [
-    "chromadb",
+    "sqlite-vec",
     "Pillow",
 ]
 all = [

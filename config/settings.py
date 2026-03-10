@@ -277,7 +277,7 @@ class MemorySettings(BaseModel):
     # Phone import
     phone_import_enabled: bool = True
     vlm_worker_batch_size: int = 50
-    vlm_worker_delay: float = 0.5         # seconds between VLM calls
+    vlm_worker_delay: float = 0.0         # seconds between VLM calls (0 = no throttle)
     vlm_auto_start: bool = True           # auto-start VLM worker after import
 
 
