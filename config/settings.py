@@ -239,6 +239,18 @@ class AgentsSettings(BaseModel):
     flow_vs: FlowVSAgentSettings = FlowVSAgentSettings()
 
 
+class NeosySettings(BaseModel):
+    """NEOSY — knowledge graph (PostgreSQL + Qdrant)."""
+    enabled: bool = True
+    pg_host: str = "localhost"
+    pg_port: int = 5432
+    pg_user: str = "baratza"
+    pg_password: str = "baratza_dev"
+    pg_database: str = "baratza_knowledge"
+    qdrant_host: str = "localhost"
+    qdrant_port: int = 6333
+
+
 class MemorySettings(BaseModel):
     """AlchemyMemory — two-layer persistent memory + AI-native search UI."""
     enabled: bool = True
@@ -309,6 +321,7 @@ class Settings(BaseSettings):
     agents: AgentsSettings = AgentsSettings()
     memory: MemorySettings = MemorySettings()
     browser: BrowserSettings = BrowserSettings()
+    neosy: NeosySettings = NeosySettings()
 
     # === Flat fields (backward compat -- used by server.py and existing code) ===
 

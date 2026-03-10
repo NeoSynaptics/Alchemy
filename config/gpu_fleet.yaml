@@ -121,3 +121,23 @@ models:
     preferred_gpu: null
     default_tier: warm
     capabilities: [embedding]
+
+  - name: "siglip2"
+    display_name: "SigLIP 2 Image Embedding"
+    backend: custom
+    vram_mb: 1500
+    ram_mb: 1500
+    disk_mb: 1500
+    preferred_gpu: 0
+    default_tier: warm
+    capabilities: [embedding, vision]
+
+  - name: "clap"
+    display_name: "CLAP Audio Embedding"
+    backend: custom
+    vram_mb: 800
+    ram_mb: 800
+    disk_mb: 800
+    preferred_gpu: 0
+    default_tier: warm
+    capabilities: [embedding, audio]

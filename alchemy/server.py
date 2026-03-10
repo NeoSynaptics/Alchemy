@@ -326,6 +326,33 @@ async def lifespan(app: FastAPI):
         except Exception:
             logger.exception("AlchemyMemory failed to start")
 
+    # --- NEOSY (knowledge graph: PostgreSQL + Qdrant) ---
+    app.state.neosy_pool = None
+    app.state.neosy_qdrant = None
+    if settings.neosy.enabled:
+        try:
+            import asyncpg
+            from qdrant_client import QdrantClient
+
+            pool = await asyncpg.create_pool(
+                host=settings.neosy.pg_host,
+                port=settings.neosy.pg_port,
+                user=settings.neosy.pg_user,
+                password=settings.neosy.pg_password,
+                database=settings.neosy.pg_database,
+            )
+            qdrant = QdrantClient(
+                host=settings.neosy.qdrant_host,
+                port=settings.neosy.qdrant_port,
+            )
+            app.state.neosy_pool = pool
+            app.state.neosy_qdrant = qdrant
+            logger.info("NEOSY connected (pg=%s:%d, qdrant=%s:%d)",
+                        settings.neosy.pg_host, settings.neosy.pg_port,
+                        settings.neosy.qdrant_host, settings.neosy.qdrant_port)
+        except Exception:
+            logger.exception("NEOSY failed to start")
+
     # --- Constitution (approval defense) ---
     app.state.constitution = None
     try:
@@ -349,6 +376,13 @@ async def lifespan(app: FastAPI):
     yield
 
     # Cleanup
+    if getattr(app.state, "neosy_pool", None):
+        await app.state.neosy_pool.close()
+        logger.info("NEOSY PostgreSQL pool closed")
+    if getattr(app.state, "neosy_qdrant", None):
+        app.state.neosy_qdrant.close()
+        logger.info("NEOSY Qdrant closed")
+
     if getattr(app.state, "memory_system", None):
         await app.state.memory_system.stop()
         logger.info("AlchemyMemory stopped")
@@ -431,6 +465,16 @@ app.include_router(voice_control.router, prefix="/v1")
 from alchemy.memory.api.memory_api import router as memory_router
 app.include_router(memory_router)
 
+# NEOSY routes
+if settings.neosy.enabled:
+    try:
+        sys.path.insert(0, r'C:\Users\monic\BaratzaMemory\src')
+        from baratza.api.routes import router as neosy_router
+        app.include_router(neosy_router, prefix="/v1/neosy")
+        logger.info("NEOSY routes mounted at /v1/neosy/*")
+    except Exception:
+        logger.warning("NEOSY routes not available")
+
 
 @app.get("/health")
 async def health():
@@ -461,5 +505,6 @@ async def health():
         "connect_enabled": connect_ok,
         "connect_devices": connect.connected_devices if connect else 0,
         "memory_enabled": getattr(app.state, "memory_system", None) is not None,
+        "neosy_enabled": getattr(app.state, "neosy_pool", None) is not None,
         "vision_model": settings.pw_escalation_model,
     }
