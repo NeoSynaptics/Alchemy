@@ -1,63 +1,10 @@
 # Alchemy — Claude Session Guide
 
-## MANDATORY: Read This First
-
-**STOP. Before doing ANYTHING the user asks, you MUST follow the Task Queue System below.**
-
-When the user says "complete next task", "take a task", "do work", or ANY variation:
-
-1. **FIRST** run: `cd C:\Users\monic\BaratzaMemory && git pull origin master`
-2. **THEN** read `C:\Users\monic\BaratzaMemory\tasks.json`
-3. **THEN** follow the protocol below — no exceptions
-
-Do NOT start coding, do NOT ask questions, do NOT improvise. The task queue is the single source of truth.
-
-## Task Queue Protocol
-
-The shared task queue lives in the **BaratzaMemory** repo: `C:\Users\monic\BaratzaMemory\tasks.json`
-
-### Step-by-step (follow exactly):
-
-```
-STEP 1: Pull latest
-  cd C:\Users\monic\BaratzaMemory
-  git pull origin master
-
-STEP 2: Read tasks.json, find YOUR next task
-  - Status must be "pending"
-  - ALL depends_on tasks must have status "done"
-  - repo must be "Alchemy_explore" (you are an Alchemy window)
-  - If NO tasks available, tell user "No tasks available — dependencies unmet"
-
-STEP 3: Claim the task (THIS IS YOUR LOCK)
-  - Edit tasks.json: set status="in_progress", owner="alchemy-window-N", started_at=ISO timestamp
-  - cd C:\Users\monic\BaratzaMemory
-  - git add tasks.json && git commit -m "Claim task {id}: {title}" && git push origin master
-  - If push FAILS: git pull --no-edit, re-read tasks.json, pick DIFFERENT task
-
-STEP 4: Do the work
-  - Switch to: cd C:\Users\monic\Documents\Alchemy_explore
-  - Read the task "description" field — it tells you exactly what to do
-  - Execute. No questions. If blocked, set status="blocked", pick next.
-
-STEP 5: Mark done
-  - cd C:\Users\monic\BaratzaMemory
-  - git pull origin master
-  - Edit tasks.json: status="done", completed_at=ISO, commit_hash=your commit
-  - git add tasks.json && git commit -m "Complete task {id}: {title}" && git push
-```
-
-### Rules (STRICT)
-- **NEVER take a task with status "in_progress"**
-- **NEVER take a task whose depends_on aren't ALL "done"**
-- **NEVER skip the claim step** — commit+push BEFORE starting work
-- **NEVER ask questions** — task description has everything
-- **Always git pull before reading tasks.json**
-
----
-
 ## What This Is
 Core AI engine. Voice pipeline, click automation, GPU orchestration, research browser, and more. Everything runs from a single server on port 8000.
+
+**Repo:** `C:\Users\monic\Documents\Alchemy_explore` (branch: main)
+**GitHub:** NeoSynaptics/Alchemy
 
 ## Key Paths
 - Config: `config/settings.py` (nested BaseModel groups per module)
@@ -96,7 +43,7 @@ Voice is a first-class core module. Public interface hides model internals.
 - `VoiceStatus` — serializable status for GUI/API
 
 **Internal modules** (hidden behind VoiceSystem):
-- `pipeline.py` — state machine (IDLE→LISTENING→RECORDING→PROCESSING→SPEAKING)
+- `pipeline.py` — state machine (IDLE->LISTENING->RECORDING->PROCESSING->SPEAKING)
 - `stt.py` — Whisper STT
 - `tts.py` — Piper/Fish Speech/Kokoro TTS
 - `wake_word.py` — openWakeWord detection
@@ -112,23 +59,23 @@ Voice is a first-class core module. Public interface hides model internals.
 ## APU Fleet & Eviction
 
 - **No model is immune.** All models can be evicted from VRAM.
-- **Eviction order:** app models first → infra → core last.
+- **Eviction order:** app models first -> infra -> core last.
 - **Evicted models go to RAM (warm)**, not disk. Fast reload when needed.
 - `module_tier` field on ModelCard controls eviction ordering.
 - `ModelTier` enum: RESIDENT(P0) > USER_ACTIVE(P1) > AGENT(P2) > WARM(P3) > COLD(P4)
 
 ## API
-- `POST /v1/vision/analyze` → screenshot → VLM → action JSON
-- `POST /v1/vision/task` → submit multi-step GUI task
-- `GET /v1/modules` → module discovery + contract status
-- `POST /v1/apu/app/{name}/activate-manifest` → resolve model contracts
-- `GET /v1/apu/status` → GPU/RAM status
-- `POST /v1/chat` → non-streaming chat
-- `POST /v1/chat/stream` → SSE streaming chat
-- `GET /v1/voice/status` → voice pipeline status
-- `POST /v1/voice/start|stop` → control voice pipeline
-- `POST /v1/voice/mode` → change voice mode
-- `POST /v1/callbacks/approval|notify|task-update` → internal callbacks
+- `POST /v1/vision/analyze` — screenshot -> VLM -> action JSON
+- `POST /v1/vision/task` — submit multi-step GUI task
+- `GET /v1/modules` — module discovery + contract status
+- `POST /v1/apu/app/{name}/activate-manifest` — resolve model contracts
+- `GET /v1/apu/status` — GPU/RAM status
+- `POST /v1/chat` — non-streaming chat
+- `POST /v1/chat/stream` — SSE streaming chat
+- `GET /v1/voice/status` — voice pipeline status
+- `POST /v1/voice/start|stop` — control voice pipeline
+- `POST /v1/voice/mode` — change voice mode
+- `POST /v1/callbacks/approval|notify|task-update` — internal callbacks
 
 ## Commands
 ```bash
@@ -168,7 +115,7 @@ make test            # Run pytest
 - `GET /v1/modules` — discovery API for setup wizards and settings pages
 - Every manifest MUST have: `id`, `name`, `description`, `tier`
 
-### Model Contracts (App → Core)
+### Model Contracts (App -> Core)
 Apps declare what models they need. Core validates and decides placement.
 - Add `models=[ModelRequirement(...)]` to the manifest
 - `capability` — what the app needs: "vision", "reasoning", "coding", "embedding", etc.
