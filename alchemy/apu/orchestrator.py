@@ -71,6 +71,10 @@ class StackOrchestrator:
         }
         self._frozen_config_path = Path("config/frozen_baseline.json")
         self._load_frozen_config()
+        # Model profiles from Synthetic Analytics
+        self._model_profiles: dict = {}
+        self._profiles_path = Path("config/model_profiles.json")
+        self._load_model_profiles()
 
         # Known apps with default priorities
         self._default_app_priority: dict[str, int] = {
@@ -146,54 +150,11 @@ class StackOrchestrator:
 
     async def status(self) -> StackStatus:
         snapshot = await self._monitor.snapshot()
-        await self._sync_ollama_state(snapshot)
         return StackStatus(
             snapshot=snapshot,
             models=self._registry.all_models(),
             mode=self._mode,
         )
-
-    async def _sync_ollama_state(self, snapshot: HardwareSnapshot) -> None:
-        """Reconcile registry with Ollama's actual loaded models."""
-        import httpx
-
-        try:
-            async with httpx.AsyncClient(timeout=httpx.Timeout(5.0, connect=2.0)) as client:
-                resp = await client.get(f"{self._ollama_host}/api/ps")
-                resp.raise_for_status()
-                ps_data = resp.json()
-        except Exception:
-            return  # Can't reach Ollama — skip sync
-
-        # Build set of models Ollama actually has loaded
-        ollama_loaded: set[str] = set()
-        for m in ps_data.get("models", []):
-            name = m.get("name", "")
-            # Normalize: strip ":latest" suffix
-            if name.endswith(":latest"):
-                name = name[: -len(":latest")]
-            ollama_loaded.add(name)
-
-        # Update registry to match reality
-        for card in self._registry.all_models():
-            if card.backend != ModelBackend.OLLAMA:
-                continue
-
-            name = card.name
-            in_ollama = name in ollama_loaded or f"{name}:latest" in ollama_loaded
-
-            if in_ollama and not card.current_location.is_gpu:
-                # Ollama has it loaded but we think it's not on GPU — fix
-                # Try to figure out which GPU from VRAM usage
-                gpu_idx = card.preferred_gpu if card.preferred_gpu is not None else 0
-                location = ModelLocation.GPU_0 if gpu_idx == 0 else ModelLocation.GPU_1
-                tier = card.current_tier if card.current_tier.priority <= ModelTier.AGENT.priority else card.default_tier
-                self._registry.update_location(name, location, tier)
-                logger.debug("Sync: %s found in Ollama, updated to %s", name, location.value)
-            elif not in_ollama and card.current_location.is_gpu:
-                # We think it's on GPU but Ollama doesn't have it — demote to warm
-                self._registry.update_location(name, ModelLocation.CPU_RAM, ModelTier.WARM)
-                logger.debug("Sync: %s not in Ollama, demoted to CPU_RAM", name)
 
     async def gpu_status(self) -> list[GPUInfo]:
         snap = await self._monitor.snapshot()
@@ -498,6 +459,22 @@ class StackOrchestrator:
         except Exception as e:
             logger.warning("Failed to load frozen config: %s", e)
 
+    def _load_model_profiles(self) -> None:
+        """Load Synthetic Analytics profiles from disk."""
+        try:
+            if self._profiles_path.exists():
+                self._model_profiles = json.loads(self._profiles_path.read_text())
+                logger.info("Loaded %d model profiles", len(self._model_profiles))
+        except Exception as e:
+            logger.warning("Failed to load model profiles: %s", e)
+
+    def _get_recommended_ctx(self, model_name: str) -> int | None:
+        """Get recommended num_ctx from Synthetic Analytics profile."""
+        profile = self._model_profiles.get(model_name)
+        if profile:
+            return profile.get("recommended_ctx")
+        return None
+
     def get_frozen_config(self) -> dict[str, list[str]]:
         """Return current frozen baseline configuration."""
         return {k: list(v) for k, v in self._frozen_config.items()}
@@ -534,7 +511,16 @@ class StackOrchestrator:
         actions: list[str] = []
         skip = exclude or set()
 
-        # GPU models first
+        # GPU models — load all in parallel for speed
+        import asyncio
+
+        async def _load_one(model_name: str, gpu_index: int) -> str:
+            result = await self.load_model(model_name, gpu=gpu_index)
+            if result.success:
+                return f"Restored {model_name} → GPU {gpu_index}"
+            return f"Failed to restore {model_name} → GPU {gpu_index}: {result.error}"
+
+        tasks = []
         for slot in ("gpu_0", "gpu_1"):
             gpu_index = int(slot[-1])
             for model_name in self._frozen_config.get(slot, []):
@@ -543,13 +529,15 @@ class StackOrchestrator:
                 card = self._registry.get(model_name)
                 if card is None:
                     continue
+                if card.backend == ModelBackend.CUSTOM:
+                    actions.append(f"Skipped {model_name} → GPU {gpu_index} (managed externally)")
+                    continue
                 if card.current_location.is_gpu and card.current_location.gpu_index == gpu_index:
                     continue  # Already where it should be
-                result = await self.load_model(model_name, gpu=gpu_index)
-                if result.success:
-                    actions.append(f"Restored {model_name} → GPU {gpu_index}")
-                else:
-                    actions.append(f"Failed to restore {model_name} → GPU {gpu_index}: {result.error}")
+                tasks.append(_load_one(model_name, gpu_index))
+
+        if tasks:
+            actions.extend(await asyncio.gather(*tasks))
 
         # RAM models — just make sure they're at least warm (not cold)
         for model_name in self._frozen_config.get("ram", []):
@@ -710,21 +698,41 @@ class StackOrchestrator:
         return False
 
     async def _ollama_load(self, model_name: str) -> bool:
-        """Warm-load an Ollama model by sending a dummy generate request."""
+        """Warm-load an Ollama model into VRAM. Uses Synthetic Analytics profile for num_ctx."""
         import httpx
 
+        card = self._registry.get(model_name)
+        is_embedding = card and "embedding" in card.capabilities
+
+        # Get optimal num_ctx from profile
+        recommended_ctx = self._get_recommended_ctx(model_name)
+        options = {}
+        if recommended_ctx:
+            options["num_ctx"] = recommended_ctx
+
         try:
-            async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=10.0)) as client:
-                resp = await client.post(
-                    f"{self._ollama_host}/api/generate",
-                    json={
+            async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=10.0)) as client:
+                if is_embedding:
+                    payload: dict = {
+                        "model": model_name,
+                        "input": "warmup",
+                        "keep_alive": "24h",
+                    }
+                    if options:
+                        payload["options"] = options
+                    resp = await client.post(f"{self._ollama_host}/api/embed", json=payload)
+                else:
+                    payload = {
                         "model": model_name,
                         "prompt": "",
-                        "keep_alive": "30m",
-                    },
-                )
+                        "keep_alive": "24h",
+                    }
+                    if options:
+                        payload["options"] = options
+                    resp = await client.post(f"{self._ollama_host}/api/generate", json=payload)
                 resp.raise_for_status()
-                logger.info("Ollama model loaded: %s", model_name)
+                ctx_info = f" (num_ctx={recommended_ctx})" if recommended_ctx else ""
+                logger.info("Ollama model loaded: %s%s", model_name, ctx_info)
                 return True
         except Exception as e:
             logger.error("Ollama load failed for %s: %s", model_name, e)
@@ -735,7 +743,7 @@ class StackOrchestrator:
         import httpx
 
         try:
-            async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=10.0)) as client:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=10.0)) as client:
                 resp = await client.post(
                     f"{self._ollama_host}/api/generate",
                     json={

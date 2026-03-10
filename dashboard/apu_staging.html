@@ -263,6 +263,7 @@
     <button class="tab-btn active" data-tab="monitor">Monitor</button>
     <button class="tab-btn" data-tab="priority">Priority</button>
     <button class="tab-btn" data-tab="frozen">Frozen Setup</button>
+    <button class="tab-btn" data-tab="analytics">Synthetic Analytics</button>
   </div>
 
   <div class="tab-content active" id="tab-monitor">
@@ -287,6 +288,10 @@
         <div class="conn-sub">Waiting for data...</div>
       </div>
     </div>
+  </div>
+
+  <div class="tab-content" id="tab-analytics">
+    <div id="analyticsContent"></div>
   </div>
 </div>
 
@@ -344,6 +349,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
     if (btn.dataset.tab === 'priority') fetchAppPriorities();
     if (btn.dataset.tab === 'frozen') loadFrozenSetup();
+    if (btn.dataset.tab === 'analytics') loadAnalytics();
   });
 });
 
@@ -652,11 +658,16 @@ let frozenSaveStatus = '';
 
 // Fleet fallback — used when server is offline
 const FLEET_FALLBACK = [
-  { name:'qwen3:14b', display_name:'Qwen3 14B (Agent Brain)', vram_mb:9216, default_tier:'resident', preferred_gpu:1, capabilities:['conversation','reasoning','agent','gate'] },
-  { name:'qwen3:1.7b', display_name:'Qwen3 1.7B (Fast Chat)', vram_mb:1400, default_tier:'resident', preferred_gpu:0, capabilities:['conversation'] },
-  { name:'qwen2.5vl:7b', display_name:'Qwen2.5-VL 7B (Vision Escalation)', vram_mb:4480, default_tier:'warm', preferred_gpu:null, capabilities:['vision','escalation'] },
-  { name:'nomic-embed-text', display_name:'Nomic Embed Text', vram_mb:512, default_tier:'warm', preferred_gpu:null, capabilities:['embedding'] },
-  { name:'starcoder2:3b', display_name:'StarCoder2 3B', vram_mb:2048, default_tier:'warm', preferred_gpu:null, capabilities:['coding','completion'] },
+  { name:'qwen3:14b', display_name:'Qwen3 14B (Agent Brain)', vram_mb:9654, default_tier:'resident', preferred_gpu:1, backend:'ollama', capabilities:['conversation','reasoning','agent','gate'] },
+  { name:'faster-whisper-large-v3', display_name:'Whisper Large V3 (STT)', vram_mb:1000, default_tier:'resident', preferred_gpu:0, backend:'custom', capabilities:['stt'] },
+  { name:'fish-speech-1.5', display_name:'Fish Speech 1.5 (TTS)', vram_mb:5000, default_tier:'resident', preferred_gpu:0, backend:'custom', capabilities:['tts'] },
+  { name:'qwen3:1.7b', display_name:'Qwen3 1.7B (Fast Chat)', vram_mb:1588, default_tier:'resident', preferred_gpu:0, backend:'ollama', capabilities:['conversation'] },
+  { name:'nomic-embed-text', display_name:'Nomic Embed Text', vram_mb:0, default_tier:'resident', preferred_gpu:0, backend:'ollama', capabilities:['embedding'] },
+  { name:'qwen2.5vl:7b', display_name:'Qwen2.5-VL 7B (Vision Escalation)', vram_mb:13458, default_tier:'warm', preferred_gpu:1, backend:'ollama', capabilities:['vision','escalation','desktop'] },
+  { name:'starcoder2:3b', display_name:'StarCoder2 3B', vram_mb:1809, default_tier:'warm', preferred_gpu:0, backend:'ollama', capabilities:['coding','completion'] },
+  { name:'qwen3:0.6b', display_name:'Qwen3 0.6B (Tiny Chat)', vram_mb:522, default_tier:'warm', preferred_gpu:null, backend:'ollama', capabilities:['conversation'] },
+  { name:'moondream', display_name:'Moondream (Small Vision)', vram_mb:1700, default_tier:'warm', preferred_gpu:null, backend:'ollama', capabilities:['vision'] },
+  { name:'bge-m3', display_name:'BGE-M3 (Multilingual Embed)', vram_mb:1200, default_tier:'warm', preferred_gpu:null, backend:'ollama', capabilities:['embedding'] },
 ];
 
 async function loadFrozenSetup() {
@@ -906,8 +917,9 @@ async function saveFrozenConfig() {
 
 async function resetFrozenToDefaults() {
   // Reset to fleet defaults: resident → GPU, warm → RAM
+  // Use FLEET_FALLBACK as the source of truth for default layout
   frozenState = { gpu_0: [], gpu_1: [], ram: [] };
-  for (const m of allModels) {
+  for (const m of FLEET_FALLBACK) {
     const dt = (m.default_tier || '').toUpperCase();
     if (dt === 'RESIDENT') {
       const gpu = m.preferred_gpu != null ? `gpu_${m.preferred_gpu}` : 'gpu_1';
@@ -947,6 +959,166 @@ async function loadFrozenNow() {
 
 poll();
 setInterval(poll, POLL_MS);
+
+// ===================== SYNTHETIC ANALYTICS TAB =====================
+
+let analyticsProfiles = {};
+let analyticsModels = [];
+let profilingModel = null;
+let profileProgress = '';
+let profileCancelled = false;
+
+async function loadAnalytics() {
+  // Fetch models and profiles in parallel
+  try {
+    const [modelsR, profilesR] = await Promise.all([
+      fetch(API_BASE + '/models', { signal: AbortSignal.timeout(4000) }).catch(() => null),
+      fetch(API_BASE + '/profiles', { signal: AbortSignal.timeout(4000) }).catch(() => null),
+    ]);
+    if (modelsR && modelsR.ok) analyticsModels = (await modelsR.json()).filter(m => m.backend === 'ollama');
+    if (profilesR && profilesR.ok) analyticsProfiles = (await profilesR.json()).profiles || {};
+  } catch {}
+  renderAnalytics();
+}
+
+function renderAnalytics() {
+  const el = document.getElementById('analyticsContent');
+  if (!el) return;
+
+  let html = `
+    <div class="frozen-desc">
+      <strong>Synthetic Analytics</strong> profiles each model by loading it at different context sizes,
+      measuring actual VRAM usage and load time. Results are saved and used by the APU loader for optimal placement.
+    </div>
+  `;
+
+  if (!analyticsModels.length) {
+    html += '<div class="frozen-empty">No Ollama models found. Start the server first.</div>';
+    el.innerHTML = html;
+    return;
+  }
+
+  for (const m of analyticsModels) {
+    const profile = analyticsProfiles[m.name];
+    const isProfiling = profilingModel === m.name;
+
+    html += `<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:12px">`;
+    html += `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">`;
+    html += `<div>
+      <span style="font-size:0.7rem;font-weight:600;color:var(--text-primary)">${m.display_name || m.name}</span>
+      <span style="font-size:0.5rem;color:var(--text-dim);margin-left:8px">${m.name}</span>
+    </div>`;
+
+    if (isProfiling) {
+      html += `<span style="font-size:0.55rem;color:var(--amber);animation:pulse 1.5s infinite">Profiling...</span>`;
+    } else {
+      html += `<button onclick="profileModel('${m.name}')" style="
+        font-family:inherit;font-size:0.55rem;padding:4px 12px;border-radius:4px;cursor:pointer;
+        border:1px solid var(--cyan-dim);background:transparent;color:var(--cyan);transition:all .15s;
+      " onmouseover="this.style.background='var(--cyan-glow)'" onmouseout="this.style.background='transparent'">
+        ${profile ? 'Re-Profile' : 'Profile'}
+      </button>`;
+    }
+    html += `</div>`;
+
+    // Fleet config vs profile comparison
+    html += `<div style="display:flex;gap:16px;font-size:0.55rem;color:var(--text-secondary);margin-bottom:8px">`;
+    html += `<span>Fleet est: <span style="color:var(--amber)">${formatMB(m.vram_mb)}</span></span>`;
+    if (profile) {
+      html += `<span>Profiled: <span style="color:var(--green)">${formatMB(profile.recommended_vram_mb)}</span></span>`;
+      html += `<span>Ctx: <span style="color:var(--cyan)">${profile.recommended_ctx.toLocaleString()}</span></span>`;
+      const ago = timeAgo(profile.profiled_at);
+      if (ago) html += `<span style="color:var(--text-dim)">${ago}</span>`;
+    } else {
+      html += `<span style="color:var(--text-dim)">Not profiled yet</span>`;
+    }
+    html += `</div>`;
+
+    // Results table
+    if (profile && profile.tested_contexts.length) {
+      html += `<div style="display:grid;grid-template-columns:repeat(${Math.min(profile.tested_contexts.length, 7)}, 1fr);gap:4px;margin-top:8px">`;
+      for (const ctx of profile.tested_contexts) {
+        const barH = ctx.success ? Math.max(4, Math.min(60, ctx.vram_mb / 300)) : 4;
+        const color = !ctx.success ? 'var(--red)' : ctx.num_ctx === profile.recommended_ctx ? 'var(--green)' : 'var(--amber)';
+        html += `<div style="text-align:center">
+          <div style="font-size:0.45rem;color:var(--text-dim);margin-bottom:2px">${ctx.num_ctx >= 1024 ? (ctx.num_ctx/1024)+'K' : ctx.num_ctx}</div>
+          <div style="height:60px;display:flex;align-items:flex-end;justify-content:center">
+            <div style="width:70%;height:${barH}px;background:${color};border-radius:2px;transition:height .3s"></div>
+          </div>
+          <div style="font-size:0.45rem;color:${color};margin-top:2px">${ctx.success ? formatMB(ctx.vram_mb) : 'FAIL'}</div>
+          <div style="font-size:0.4rem;color:var(--text-dim)">${ctx.load_time_s}s</div>
+        </div>`;
+      }
+      html += `</div>`;
+    }
+
+    html += `</div>`;
+  }
+
+  // Profile All / Stop button
+  html += `<div style="margin-top:16px;text-align:center">`;
+  if (profilingModel) {
+    html += `<button onclick="stopProfiling()" style="
+      font-family:inherit;font-size:0.6rem;padding:8px 24px;border-radius:4px;cursor:pointer;
+      border:1px solid var(--red);background:transparent;color:var(--red);transition:all .15s;
+    " onmouseover="this.style.background='var(--red-glow)'" onmouseout="this.style.background='transparent'">Stop Profiling</button>
+    <div style="font-size:0.45rem;color:var(--amber);margin-top:4px">
+      Profiling ${profilingModel}... (${profileProgress})
+    </div>`;
+  } else {
+    html += `<button onclick="profileAllModels()" style="
+      font-family:inherit;font-size:0.6rem;padding:8px 24px;border-radius:4px;cursor:pointer;
+      border:1px solid var(--purple-dim);background:transparent;color:var(--purple);transition:all .15s;
+    " onmouseover="this.style.background='var(--purple-glow)'" onmouseout="this.style.background='transparent'">Profile All Models</button>
+    <div style="font-size:0.45rem;color:var(--text-dim);margin-top:4px">
+      Profiles each model smallest to largest. Takes 1-3 min per model.
+    </div>`;
+  }
+  html += `</div>`;
+
+  el.innerHTML = html;
+}
+
+async function profileModel(name) {
+  profilingModel = name;
+  renderAnalytics();
+  try {
+    const r = await fetch(API_BASE + '/profile/' + encodeURIComponent(name), {
+      method: 'POST',
+      signal: AbortSignal.timeout(300000), // 5 min max
+    });
+    if (r.ok) {
+      const profile = await r.json();
+      analyticsProfiles[name] = profile;
+    }
+  } catch (e) {
+    console.error('Profile failed:', e);
+  }
+  profilingModel = null;
+  renderAnalytics();
+}
+
+async function profileAllModels() {
+  profileCancelled = false;
+  // Sort smallest → largest by vram_mb
+  const sorted = [...analyticsModels].sort((a, b) => (a.vram_mb || 0) - (b.vram_mb || 0));
+  for (let i = 0; i < sorted.length; i++) {
+    if (profileCancelled) break;
+    profileProgress = `${i + 1}/${sorted.length}`;
+    await profileModel(sorted[i].name);
+  }
+  profileProgress = '';
+  profileCancelled = false;
+}
+
+async function stopProfiling() {
+  profileCancelled = true;
+  try {
+    await fetch(API_BASE + '/profiles/cancel', { method: 'POST', signal: AbortSignal.timeout(4000) });
+  } catch {}
+  renderAnalytics();
+}
+
 </script>
 </body>
 </html>

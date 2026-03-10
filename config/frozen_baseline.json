@@ -1,12 +1,18 @@
 {
   "gpu_0": [
+    "faster-whisper-large-v3",
+    "fish-speech-1.5",
     "qwen3:1.7b",
-    "nomic-embed-text",
-    "starcoder2:3b"
+    "nomic-embed-text"
   ],
   "gpu_1": [
-    "qwen3:14b",
-    "qwen2.5vl:7b"
+    "qwen3:14b"
   ],
-  "ram": []
+  "ram": [
+    "qwen2.5vl:7b",
+    "starcoder2:3b",
+    "qwen3:0.6b",
+    "moondream",
+    "bge-m3"
+  ]
 }

@@ -1,0 +1,458 @@
+{
+  "qwen3:1.7b": {
+    "name": "qwen3:1.7b",
+    "tested_contexts": [
+      {
+        "num_ctx": 512,
+        "vram_mb": 1420,
+        "total_mb": 1420,
+        "load_time_s": 28.39,
+        "success": true
+      },
+      {
+        "num_ctx": 1024,
+        "vram_mb": 1477,
+        "total_mb": 1477,
+        "load_time_s": 1.49,
+        "success": true
+      },
+      {
+        "num_ctx": 2048,
+        "vram_mb": 1588,
+        "total_mb": 1588,
+        "load_time_s": 4.58,
+        "success": true
+      },
+      {
+        "num_ctx": 4096,
+        "vram_mb": 1814,
+        "total_mb": 1814,
+        "load_time_s": 1.31,
+        "success": true
+      },
+      {
+        "num_ctx": 8192,
+        "vram_mb": 2274,
+        "total_mb": 2274,
+        "load_time_s": 1.14,
+        "success": true
+      },
+      {
+        "num_ctx": 16384,
+        "vram_mb": 3182,
+        "total_mb": 3182,
+        "load_time_s": 1.23,
+        "success": true
+      },
+      {
+        "num_ctx": 32768,
+        "vram_mb": 5010,
+        "total_mb": 5010,
+        "load_time_s": 1.36,
+        "success": true
+      }
+    ],
+    "recommended_ctx": 32768,
+    "recommended_vram_mb": 5010,
+    "profiled_at": "2026-03-09T19:22:47.632333+00:00"
+  },
+  "nomic-embed-text": {
+    "name": "nomic-embed-text",
+    "tested_contexts": [
+      {
+        "num_ctx": 512,
+        "vram_mb": 0,
+        "total_mb": 0,
+        "load_time_s": 3.25,
+        "success": true
+      },
+      {
+        "num_ctx": 1024,
+        "vram_mb": 0,
+        "total_mb": 0,
+        "load_time_s": 2.41,
+        "success": true
+      },
+      {
+        "num_ctx": 2048,
+        "vram_mb": 0,
+        "total_mb": 0,
+        "load_time_s": 1.88,
+        "success": true
+      },
+      {
+        "num_ctx": 4096,
+        "vram_mb": 0,
+        "total_mb": 0,
+        "load_time_s": 2.0,
+        "success": true
+      },
+      {
+        "num_ctx": 8192,
+        "vram_mb": 0,
+        "total_mb": 0,
+        "load_time_s": 0.98,
+        "success": true
+      },
+      {
+        "num_ctx": 16384,
+        "vram_mb": 0,
+        "total_mb": 0,
+        "load_time_s": 0.98,
+        "success": true
+      },
+      {
+        "num_ctx": 32768,
+        "vram_mb": 0,
+        "total_mb": 0,
+        "load_time_s": 0.97,
+        "success": true
+      }
+    ],
+    "recommended_ctx": 32768,
+    "recommended_vram_mb": 0,
+    "profiled_at": "2026-03-09T19:24:14.712587+00:00"
+  },
+  "qwen3:0.6b": {
+    "name": "qwen3:0.6b",
+    "tested_contexts": [
+      {
+        "num_ctx": 512,
+        "vram_mb": 602,
+        "total_mb": 602,
+        "load_time_s": 3.4,
+        "success": true
+      },
+      {
+        "num_ctx": 1024,
+        "vram_mb": 653,
+        "total_mb": 653,
+        "load_time_s": 1.29,
+        "success": true
+      },
+      {
+        "num_ctx": 2048,
+        "vram_mb": 768,
+        "total_mb": 768,
+        "load_time_s": 1.29,
+        "success": true
+      },
+      {
+        "num_ctx": 4096,
+        "vram_mb": 998,
+        "total_mb": 998,
+        "load_time_s": 0.91,
+        "success": true
+      },
+      {
+        "num_ctx": 8192,
+        "vram_mb": 1456,
+        "total_mb": 1456,
+        "load_time_s": 0.92,
+        "success": true
+      },
+      {
+        "num_ctx": 16384,
+        "vram_mb": 2370,
+        "total_mb": 2370,
+        "load_time_s": 0.96,
+        "success": true
+      },
+      {
+        "num_ctx": 32768,
+        "vram_mb": 4210,
+        "total_mb": 4210,
+        "load_time_s": 1.05,
+        "success": true
+      }
+    ],
+    "recommended_ctx": 32768,
+    "recommended_vram_mb": 4210,
+    "profiled_at": "2026-03-09T19:26:46.693002+00:00"
+  },
+  "qwen3:14b": {
+    "name": "qwen3:14b",
+    "tested_contexts": [
+      {
+        "num_ctx": 512,
+        "vram_mb": 9084,
+        "total_mb": 9084,
+        "load_time_s": 4.51,
+        "success": true
+      },
+      {
+        "num_ctx": 1024,
+        "vram_mb": 9165,
+        "total_mb": 9165,
+        "load_time_s": 4.64,
+        "success": true
+      },
+      {
+        "num_ctx": 2048,
+        "vram_mb": 9328,
+        "total_mb": 9328,
+        "load_time_s": 4.63,
+        "success": true
+      },
+      {
+        "num_ctx": 4096,
+        "vram_mb": 9654,
+        "total_mb": 9654,
+        "load_time_s": 4.67,
+        "success": true
+      },
+      {
+        "num_ctx": 8192,
+        "vram_mb": 10286,
+        "total_mb": 10286,
+        "load_time_s": 4.69,
+        "success": true
+      },
+      {
+        "num_ctx": 16384,
+        "vram_mb": 11752,
+        "total_mb": 11752,
+        "load_time_s": 8.97,
+        "success": true
+      },
+      {
+        "num_ctx": 32768,
+        "vram_mb": 14194,
+        "total_mb": 14194,
+        "load_time_s": 4.6,
+        "success": true
+      }
+    ],
+    "recommended_ctx": 32768,
+    "recommended_vram_mb": 14194,
+    "profiled_at": "2026-03-09T19:17:07.205498+00:00"
+  },
+  "qwen2.5vl:7b": {
+    "name": "qwen2.5vl:7b",
+    "tested_contexts": [
+      {
+        "num_ctx": 512,
+        "vram_mb": 13458,
+        "total_mb": 13458,
+        "load_time_s": 9.86,
+        "success": true
+      },
+      {
+        "num_ctx": 1024,
+        "vram_mb": 13458,
+        "total_mb": 13458,
+        "load_time_s": 4.15,
+        "success": true
+      },
+      {
+        "num_ctx": 2048,
+        "vram_mb": 13458,
+        "total_mb": 13458,
+        "load_time_s": 10.52,
+        "success": true
+      },
+      {
+        "num_ctx": 4096,
+        "vram_mb": 13854,
+        "total_mb": 13854,
+        "load_time_s": 10.61,
+        "success": true
+      },
+      {
+        "num_ctx": 8192,
+        "vram_mb": 14648,
+        "total_mb": 14648,
+        "load_time_s": 3.97,
+        "success": true
+      },
+      {
+        "num_ctx": 16384,
+        "vram_mb": 13761,
+        "total_mb": 16264,
+        "load_time_s": 10.1,
+        "success": true
+      },
+      {
+        "num_ctx": 32768,
+        "vram_mb": 0,
+        "total_mb": 0,
+        "load_time_s": 120.01,
+        "success": false
+      }
+    ],
+    "recommended_ctx": 16384,
+    "recommended_vram_mb": 13761,
+    "profiled_at": "2026-03-09T19:21:02.398668+00:00"
+  },
+  "starcoder2:3b": {
+    "name": "starcoder2:3b",
+    "tested_contexts": [
+      {
+        "num_ctx": 512,
+        "vram_mb": 1674,
+        "total_mb": 1674,
+        "load_time_s": 3.58,
+        "success": true
+      },
+      {
+        "num_ctx": 1024,
+        "vram_mb": 1719,
+        "total_mb": 1719,
+        "load_time_s": 1.23,
+        "success": true
+      },
+      {
+        "num_ctx": 2048,
+        "vram_mb": 1809,
+        "total_mb": 1809,
+        "load_time_s": 1.81,
+        "success": true
+      },
+      {
+        "num_ctx": 4096,
+        "vram_mb": 1989,
+        "total_mb": 1989,
+        "load_time_s": 1.02,
+        "success": true
+      },
+      {
+        "num_ctx": 8192,
+        "vram_mb": 2349,
+        "total_mb": 2349,
+        "load_time_s": 1.02,
+        "success": true
+      },
+      {
+        "num_ctx": 16384,
+        "vram_mb": 3069,
+        "total_mb": 3069,
+        "load_time_s": 1.15,
+        "success": true
+      },
+      {
+        "num_ctx": 32768,
+        "vram_mb": 3069,
+        "total_mb": 3069,
+        "load_time_s": 1.01,
+        "success": true
+      }
+    ],
+    "recommended_ctx": 32768,
+    "recommended_vram_mb": 3069,
+    "profiled_at": "2026-03-09T19:25:31.371347+00:00"
+  },
+  "moondream": {
+    "name": "moondream",
+    "tested_contexts": [
+      {
+        "num_ctx": 512,
+        "vram_mb": 0,
+        "total_mb": 0,
+        "load_time_s": 8.86,
+        "success": true
+      },
+      {
+        "num_ctx": 1024,
+        "vram_mb": 0,
+        "total_mb": 0,
+        "load_time_s": 2.05,
+        "success": true
+      },
+      {
+        "num_ctx": 2048,
+        "vram_mb": 0,
+        "total_mb": 0,
+        "load_time_s": 1.72,
+        "success": true
+      },
+      {
+        "num_ctx": 4096,
+        "vram_mb": 0,
+        "total_mb": 0,
+        "load_time_s": 1.56,
+        "success": true
+      },
+      {
+        "num_ctx": 8192,
+        "vram_mb": 0,
+        "total_mb": 0,
+        "load_time_s": 1.53,
+        "success": true
+      },
+      {
+        "num_ctx": 16384,
+        "vram_mb": 0,
+        "total_mb": 0,
+        "load_time_s": 1.54,
+        "success": true
+      },
+      {
+        "num_ctx": 32768,
+        "vram_mb": 0,
+        "total_mb": 0,
+        "load_time_s": 1.55,
+        "success": true
+      }
+    ],
+    "recommended_ctx": 32768,
+    "recommended_vram_mb": 0,
+    "profiled_at": "2026-03-09T19:28:11.116723+00:00"
+  },
+  "bge-m3": {
+    "name": "bge-m3",
+    "tested_contexts": [
+      {
+        "num_ctx": 512,
+        "vram_mb": 0,
+        "total_mb": 0,
+        "load_time_s": 4.42,
+        "success": true
+      },
+      {
+        "num_ctx": 1024,
+        "vram_mb": 0,
+        "total_mb": 0,
+        "load_time_s": 2.18,
+        "success": true
+      },
+      {
+        "num_ctx": 2048,
+        "vram_mb": 0,
+        "total_mb": 0,
+        "load_time_s": 1.63,
+        "success": true
+      },
+      {
+        "num_ctx": 4096,
+        "vram_mb": 0,
+        "total_mb": 0,
+        "load_time_s": 1.62,
+        "success": true
+      },
+      {
+        "num_ctx": 8192,
+        "vram_mb": 0,
+        "total_mb": 0,
+        "load_time_s": 1.61,
+        "success": true
+      },
+      {
+        "num_ctx": 16384,
+        "vram_mb": 0,
+        "total_mb": 0,
+        "load_time_s": 1.6,
+        "success": true
+      },
+      {
+        "num_ctx": 32768,
+        "vram_mb": 0,
+        "total_mb": 0,
+        "load_time_s": 1.61,
+        "success": true
+      }
+    ],
+    "recommended_ctx": 32768,
+    "recommended_vram_mb": 0,
+    "profiled_at": "2026-03-09T19:29:53.088471+00:00"
+  }
+}

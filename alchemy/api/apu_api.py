@@ -478,3 +478,136 @@ async def restore_frozen_baseline(request: Request) -> FrozenRestoreResponse:
     orch = _get_orchestrator(request)
     actions = await orch.restore_frozen_baseline()
     return FrozenRestoreResponse(actions=actions)
+
+
+# --- Synthetic Analytics (Model Profiling) ---
+
+
+class CtxProfileResponse(BaseModel):
+    num_ctx: int
+    vram_mb: int
+    total_mb: int
+    load_time_s: float
+    success: bool
+
+
+class ModelProfileResponse(BaseModel):
+    name: str
+    tested_contexts: list[CtxProfileResponse]
+    recommended_ctx: int
+    recommended_vram_mb: int
+    profiled_at: str
+
+
+class AllProfilesResponse(BaseModel):
+    profiles: dict[str, ModelProfileResponse]
+
+
+class ProfileStatusResponse(BaseModel):
+    running: bool
+    model: str | None = None
+
+
+def _get_profiler(request: Request):
+    from alchemy.apu.profiler import ModelProfiler
+
+    profiler = getattr(request.app.state, "profiler", None)
+    if profiler is None:
+        raise HTTPException(status_code=503, detail="Profiler not initialized")
+    return profiler
+
+
+@router.get("/profiles", response_model=AllProfilesResponse)
+async def get_all_profiles(request: Request) -> AllProfilesResponse:
+    """Get all saved model profiles."""
+    profiler = _get_profiler(request)
+    profiles = profiler.get_all_profiles()
+    return AllProfilesResponse(
+        profiles={
+            name: ModelProfileResponse(
+                name=p.name,
+                tested_contexts=[
+                    CtxProfileResponse(
+                        num_ctx=c.num_ctx, vram_mb=c.vram_mb, total_mb=c.total_mb,
+                        load_time_s=c.load_time_s, success=c.success,
+                    )
+                    for c in p.tested_contexts
+                ],
+                recommended_ctx=p.recommended_ctx,
+                recommended_vram_mb=p.recommended_vram_mb,
+                profiled_at=p.profiled_at,
+            )
+            for name, p in profiles.items()
+        }
+    )
+
+
+@router.get("/profiles/status", response_model=ProfileStatusResponse)
+async def profile_status(request: Request) -> ProfileStatusResponse:
+    """Check if a profiling run is in progress."""
+    profiler = _get_profiler(request)
+    return ProfileStatusResponse(running=profiler.is_running, model=profiler.running_model)
+
+
+@router.post("/profiles/cancel", response_model=ProfileStatusResponse)
+async def cancel_profiling(request: Request) -> ProfileStatusResponse:
+    """Cancel the current profiling run."""
+    profiler = _get_profiler(request)
+    profiler.cancel()
+    return ProfileStatusResponse(running=profiler.is_running, model=profiler.running_model)
+
+
+@router.post("/profile/{model_name}", response_model=ModelProfileResponse)
+async def profile_model(request: Request, model_name: str) -> ModelProfileResponse:
+    """Run Synthetic Analytics on a model — tests at multiple context sizes.
+
+    WARNING: This unloads ALL models, profiles, then you must restore frozen baseline.
+    Takes 1-3 minutes per model.
+    """
+    profiler = _get_profiler(request)
+    orch = _get_orchestrator(request)
+
+    # Check model exists
+    card = orch._registry.get(model_name)
+    if card is None:
+        raise HTTPException(status_code=404, detail=f"Model '{model_name}' not found")
+
+    is_embedding = "embedding" in card.capabilities
+
+    # Determine GPU budget from the model's preferred GPU
+    gpu_budget = 16384  # default
+    try:
+        gpus = await orch.gpu_status()
+        if card.preferred_gpu is not None and card.preferred_gpu < len(gpus):
+            gpu_budget = gpus[card.preferred_gpu].total_vram_mb
+    except Exception:
+        pass
+
+    try:
+        profile = await profiler.profile_model(
+            model_name,
+            is_embedding=is_embedding,
+            gpu_budget_mb=gpu_budget,
+        )
+    except RuntimeError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+
+    # Restore frozen baseline after profiling
+    try:
+        await orch.restore_frozen_baseline()
+    except Exception as e:
+        logger.warning("Failed to restore frozen baseline after profiling: %s", e)
+
+    return ModelProfileResponse(
+        name=profile.name,
+        tested_contexts=[
+            CtxProfileResponse(
+                num_ctx=c.num_ctx, vram_mb=c.vram_mb, total_mb=c.total_mb,
+                load_time_s=c.load_time_s, success=c.success,
+            )
+            for c in profile.tested_contexts
+        ],
+        recommended_ctx=profile.recommended_ctx,
+        recommended_vram_mb=profile.recommended_vram_mb,
+        profiled_at=profile.profiled_at,
+    )

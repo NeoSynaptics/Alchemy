@@ -12,8 +12,11 @@ from uuid import uuid4
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
+from pathlib import Path
+
 from config.logging import setup_logging
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 setup_logging()
 from fastapi.middleware.cors import CORSMiddleware
@@ -83,6 +86,11 @@ async def lifespan(app: FastAPI):
         app.state.orchestrator = orchestrator
         app.state.gpu_monitor = gpu_monitor
         app.state.model_registry = model_registry
+
+        # Synthetic Analytics profiler
+        from alchemy.apu.profiler import ModelProfiler
+        app.state.profiler = ModelProfiler(ollama_host=settings.ollama_host)
+
         logger.info("APU started (%d models registered)",
                      len(model_registry.all_models()))
 
@@ -403,6 +411,11 @@ app.include_router(gate_api.router, prefix="/gate")
 app.include_router(apu_api.router, prefix="/v1")
 app.include_router(modules_api.router, prefix="/v1")
 app.include_router(click_api.router)
+
+# Serve dashboard files
+_dashboard_dir = Path(__file__).parent.parent / "dashboard"
+if _dashboard_dir.is_dir():
+    app.mount("/dashboard", StaticFiles(directory=str(_dashboard_dir), html=True), name="dashboard")
 app.include_router(settings_api.router, prefix="/v1")
 
 # AlchemyVoice routes (chat, voice control, callbacks)

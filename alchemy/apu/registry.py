@@ -60,6 +60,7 @@ class ModelBackend(str, Enum):
     OLLAMA = "ollama"
     VLLM = "vllm"
     SUBPROCESS = "subprocess"
+    CUSTOM = "custom"
 
 
 _MODULE_TIER_EVICTION_ORDER = {"app": 0, "infra": 1, "core": 2}

@@ -19,56 +19,105 @@ gpus:
     role: "gui"
 
 models:
-  # ===== P0 RESIDENT — GPU 1 (GUI stack) =====
+  # ===== P0 RESIDENT — GPU 1 (Brain) =====
   - name: "qwen3:14b"
     display_name: "Qwen3 14B (Agent Brain)"
     backend: ollama
-    vram_mb: 9216
-    ram_mb: 9216
+    vram_mb: 9654
+    ram_mb: 9654
     disk_mb: 9216
     preferred_gpu: 1
     default_tier: resident
     capabilities: [conversation, reasoning, agent, gate]
 
-  # ===== P0 RESIDENT — GPU 0 (Voice stack) =====
+  # ===== P0 RESIDENT — GPU 0 (Voice + utilities) =====
+  - name: "faster-whisper-large-v3"
+    display_name: "Whisper Large V3 (STT)"
+    backend: custom
+    vram_mb: 1000
+    ram_mb: 1000
+    disk_mb: 3000
+    preferred_gpu: 0
+    default_tier: resident
+    capabilities: [stt]
+
+  - name: "fish-speech-1.5"
+    display_name: "Fish Speech 1.5 (TTS)"
+    backend: custom
+    vram_mb: 5000
+    ram_mb: 5000
+    disk_mb: 4000
+    preferred_gpu: 0
+    default_tier: resident
+    capabilities: [tts]
+
   - name: "qwen3:1.7b"
     display_name: "Qwen3 1.7B (Fast Chat)"
     backend: ollama
-    vram_mb: 1400
-    ram_mb: 1400
+    vram_mb: 1588
+    ram_mb: 1588
     disk_mb: 1400
     preferred_gpu: 0
     default_tier: resident
     capabilities: [conversation]
 
-  # ===== P0 RESIDENT — GPU 0 or 1 (Vision fallback) =====
-  - name: "qwen2.5vl:7b"
-    display_name: "Qwen2.5-VL 7B (Vision Escalation)"
-    backend: ollama
-    vram_mb: 4480
-    ram_mb: 4480
-    disk_mb: 4480
-    preferred_gpu: null
-    default_tier: warm
-    capabilities: [vision, escalation, desktop]
-
-  # ===== P3 WARM — CPU RAM fleet =====
   - name: "nomic-embed-text"
     display_name: "Nomic Embed Text"
     backend: ollama
-    vram_mb: 512
+    vram_mb: 0
     ram_mb: 512
     disk_mb: 512
-    preferred_gpu: null
-    default_tier: warm
+    preferred_gpu: 0
+    default_tier: resident
     capabilities: [embedding]
+
+  # ===== P3 WARM — available but not loaded by default =====
+  - name: "qwen2.5vl:7b"
+    display_name: "Qwen2.5-VL 7B (Vision Escalation)"
+    backend: ollama
+    vram_mb: 13458
+    ram_mb: 13458
+    disk_mb: 4480
+    preferred_gpu: 1
+    default_tier: warm
+    capabilities: [vision, escalation, desktop]
 
   - name: "starcoder2:3b"
     display_name: "StarCoder2 3B"
     backend: ollama
-    vram_mb: 2048
-    ram_mb: 2048
+    vram_mb: 1809
+    ram_mb: 1809
     disk_mb: 2048
-    preferred_gpu: null
+    preferred_gpu: 0
     default_tier: warm
     capabilities: [coding, completion]
+
+  - name: "qwen3:0.6b"
+    display_name: "Qwen3 0.6B (Tiny Chat)"
+    backend: ollama
+    vram_mb: 522
+    ram_mb: 522
+    disk_mb: 522
+    preferred_gpu: null
+    default_tier: warm
+    capabilities: [conversation]
+
+  - name: "moondream"
+    display_name: "Moondream (Small Vision)"
+    backend: ollama
+    vram_mb: 1700
+    ram_mb: 1700
+    disk_mb: 1700
+    preferred_gpu: null
+    default_tier: warm
+    capabilities: [vision]
+
+  - name: "bge-m3"
+    display_name: "BGE-M3 (Multilingual Embed)"
+    backend: ollama
+    vram_mb: 1200
+    ram_mb: 1200
+    disk_mb: 1200
+    preferred_gpu: null
+    default_tier: warm
+    capabilities: [embedding]
