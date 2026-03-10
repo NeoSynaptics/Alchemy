@@ -629,3 +629,33 @@ async def apu_reconcile(request: Request):
     orch = _get_orchestrator(request)
     actions = await orch.reconcile_vram()
     return {"actions": actions, "count": len(actions)}
+
+
+# --- Event log ---
+
+
+@router.get("/events")
+async def apu_events(
+    request: Request,
+    event_type: str | None = None,
+    model: str | None = None,
+    app: str | None = None,
+    limit: int = 100,
+):
+    """Recent APU events, filterable by type/model/app."""
+    orch = _get_orchestrator(request)
+    events = orch._event_log.filter(
+        event_type=event_type,
+        model_name=model,
+        app_name=app,
+        limit=limit,
+    )
+    return [e.to_dict() for e in events]
+
+
+@router.get("/events/errors")
+async def apu_events_errors(request: Request, limit: int = 100):
+    """Only error and drift events."""
+    orch = _get_orchestrator(request)
+    events = orch._event_log.filter(errors_only=True, limit=limit)
+    return [e.to_dict() for e in events]

@@ -13,9 +13,11 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from alchemy.apu.event_log import APUEventLog
 from alchemy.apu.monitor import GPUMonitor, HardwareSnapshot, GPUInfo, RAMInfo
 from alchemy.apu.registry import (
     ModelBackend,
@@ -60,6 +62,8 @@ class StackOrchestrator:
         self._mode = "auto"
         self._started = False
         self._state_lock = asyncio.Lock()
+        self._event_log = APUEventLog()
+        self._pending_operations: set[str] = set()
 
         # Track which apps have activated models
         self._app_models: dict[str, list[str]] = {}
@@ -200,10 +204,24 @@ class StackOrchestrator:
 
     async def _load_model_unlocked(self, name: str, gpu: int | None = None) -> LoadResult:
         """Inner load_model without lock (for internal callers already holding lock)."""
+        t0 = time.monotonic()
         card = self._registry.get(name)
         if card is None:
+            self._event_log.record("load", model_name=name, success=False, error="Not in registry")
             return LoadResult(success=False, error=f"Model '{name}' not in registry")
 
+        # Wait if model is being operated on
+        if name in self._pending_operations:
+            self._event_log.record("error", model_name=name, success=False, error="Model busy")
+            return LoadResult(success=False, error=f"Model is currently being loaded/unloaded")
+        self._pending_operations.add(name)
+
+        try:
+            return await self._load_model_inner(name, card, gpu, t0)
+        finally:
+            self._pending_operations.discard(name)
+
+    async def _load_model_inner(self, name: str, card, gpu: int | None, t0: float) -> LoadResult:
         # Already on a GPU?
         if card.current_location.is_gpu:
             card.touch()
@@ -217,6 +235,8 @@ class StackOrchestrator:
                 return LoadResult(
                     success=False, error="No GPU with enough free VRAM"
                 )
+
+        vram_before = self._registry.total_vram_on_gpu(target_gpu)
 
         # Ensure enough VRAM (evict if needed)
         evicted = await self._make_room(target_gpu, card.vram_mb, card.current_tier)
@@ -240,6 +260,13 @@ class StackOrchestrator:
                         logger.info("Rollback: restored %s to GPU %d", evicted_name, target_gpu)
                     else:
                         logger.warning("Rollback: failed to restore %s", evicted_name)
+            self._event_log.record(
+                "error", model_name=name, gpu_index=target_gpu,
+                vram_before_mb=vram_before, vram_expected_mb=card.vram_mb,
+                duration_ms=(time.monotonic() - t0) * 1000,
+                success=False, error="Backend load failed",
+                details={"evicted_then_rolled_back": evicted},
+            )
             return LoadResult(success=False, error=f"Backend load failed for {name}")
 
         location = ModelLocation.GPU_0 if target_gpu == 0 else ModelLocation.GPU_1
@@ -247,19 +274,35 @@ class StackOrchestrator:
         self._registry.update_location(name, location, tier)
         card.touch()
 
+        self._event_log.record(
+            "load", model_name=name, gpu_index=target_gpu,
+            vram_before_mb=vram_before,
+            vram_after_mb=self._registry.total_vram_on_gpu(target_gpu),
+            vram_expected_mb=card.vram_mb,
+            duration_ms=(time.monotonic() - t0) * 1000,
+            details={"evicted": evicted},
+        )
+
         return LoadResult(success=True, location=location, evicted=evicted)
 
     async def unload_model(self, name: str) -> bool:
         """Unload a model from VRAM to disk (cold)."""
+        t0 = time.monotonic()
         async with self._state_lock:
             card = self._registry.get(name)
             if card is None:
                 return False
 
+            gpu_idx = card.current_location.gpu_index
             if card.current_location.is_gpu:
                 await self._backend_unload(card)
 
             self._registry.update_location(name, ModelLocation.DISK, ModelTier.COLD)
+            self._event_log.record(
+                "unload", model_name=name, gpu_index=gpu_idx,
+                vram_expected_mb=card.vram_mb,
+                duration_ms=(time.monotonic() - t0) * 1000,
+            )
             return True
 
     async def promote(self, name: str, gpu: int | None = None) -> LoadResult:
@@ -268,15 +311,22 @@ class StackOrchestrator:
 
     async def demote(self, name: str) -> bool:
         """Demote a model from VRAM → RAM (stays warm, not cold)."""
+        t0 = time.monotonic()
         async with self._state_lock:
             card = self._registry.get(name)
             if card is None:
                 return False
 
+            gpu_idx = card.current_location.gpu_index
             if card.current_location.is_gpu:
                 await self._backend_unload(card)
 
             self._registry.update_location(name, ModelLocation.CPU_RAM, ModelTier.WARM)
+            self._event_log.record(
+                "demote", model_name=name, gpu_index=gpu_idx,
+                vram_expected_mb=card.vram_mb,
+                duration_ms=(time.monotonic() - t0) * 1000,
+            )
             return True
 
     async def evict_to_disk(self, name: str) -> bool:
@@ -388,6 +438,13 @@ class StackOrchestrator:
                 errors.append(f"{model_name}: {result.error}")
 
         self._app_models[app_name] = loaded
+
+        self._event_log.record(
+            "app_activate", app_name=app_name,
+            success=len(loaded) > 0,
+            error="; ".join(errors) if errors else None,
+            details={"loaded": loaded, "requested": models},
+        )
 
         if errors:
             return LoadResult(
@@ -666,6 +723,11 @@ class StackOrchestrator:
                     self._registry.update_location(card.name, loc, card.default_tier)
                     actions.append(f"Discovered {card.name}: loaded in Ollama → GPU {inferred_gpu or 0}")
 
+        self._event_log.record(
+            "reconcile",
+            details={"corrections": len(actions), "actions": actions},
+        )
+
         if actions:
             for a in actions:
                 logger.info("Reconcile: %s", a)
@@ -802,10 +864,20 @@ class StackOrchestrator:
             return False
 
     async def _backend_unload(self, card: ModelCard) -> bool:
-        """Actually unload a model via its backend."""
+        """Actually unload a model via its backend.
+
+        If unload fails, returns False and the caller MUST NOT mark the model
+        as CPU_RAM — it is still on the GPU.
+        """
         try:
             if card.backend == ModelBackend.OLLAMA:
-                return await self._ollama_unload(card.name)
+                ok = await self._ollama_unload(card.name)
+                if not ok:
+                    self._event_log.record(
+                        "error", model_name=card.name, success=False,
+                        error="Ollama unload returned False",
+                    )
+                return ok
             elif card.backend == ModelBackend.VLLM:
                 logger.info("vLLM model %s: unload requested", card.name)
                 return True
@@ -816,6 +888,10 @@ class StackOrchestrator:
                 return False
         except Exception as e:
             logger.error("Backend unload failed for %s: %s", card.name, e)
+            self._event_log.record(
+                "error", model_name=card.name, success=False,
+                error=f"Backend unload exception: {e}",
+            )
             return False
 
     async def _subprocess_on_gpu(self, card: ModelCard, gpu_index: int) -> bool:

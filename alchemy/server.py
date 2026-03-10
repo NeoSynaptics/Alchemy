@@ -94,8 +94,9 @@ async def lifespan(app: FastAPI):
         logger.info("APU started (%d models registered)",
                      len(model_registry.all_models()))
 
-        # Periodic VRAM reconciliation (every 60s)
+        # Periodic VRAM reconciliation + invariant checks (every 60s)
         async def _periodic_reconcile():
+            from alchemy.apu.invariants import check_invariants
             while True:
                 await asyncio.sleep(60)
                 try:
@@ -104,6 +105,15 @@ async def lifespan(app: FastAPI):
                         logger.info("VRAM reconciliation: %s", actions)
                 except Exception as e:
                     logger.debug("VRAM reconciliation skipped: %s", e)
+                try:
+                    violations = await check_invariants(
+                        orchestrator._registry, orchestrator._monitor,
+                        orchestrator._event_log,
+                    )
+                    if violations:
+                        logger.warning("APU invariant violations: %s", violations)
+                except Exception as e:
+                    logger.debug("Invariant check skipped: %s", e)
 
         app.state._reconcile_task = asyncio.create_task(_periodic_reconcile())
 
