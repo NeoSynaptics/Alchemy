@@ -473,10 +473,6 @@ app.include_router(apu_api.router, prefix="/v1")
 app.include_router(modules_api.router, prefix="/v1")
 app.include_router(click_api.router)
 
-# Serve dashboard files
-_dashboard_dir = Path(__file__).parent.parent / "dashboard"
-if _dashboard_dir.is_dir():
-    app.mount("/dashboard", StaticFiles(directory=str(_dashboard_dir), html=True), name="dashboard")
 app.include_router(settings_api.router, prefix="/v1")
 
 # AlchemyVoice routes (chat, voice control, callbacks)
@@ -537,3 +533,9 @@ async def health():
         "neosy_enabled": getattr(app.state, "neosy_pool", None) is not None,
         "vision_model": settings.pw_escalation_model,
     }
+
+
+# Serve React UI (production build) — MUST be last, catch-all "/" mount
+_ui_dist_dir = Path(__file__).parent.parent / "ui" / "dist"
+if _ui_dist_dir.is_dir():
+    app.mount("/", StaticFiles(directory=str(_ui_dist_dir), html=True), name="ui")
