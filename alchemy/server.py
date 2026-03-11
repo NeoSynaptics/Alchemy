@@ -486,6 +486,10 @@ app.include_router(apu_api.router, prefix="/v1")
 app.include_router(modules_api.router, prefix="/v1")
 app.include_router(click_api.router)
 
+# AlchemyWord
+from alchemy.word.api import router as word_router
+app.include_router(word_router, prefix="/v1")
+
 app.include_router(settings_api.router, prefix="/v1")
 
 # AlchemyVoice routes (chat, voice control, callbacks)
