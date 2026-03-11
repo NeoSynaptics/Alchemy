@@ -18,7 +18,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# VRAM drift threshold: flag if tracked vs actual differs by more than this
+# VRAM drift threshold: flag if tracked vs actual differs by more than this.
+# Set to 500MB to allow for timing races between snapshot and check.
 _VRAM_DRIFT_THRESHOLD_MB = 500
 
 
@@ -37,6 +38,12 @@ async def check_invariants(
     try:
         snap = await monitor.snapshot()
         for gpu in snap.gpus:
+            # APU only supports GPU 0-1; flag unexpected indices
+            if gpu.index > 1:
+                violations.append(
+                    f"GPU index {gpu.index} found but APU only supports GPU 0-1"
+                )
+                continue
             total_on_gpu = registry.total_vram_on_gpu(gpu.index)
             if total_on_gpu > gpu.total_vram_mb:
                 violations.append(
@@ -57,10 +64,13 @@ async def check_invariants(
             violations.append(
                 f"{model.name} on GPU but tier={model.current_tier.value}"
             )
-        if model.current_location == ModelLocation.CPU_RAM and model.current_tier == ModelTier.COLD:
-            violations.append(
-                f"{model.name} in RAM but tier=cold"
-            )
+        if model.current_location == ModelLocation.CPU_RAM:
+            if model.current_tier == ModelTier.COLD:
+                violations.append(f"{model.name} in RAM but tier=cold")
+            elif model.current_tier == ModelTier.RESIDENT:
+                violations.append(
+                    f"{model.name} in RAM but tier=resident (must be on GPU)"
+                )
 
     # 4. RESIDENT tier model NOT on GPU → violation
     for model in all_models:
@@ -72,6 +82,8 @@ async def check_invariants(
     # 5. VRAM drift: tracked total vs actual used — flag drift > threshold
     if snap is not None:
         for gpu in snap.gpus:
+            if gpu.index > 1:
+                continue  # Already flagged in check #1
             tracked = registry.total_vram_on_gpu(gpu.index)
             actual = gpu.used_vram_mb
             drift = abs(tracked - actual)
@@ -88,10 +100,13 @@ async def check_invariants(
     # Record as events if event_log available
     if event_log and violations:
         for v in violations:
-            event_log.record(
-                "invariant_violation",
-                success=False,
-                error=v,
-            )
+            try:
+                event_log.record(
+                    "invariant_violation",
+                    success=False,
+                    error=v,
+                )
+            except Exception as e:
+                logger.error("Failed to record invariant violation in event log: %s", e)
 
     return violations
