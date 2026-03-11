@@ -101,7 +101,7 @@ async def main():
     # Step 3: Search for known content
     async def search_pole_vault():
         async with httpx.AsyncClient(timeout=10) as c:
-            r = await c.get(f"{NEOSY}/search", params={"text": "pole vault approach speed"})
+            r = await c.post(f"{NEOSY}/search", json={"text": "pole vault approach speed"})
             assert r.status_code == 200
             results = r.json()
             assert len(results) > 0, "Search returned nothing!"
@@ -131,7 +131,7 @@ async def main():
     async def search_latency():
         t0 = time.perf_counter()
         async with httpx.AsyncClient(timeout=10) as c:
-            r = await c.get(f"{NEOSY}/search", params={"text": "fibonacci algorithm"})
+            r = await c.post(f"{NEOSY}/search", json={"text": "fibonacci algorithm"})
         latency = time.perf_counter() - t0
         assert latency < 0.5, f"Search too slow: {latency:.2f}s"
         return f"Search latency: {latency*1000:.0f}ms"
@@ -145,7 +145,7 @@ async def main():
 
         # Verify data survived
         async with httpx.AsyncClient(timeout=10) as c:
-            r = await c.get(f"{NEOSY}/search", params={"text": "pole vault"})
+            r = await c.post(f"{NEOSY}/search", json={"text": "pole vault"})
             assert r.status_code == 200
             assert len(r.json()) > 0, "Data lost after restart!"
             return "Data survived restart"
