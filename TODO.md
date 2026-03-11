@@ -2,7 +2,7 @@
 
 Read this file when you start. Do tasks in order, top to bottom. Skip tasks marked [DONE]. Commit and push after each task.
 
-**Repo:** `C:\Users\monic\Documents\Alchemy_explore` (branch: main)
+**Repo:** `C:\Users\info\GitHub\Alchemy` (branch: main)
 
 ---
 

@@ -21,8 +21,8 @@ Servers:
   NEOSY          — port 8001 (FastAPI)
 
 Repos:
-  Alchemy:  C:\Users\monic\Documents\Alchemy_explore  (branch: main)
-  NEOSY:    C:\Users\monic\BaratzaMemory               (branch: master)
+  Alchemy:  C:\Users\info\GitHub\Alchemy  (branch: main)
+  NEOSY:    C:\Users\info\GitHub\BaratzaMemory               (branch: master)
 ```
 
 ---
@@ -65,7 +65,7 @@ Everything wired together.
 ```bash
 # On PC only — install missing dep for research tests
 pip install duckduckgo_search
-cd C:\Users\monic\Documents\Alchemy_explore
+cd C:\Users\info\GitHub\Alchemy
 pytest tests/test_research/ -v  # Should fix 8 failures
 ```
 
@@ -137,7 +137,7 @@ class TestRestartSurvival:
 
         # 3. Restart Docker containers
         subprocess.run(["docker", "compose", "-f",
-            "C:/Users/monic/BaratzaMemory/docker/docker-compose.yml",
+            "C:/Users/info/GitHub/BaratzaMemory/docker/docker-compose.yml",
             "restart"], check=True, timeout=60)
         time.sleep(10)  # Wait for services to be healthy
 
@@ -165,7 +165,7 @@ class TestTransactionSafety:
     async def test_qdrant_failure_leaves_raw_status(self, db_pool):
         # Strategy: Stop Qdrant, ingest, verify DB has row with status=RAW
         subprocess.run(["docker", "compose", "-f",
-            "C:/Users/monic/BaratzaMemory/docker/docker-compose.yml",
+            "C:/Users/info/GitHub/BaratzaMemory/docker/docker-compose.yml",
             "stop", "qdrant"], check=True)
 
         try:
@@ -187,7 +187,7 @@ class TestTransactionSafety:
         finally:
             # Always restart Qdrant
             subprocess.run(["docker", "compose", "-f",
-                "C:/Users/monic/BaratzaMemory/docker/docker-compose.yml",
+                "C:/Users/info/GitHub/BaratzaMemory/docker/docker-compose.yml",
                 "start", "qdrant"], check=True)
             time.sleep(5)
 ```
@@ -623,7 +623,7 @@ async def main():
     # Step 7: Restart and verify
     async def restart_and_verify():
         subprocess.run(["docker", "compose", "-f",
-            "C:/Users/monic/BaratzaMemory/docker/docker-compose.yml",
+            "C:/Users/info/GitHub/BaratzaMemory/docker/docker-compose.yml",
             "restart"], check=True, timeout=60)
         await asyncio.sleep(15)  # Wait for services
 

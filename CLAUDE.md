@@ -6,7 +6,7 @@ Read `TODO.md` in this repo root for your task list. Do tasks in order, commit a
 ## What This Is
 Core AI engine. Voice pipeline, click automation, GPU orchestration, research browser, and more. Everything runs from a single server on port 8000.
 
-**Repo:** `C:\Users\monic\Documents\Alchemy_explore` (branch: main)
+**Repo:** `C:\Users\info\GitHub\Alchemy` (branch: main)
 **GitHub:** NeoSynaptics/Alchemy
 
 ## Key Paths

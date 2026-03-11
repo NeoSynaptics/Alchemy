@@ -23,7 +23,7 @@ Automated agent that scrolls through your Instagram Saved posts, downloads all v
 ## Staging Folder Structure
 
 ```
-C:\Users\monic\neosy_inbox\instagram\
+C:\Users\info\neosy_inbox\instagram\
 ├── 2026-03-10_post_abc123.mp4
 ├── 2026-03-10_post_abc123.json
 ├── 2026-03-10_post_def456.jpg
@@ -65,7 +65,7 @@ from playwright.async_api import Page, TimeoutError as PlaywrightTimeout
 
 logger = logging.getLogger(__name__)
 
-STAGING_DIR = Path(r"C:\Users\monic\neosy_inbox\instagram")
+STAGING_DIR = Path(r"C:\Users\info\neosy_inbox\instagram")
 INSTAGRAM_SAVED_URL = "https://www.instagram.com/{username}/saved/"
 
 

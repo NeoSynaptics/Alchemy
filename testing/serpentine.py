@@ -157,7 +157,7 @@ async def main():
     # Step 7: Restart and verify
     async def restart_and_verify():
         subprocess.run(["docker", "compose", "-f",
-            "C:/Users/monic/BaratzaMemory/docker/docker-compose.yml",
+            "C:/Users/info/GitHub/BaratzaMemory/docker/docker-compose.yml",
             "restart"], check=True, timeout=60)
         await asyncio.sleep(15)  # Wait for services
 
