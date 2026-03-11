@@ -267,6 +267,11 @@ class StackOrchestrator:
                         logger.info("Rollback: restored %s to GPU %d", evicted_name, target_gpu)
                     else:
                         rollback_failures.append(evicted_name)
+                        self._event_log.record(
+                            "error", model_name=evicted_name, gpu_index=target_gpu,
+                            success=False,
+                            error=f"Rollback failed: could not restore to GPU {target_gpu} after failed load of {name}",
+                        )
                         logger.warning("Rollback: failed to restore %s — needs manual reconciliation", evicted_name)
             self._event_log.record(
                 "error", model_name=name, gpu_index=target_gpu,
@@ -412,31 +417,43 @@ class StackOrchestrator:
             )
 
     async def rebalance(self) -> list[str]:
-        """Re-evaluate all placements. Move misplaced models to preferred GPUs."""
+        """Re-evaluate all placements. Move misplaced models to preferred GPUs.
+
+        Snapshots misplaced models first to avoid issues with state changing
+        between iterations (each demote/load acquires _state_lock individually).
+        """
         actions: list[str] = []
 
+        # Snapshot misplaced models before operating — state may change between ops
+        misplaced: list[tuple[str, int, int]] = []  # (name, current_gpu, preferred_gpu)
         for card in self._registry.all_models():
             if not card.current_location.is_gpu:
                 continue
             if card.preferred_gpu is None:
                 continue
-
             current_gpu = card.current_location.gpu_index
-            if current_gpu == card.preferred_gpu:
-                continue
+            if current_gpu != card.preferred_gpu:
+                misplaced.append((card.name, current_gpu, card.preferred_gpu))
 
-            # Model is on wrong GPU — try to move it
-            ok = await self.demote(card.name)
+        for name, current_gpu, preferred_gpu in misplaced:
+            # Re-check state — may have changed since snapshot
+            card = self._registry.get(name)
+            if card is None or not card.current_location.is_gpu:
+                continue
+            if card.current_location.gpu_index == preferred_gpu:
+                continue  # Already moved by a prior operation
+
+            ok = await self.demote(name)
             if ok:
-                result = await self.load_model(card.name, gpu=card.preferred_gpu)
+                result = await self.load_model(name, gpu=preferred_gpu)
                 if result.success:
                     actions.append(
-                        f"Moved {card.name}: GPU {current_gpu} → GPU {card.preferred_gpu}"
+                        f"Moved {name}: GPU {current_gpu} → GPU {preferred_gpu}"
                     )
                 else:
                     # Couldn't load on preferred — put it back
-                    await self.load_model(card.name, gpu=current_gpu)
-                    actions.append(f"Tried to move {card.name} but preferred GPU full")
+                    await self.load_model(name, gpu=current_gpu)
+                    actions.append(f"Tried to move {name} but preferred GPU full")
 
         return actions
 
@@ -526,7 +543,8 @@ class StackOrchestrator:
         Models that belonged to the deactivated app are excluded from the
         restore pass — they were just intentionally released.
         """
-        model_names = self._app_models.pop(app_name, [])
+        # Snapshot and pop atomically — prevents race with concurrent app_activate
+        model_names = list(self._app_models.pop(app_name, []))
         demoted: list[str] = []
 
         for name in model_names:
@@ -545,23 +563,33 @@ class StackOrchestrator:
         for action in restore_actions:
             logger.info("Post-deactivate restore: %s", action)
 
+        self._event_log.record(
+            "app_deactivate", app_name=app_name,
+            details={"demoted": demoted, "all_models": model_names,
+                     "restore_actions": restore_actions},
+        )
+
         return demoted
 
     # --- User Activity ---
 
     async def user_idle(self) -> list[str]:
         """User went idle. Demote all P1 USER_ACTIVE models to WARM."""
+        # Snapshot names first — demote() changes tier, which would mutate the
+        # collection if models_by_tier() ever returned a live view.
+        model_names = [c.name for c in self._registry.models_by_tier(ModelTier.USER_ACTIVE)]
         demoted: list[str] = []
-        for card in self._registry.models_by_tier(ModelTier.USER_ACTIVE):
-            ok = await self.demote(card.name)
+        for name in model_names:
+            ok = await self.demote(name)
             if ok:
-                demoted.append(card.name)
+                demoted.append(name)
         return demoted
 
     async def user_active(self, app_name: str) -> list[str]:
         """User came back. Re-promote the app's models."""
         model_names = self._app_models.get(app_name, [])
         promoted: list[str] = []
+        errors: list[str] = []
         for name in model_names:
             result = await self.ensure_loaded(name)
             if result.success:
@@ -569,6 +597,17 @@ class StackOrchestrator:
                 if card and card.current_tier != ModelTier.RESIDENT:
                     card.current_tier = ModelTier.USER_ACTIVE
                 promoted.append(name)
+            else:
+                errors.append(f"{name}: {result.error}")
+
+        self._event_log.record(
+            "app_activate", app_name=app_name,
+            success=len(promoted) > 0 or not model_names,
+            error="; ".join(errors) if errors else None,
+            details={"promoted": promoted, "requested": model_names,
+                     "trigger": "user_active"},
+        )
+
         return promoted
 
     # --- Frozen Baseline ---
