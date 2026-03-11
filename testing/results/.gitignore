@@ -1,0 +1,5 @@
+# Raw test output — regenerated on each run
+*.txt
+*.md
+!.gitkeep
+!.gitignore
