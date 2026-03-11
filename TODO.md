@@ -241,7 +241,66 @@ Concurrency test #4 from the Task 7 spec was skipped. Add it.
 
 ---
 
-## Task 10: Portability Pass — No Hardcoded Paths, Zip-and-Ship Ready
+## Task 10: APU Audit Fixes — Rollback Bug, Test Quality, Invariant Gaps
+
+Code review found real issues in the Tasks 5-8 implementation that need fixing before we build on top.
+
+**Fix 1: Rollback restores wrong tier (CRITICAL)**
+
+In `alchemy/apu/orchestrator.py`, when load fails after evicting models, rollback uses `evicted_card.default_tier` — but the evicted model may have been RESIDENT. Restoring as WARM violates invariants.
+
+```python
+# BEFORE (broken) — in _load_model_inner rollback block:
+self._registry.update_location(evicted_name, loc, evicted_card.default_tier)
+
+# AFTER (fixed) — save original tier BEFORE eviction:
+# At eviction time, store: evicted_tiers[name] = card.current_tier
+# At rollback time:
+self._registry.update_location(evicted_name, loc, evicted_tiers[evicted_name])
+```
+
+Also handle partial rollback: if re-loading the 3rd evicted model fails, log which models couldn't be restored and mark them as needing manual reconciliation.
+
+**Fix 2: Tests need real VRAM state tracking**
+
+Current stress tests mock `snapshot()` to always return the same values — loads/unloads never change VRAM readings. The mock needs to track state:
+
+```python
+class FakeGPUMonitor:
+    def __init__(self):
+        self.gpu_used = {0: 0, 1: 0}  # track VRAM per GPU
+
+    async def snapshot(self):
+        return GPUSnapshot(gpus=[
+            GPUInfo(index=0, total_vram_mb=12000, used_vram_mb=self.gpu_used[0]),
+            GPUInfo(index=1, total_vram_mb=16000, used_vram_mb=self.gpu_used[1]),
+        ])
+```
+
+Wire `_backend_load` mock to increment `gpu_used` by model's `vram_mb`, and `_backend_unload` to decrement it. Then invariant checks will actually catch VRAM overcommit.
+
+**Fix 3: Invariant checker — add missing checks**
+
+In `alchemy/apu/invariants.py`:
+- Add: RESIDENT tier model NOT on GPU → violation (currently only checks reverse)
+- Remove: dead null-check on `current_location` (it defaults to DISK, never None)
+- Add: total tracked VRAM on GPU vs snapshot actual VRAM — flag drift > 500MB
+
+**Fix 4: Lock granularity comment**
+
+The global `_state_lock` blocks ALL model operations while one loads. This is correct but slow. Add a `# TODO: per-GPU lock for better throughput` comment in orchestrator.py. Don't fix now — just document the trade-off.
+
+**Files to modify:**
+- `alchemy/apu/orchestrator.py` — fix rollback tier, add TODO comment on lock
+- `alchemy/apu/invariants.py` — add RESIDENT check, remove dead code, add VRAM drift check
+- `tests/test_apu/test_apu_stress.py` — replace static mock with stateful FakeGPUMonitor
+- `tests/test_apu/test_apu_diagnostics.py` — add test for VRAM drift invariant
+
+**Commit when done.**
+
+---
+
+## Task 11: Portability Pass — No Hardcoded Paths, Zip-and-Ship Ready
 
 Alchemy must be portable. Right now it's welded to one machine. Fix that.
 
@@ -278,7 +337,7 @@ Alchemy must be portable. Right now it's welded to one machine. Fix that.
 
 ---
 
-## Task 11: Alchemy Dashboard — Connect the Existing UI
+## Task 12: Alchemy Dashboard — Connect the Existing UI
 
 There's already a full React UI in `ui/` (Vite + React + TypeScript + shadcn/ui) with Dashboard, Memory, Settings pages and a Vite proxy to the API. There's also a standalone `dashboard/apu_staging.html`. But none of it is wired up for production use.
 
