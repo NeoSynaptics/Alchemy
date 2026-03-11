@@ -7,6 +7,23 @@ See `PC_TEST_GUIDE.md` for full implementation specs with code examples.
 
 ---
 
+## STATUS (2026-03-11 evening)
+
+- **Phase 1: DONE** — timing mocks fixed, serpentine scaffold, baselines
+- **Phase 2: DONE** — persistence, stress, all items checked (10K batch: 99.89%)
+- **Phase 3: IN PROGRESS** — APU baseline 8/8, size/batch ladder done, VRAM live tests scaffolded
+- **Phase 4: NOT STARTED**
+
+### Known Issues
+1. **10K batch: 11/10000 failures** — likely DB connection pool timeout under sustained load. Investigate `asyncpg` pool `max_size` in NEOSY config.
+2. **Section 2.3 items** — classification-dependent, need NEO running (Phase 3)
+
+### Next Up
+- **PC**: Section 1.2 image ladder, Section 4.1-4.2 VRAM leak (test scaffolds ready), then Section 6 voice
+- **Laptop**: Flesh out serpentine, connection pool investigation, duckduckgo dep fix
+
+---
+
 ## Current Baselines
 
 | Repo | Passed | Failed | Notes |
@@ -58,6 +75,7 @@ Goal: Load increasingly larger files, plot size vs time, find the cutoff. Set li
 
 ### 1.2 Image Size Ladder (Qwen-VL specific)
 Known: large images choke Qwen-VL. Find the real limit.
+**Test scaffold ready:** `NEOSY/tests/integration/test_image_ladder.py` — run with `pytest -m benchmark`
 - [ ] 1MP image (1000x1000) → Qwen-VL time
 - [ ] 4MP (2000x2000) → time
 - [ ] 12MP (4000x3000) → time (phone camera size)
@@ -67,6 +85,7 @@ Known: large images choke Qwen-VL. Find the real limit.
 
 ### 1.3 Video Processing Ladder
 Videos not yet tested. Find the limits.
+**Test scaffold ready:** `NEOSY/tests/integration/test_video_ladder.py` — run with `pytest -m benchmark`
 - [ ] 30s video (720p) → ffmpeg + whisper time
 - [ ] 5min video (1080p) → time
 - [ ] 30min video → time
@@ -133,6 +152,7 @@ Tests in `Alchemy/tests/test_apu/test_apu_integration.py`. Run with `pytest -m g
 - [x] /v1/modules: 16 modules registered
 
 ### 4.1 VRAM Leak Detection
+**Test scaffold ready:** `Alchemy/tests/test_apu/test_vram_live.py` — run with `pytest -m gpu`
 Known pain: small 0.5-1GB models sit as broken links, eat VRAM, make Qwen overflow to CPU or freeze.
 - [ ] Load small model (0.5GB) → APU tracks it
 - [ ] Small model idle 5min → APU reclaims if Qwen needs VRAM
