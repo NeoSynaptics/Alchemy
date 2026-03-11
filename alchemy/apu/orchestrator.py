@@ -55,10 +55,12 @@ class StackOrchestrator:
         monitor: GPUMonitor,
         registry: ModelRegistry,
         ollama_host: str = "http://localhost:11434",
+        vram_safety_margin_mb: int = 200,
     ) -> None:
         self._monitor = monitor
         self._registry = registry
         self._ollama_host = ollama_host.rstrip("/")
+        self._vram_safety_margin_mb = vram_safety_margin_mb
         self._mode = "auto"
         self._started = False
         # TODO: per-GPU lock for better throughput — the global lock blocks ALL
@@ -252,6 +254,30 @@ class StackOrchestrator:
 
         evicted = list(evicted_tiers.keys())
 
+        # Pre-load reality check: verify nvidia-smi agrees there's enough room.
+        # _make_room used registry estimates for eviction deltas; now confirm with hardware.
+        pre_snap = await self._monitor.snapshot()
+        pre_gpu = next((g for g in pre_snap.gpus if g.index == target_gpu), None)
+        if pre_gpu is not None:
+            actual_free = pre_gpu.free_vram_mb
+            needed_with_margin = card.vram_mb + self._vram_safety_margin_mb
+            if actual_free < needed_with_margin:
+                self._event_log.record(
+                    "vram_preload_reject", model_name=name, gpu_index=target_gpu,
+                    vram_expected_mb=card.vram_mb,
+                    success=False,
+                    error=f"Pre-load check: {actual_free}MB free < {needed_with_margin}MB needed",
+                    details={"actual_free_mb": actual_free, "safety_margin_mb": self._vram_safety_margin_mb},
+                )
+                logger.warning(
+                    "Pre-load reject %s: GPU %d has %dMB free, need %dMB (+%dMB margin)",
+                    name, target_gpu, actual_free, card.vram_mb, self._vram_safety_margin_mb,
+                )
+                return LoadResult(
+                    success=False,
+                    error=f"Pre-load check failed: {actual_free}MB free < {card.vram_mb}MB + {self._vram_safety_margin_mb}MB margin",
+                )
+
         # Perform the actual load
         ok = await self._backend_load(card, target_gpu)
         if not ok:
@@ -280,6 +306,11 @@ class StackOrchestrator:
                 success=False, error="Backend load failed",
                 details={"evicted_then_rolled_back": evicted, "rollback_failures": rollback_failures},
             )
+            # OOM recovery: schedule reconcile outside the lock (can't await it here —
+            # we're inside _state_lock and reconcile_vram also acquires it)
+            asyncio.get_event_loop().call_soon(
+                lambda: asyncio.ensure_future(self._safe_reconcile("post-load-failure"))
+            )
             return LoadResult(success=False, error=f"Backend load failed for {name}")
 
         location = ModelLocation.GPU_0 if target_gpu == 0 else ModelLocation.GPU_1
@@ -287,14 +318,33 @@ class StackOrchestrator:
         self._registry.update_location(name, location, tier)
         card.touch()
 
+        # Post-load drift check: compare actual VRAM delta vs expected
+        post_snap = await self._monitor.snapshot()
+        post_gpu = next((g for g in post_snap.gpus if g.index == target_gpu), None)
+        actual_free_after = post_gpu.free_vram_mb if post_gpu else None
+
         self._event_log.record(
             "load", model_name=name, gpu_index=target_gpu,
             vram_before_mb=vram_before,
             vram_after_mb=self._registry.total_vram_on_gpu(target_gpu),
             vram_expected_mb=card.vram_mb,
             duration_ms=(time.monotonic() - t0) * 1000,
-            details={"evicted": evicted},
+            details={"evicted": evicted, "actual_free_after_mb": actual_free_after},
         )
+
+        if pre_gpu is not None and post_gpu is not None:
+            actual_delta = pre_gpu.free_vram_mb - post_gpu.free_vram_mb
+            drift = abs(actual_delta - card.vram_mb)
+            if drift > 1024:  # >1GB drift
+                logger.warning(
+                    "VRAM drift after loading %s on GPU %d: expected %dMB, actual delta %dMB (drift %dMB)",
+                    name, target_gpu, card.vram_mb, actual_delta, drift,
+                )
+                self._event_log.record(
+                    "vram_drift", model_name=name, gpu_index=target_gpu,
+                    vram_expected_mb=card.vram_mb,
+                    details={"actual_delta_mb": actual_delta, "drift_mb": drift},
+                )
 
         return LoadResult(success=True, location=location, evicted=evicted)
 
@@ -775,6 +825,15 @@ class StackOrchestrator:
             ),
         }
 
+    async def _safe_reconcile(self, reason: str = "") -> None:
+        """Fire-and-forget reconcile with error handling."""
+        try:
+            actions = await self.reconcile_vram()
+            if actions:
+                logger.info("Reconcile (%s): %d corrections", reason, len(actions))
+        except Exception as e:
+            logger.warning("Reconcile (%s) failed: %s", reason, e)
+
     async def reconcile_vram(self) -> list[str]:
         """Reconcile registry state with actual Ollama state. Fix drift."""
         actions: list[str] = []
@@ -850,13 +909,15 @@ class StackOrchestrator:
         best_free = -1
 
         for gpu in snap.gpus:
-            # Account for what the registry says is loaded (more reliable than pynvml alone)
-            registry_used = self._registry.total_vram_on_gpu(gpu.index)
-            estimated_free = gpu.total_vram_mb - registry_used
+            # Conservative estimate: min of nvidia-smi and registry.
+            # nvidia-smi catches CUDA/Ollama/system overhead the registry misses.
+            # Registry catches recent loads the nvidia-smi snapshot may not reflect yet.
+            registry_free = gpu.total_vram_mb - self._registry.total_vram_on_gpu(gpu.index)
+            free = min(gpu.free_vram_mb, registry_free)
 
-            if estimated_free >= needed_mb and estimated_free > best_free:
+            if free >= needed_mb and free > best_free:
                 best = gpu.index
-                best_free = estimated_free
+                best_free = free
 
         return best
 
@@ -877,8 +938,10 @@ class StackOrchestrator:
         if gpu is None:
             return None
 
-        registry_used = self._registry.total_vram_on_gpu(gpu_index)
-        available = gpu.total_vram_mb - registry_used
+        # Conservative estimate: min of nvidia-smi and registry.
+        # nvidia-smi catches real overhead; registry catches recent model loads.
+        registry_free = gpu.total_vram_mb - self._registry.total_vram_on_gpu(gpu_index)
+        available = min(gpu.free_vram_mb, registry_free)
 
         if available >= needed_mb:
             return {}  # Already enough room

@@ -128,7 +128,8 @@ def test_valid_event_types_comprehensive():
     """All expected event types are in the valid set."""
     expected = {"load", "unload", "evict", "promote", "demote",
                 "drift", "error", "reconcile", "app_activate",
-                "app_deactivate", "health_check", "invariant_violation"}
+                "app_deactivate", "health_check", "invariant_violation",
+                "vram_preload_reject", "vram_drift"}
     assert expected == VALID_EVENT_TYPES
 
 

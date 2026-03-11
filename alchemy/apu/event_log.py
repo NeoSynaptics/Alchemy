@@ -18,6 +18,7 @@ VALID_EVENT_TYPES = frozenset({
     "load", "unload", "evict", "promote", "demote",
     "drift", "error", "reconcile", "app_activate",
     "app_deactivate", "health_check", "invariant_violation",
+    "vram_preload_reject", "vram_drift",
 })
 
 # Rough estimate: 100ms per GB for Ollama loads

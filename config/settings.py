@@ -234,6 +234,11 @@ class ConnectSettings(BaseModel):
     data_dir: str = "data/connect"
 
 
+class APUSettings(BaseModel):
+    """APU (Alchemy Processing Unit) — GPU fleet management."""
+    vram_safety_margin_mb: int = 200  # CUDA kernel overhead buffer for pre-load check
+
+
 class AgentsSettings(BaseModel):
     """AlchemyAgents — internal agent orchestration. Toggle per agent."""
     enabled: bool = True
@@ -326,6 +331,7 @@ class Settings(BaseSettings):
     word: WordSettings = WordSettings()
     voice: VoiceSettings = VoiceSettings()
     connect: ConnectSettings = ConnectSettings()
+    apu: APUSettings = APUSettings()
     agents: AgentsSettings = AgentsSettings()
     memory: MemorySettings = MemorySettings()
     browser: BrowserSettings = BrowserSettings()

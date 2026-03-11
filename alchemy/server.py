@@ -82,6 +82,7 @@ async def lifespan(app: FastAPI):
             monitor=gpu_monitor,
             registry=model_registry,
             ollama_host=settings.ollama_host,
+            vram_safety_margin_mb=settings.apu.vram_safety_margin_mb,
         )
         await orchestrator.start()
         app.state.orchestrator = orchestrator
