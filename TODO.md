@@ -732,7 +732,7 @@ Start the full server, open browser, verify the dashboard shows real GPU data.
 
 ---
 
-## Task 24: NEOSY E2E with Ollama — NEO Queue Processing
+## [DONE] Task 24: NEOSY E2E with Ollama — NEO Queue Processing
 
 Task 9 skipped this because Ollama wasn't running. Now test it.
 
