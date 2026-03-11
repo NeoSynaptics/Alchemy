@@ -779,7 +779,7 @@ Wire voice responses + user reactions into NEOSY registro.
 
 ---
 
-## Task 27: Full Integration Smoke Test
+## [DONE] Task 27: Full Integration Smoke Test
 
 Everything up, everything connected, end-to-end.
 
