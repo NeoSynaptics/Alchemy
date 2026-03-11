@@ -14,7 +14,7 @@ See `PC_TEST_GUIDE.md` for full implementation specs with code examples.
 | Alchemy | 1109 | 8 | 8 missing dep (research), timing mocks FIXED |
 | Alchemy GPU (APU) | 8 | 0 | VRAM accounting, model tracking, voice, perf (2026-03-11 PC) |
 | NEOSY | 98 | 0 | 42 unit + 14 behavioral + 42 edge cases |
-| NEOSY integration | 10 | 0 | 4 persistence + 6 stress (2026-03-11 PC) |
+| NEOSY integration | 16 | 1 | 7 persistence + 9 stress. 10K batch: 11/10000 failed (2026-03-11 PC) |
 | NEOSY benchmark | 10 | 0 | Size ladder + batch ladder + search perf (2026-03-11 PC) |
 
 ### Alchemy Known Failures
@@ -82,16 +82,16 @@ Goal: Ingest buffer handles massive dumps (10-20x normal) without blocking day t
 ### 2.1 Mass Ingest Stress
 - [x] 100 items sequentially → all stored, no loss (3.7s, 37ms/item)
 - [x] 1,000 items batch → all stored, no silent drops (35.8s, 36ms/item). Bug fixed: `'processing'` → `'in_progress'` in ingest.py.
-- [ ] 10,000 items → buffer holds, system responsive
+- [x] 10,000 items batch → **9989/10000 completed, 11 failed** (292.6s, 29ms/item). 99.89% — investigate the 11 failures (likely DB connection timeout under sustained load).
 - [x] During mass ingest, 1 "day task" ingest → completes in <2s (446ms during 500-item batch)
 - [x] During mass ingest, search query → returns in <1s (avg 128ms, worst 309ms)
 
 ### 2.2 Concurrent Multi-Device Simulation
 - [x] 5 concurrent ingest streams (5 phones pushing photos) — 2.9s, no errors
 - [x] 10 concurrent → no DB connection pool exhaustion (3.5s, 0 errors)
-- [ ] 20 concurrent → find the breaking point
-- [x] No duplicate memory_ids across streams (verified both 5x20 and 10x10)
-- [ ] Registro has exactly N entries for N ingests (no silent drops)
+- [x] 20 concurrent × 10 items → **200/200, 0 errors, 6.8s**. No breaking point found at 20 streams.
+- [x] No duplicate memory_ids across streams (verified 5x20, 10x10, 20x10)
+- [x] Registro has exactly N entries for N ingests — verified 25/25, 0 missing
 
 ### 2.3 Priority & Day Tasks
 - [ ] 5,000 items in background queue + user ingests 1 item → classified within 30s
@@ -109,11 +109,11 @@ Goal: Data survives restart. No silent loss.
 - [x] Ingest 10 items → restart Docker → query all 10 → all present (0.9s ingest, 4.1s restart+recovery)
 - [x] Kill server mid-ingest → restart → partial items either complete or cleanly rolled back (canary status: embedded)
 - [x] Qdrant vectors survive restart (volume mount) — all 10 vectors verified after restart
-- [ ] Vault files survive restart (disk, not RAM)
+- [x] Vault files survive restart — 241 vault_refs verified identical after Docker restart
 
 ### 3.2 Transaction Safety
 - [x] Force Qdrant error mid-ingest → server returns 500 (rejects, no silent drop). No orphaned vectors (0 found in audit of 47 vectors).
-- [ ] Force DB error mid-ingest → no orphaned Qdrant vectors without DB records
+- [x] Force DB error mid-ingest → **0 orphaned vectors**. Stopped PostgreSQL, attempted ingest (got 500), restarted, verified vector count unchanged (15279 before = 15279 after).
 
 ---
 
