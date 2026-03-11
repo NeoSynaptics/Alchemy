@@ -15,7 +15,7 @@ See `PC_TEST_GUIDE.md` for full implementation specs with code examples.
 - **Phase 4: NOT STARTED**
 
 ### Blocking Issues
-1. **10K batch: 11/10000 failures** — asyncpg `max_size=10` pool exhaustion. Fix: bump to 20 + add semaphore(8) in batch route. PC Task 1.
+1. ~~**10K batch: 11/10000 failures**~~ — **FIXED.** Chunked batch ingest (29.6s, 3ms/item). Semaphore + command_timeout applied.
 2. **APU VRAM drift 5-8GB** — `_make_room()` trusts registry, not nvidia-smi. OOM risk on tight GPUs. Fix: pre-load reality check. See Alchemy TODO Task A.
 
 ### Priority Order
@@ -55,10 +55,10 @@ APU alone has 3,200 LOC of tests for 2,600 LOC of source — 120% test density. 
 
 | Repo | Passed | Failed | Notes |
 |------|--------|--------|-------|
-| Alchemy | 1109 | 8 | 8 missing dep (research), timing mocks FIXED |
+| Alchemy | 1128 | 8 | 8 missing dep (research), timing mocks FIXED |
 | Alchemy GPU (APU) | 8 | 0 | VRAM accounting, model tracking, voice, perf (2026-03-11 PC) |
 | NEOSY | 98 | 0 | 42 unit + 14 behavioral + 42 edge cases |
-| NEOSY integration | 16 | 1 | 7 persistence + 9 stress. 10K batch: 11/10000 failed (2026-03-11 PC) |
+| NEOSY integration | 21 | 0 | 7 persistence + 9 stress + 5 image ladder. 10K batch FIXED |
 | NEOSY benchmark | 10 | 0 | Size ladder + batch ladder + search perf (2026-03-11 PC) |
 
 ### Alchemy Known Failures
@@ -103,11 +103,11 @@ Goal: Load increasingly larger files, plot size vs time, find the cutoff. Set li
 ### 1.2 Image Size Ladder (Qwen-VL specific)
 Known: large images choke Qwen-VL. Find the real limit.
 **Test scaffold ready:** `NEOSY/tests/integration/test_image_ladder.py` — run with `pytest -m benchmark`
-- [ ] 1MP image (1000x1000) → Qwen-VL time
-- [ ] 4MP (2000x2000) → time
-- [ ] 12MP (4000x3000) → time (phone camera size)
-- [ ] 24MP → time
-- [ ] 50MP → expect failure
+- [x] 1MP image (1000x1000) → 7.31s (cold start)
+- [x] 4MP (2000x2000) → 1.34s
+- [x] 12MP (4000x3000) → 1.34s (phone camera size)
+- [x] 24MP → 1.32s
+- [x] 50MP → 1.33s — did NOT break, all sizes pass
 - [ ] Set MAX_IMAGE_RESOLUTION, auto-resize before Qwen-VL
 
 ### 1.3 Video Processing Ladder
@@ -177,6 +177,8 @@ Tests in `Alchemy/tests/test_apu/test_apu_integration.py`. Run with `pytest -m g
 - [x] Voice status endpoint responds (voice not started but endpoint healthy)
 - [x] APU status latency: avg 55ms, worst 260ms
 - [x] /v1/modules: 16 modules registered
+
+**Section 4.1-4.2 VRAM live tests: 3/3 PASS (health, load/unload, 10-cycle leak)**
 
 ### 4.1 VRAM Leak Detection
 **Test scaffold ready:** `Alchemy/tests/test_apu/test_vram_live.py` — run with `pytest -m gpu`
