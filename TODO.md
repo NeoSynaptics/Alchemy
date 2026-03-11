@@ -747,7 +747,7 @@ Task 9 skipped this because Ollama wasn't running. Now test it.
 
 ---
 
-## Task 25: Voice Pipeline E2E — Mic to Speaker
+## [DONE] Task 25: Voice Pipeline E2E — Mic to Speaker
 
 Full voice loop test.
 
