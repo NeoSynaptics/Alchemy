@@ -12,8 +12,10 @@ See `PC_TEST_GUIDE.md` for full implementation specs with code examples.
 | Repo | Passed | Failed | Notes |
 |------|--------|--------|-------|
 | Alchemy | 1109 | 8 | 8 missing dep (research), timing mocks FIXED |
+| Alchemy GPU (APU) | 8 | 0 | VRAM accounting, model tracking, voice, perf (2026-03-11 PC) |
 | NEOSY | 98 | 0 | 42 unit + 14 behavioral + 42 edge cases |
-| NEOSY integration | 10 | 0 | 4 persistence + 6 stress (2026-03-11) |
+| NEOSY integration | 10 | 0 | 4 persistence + 6 stress (2026-03-11 PC) |
+| NEOSY benchmark | 10 | 0 | Size ladder + batch ladder + search perf (2026-03-11 PC) |
 
 ### Alchemy Known Failures
 1. ~~**5 timing mock issues** — FIXED (inference_ms mocks now use perf_counter patch)~~
@@ -34,15 +36,25 @@ See `PC_TEST_GUIDE.md` for full implementation specs with code examples.
 Goal: Load increasingly larger files, plot size vs time, find the cutoff. Set limits with 40% overhead margin.
 
 ### 1.1 Ingest Size Ladder
-- [ ] 1MB text → measure ingest time
-- [ ] 10MB text → measure
-- [ ] 50MB text → measure
-- [ ] 100MB text → measure
+- [x] 1MB text → 2.1s, 0.43 MB/s (2026-03-11 PC)
+- [x] 10MB text → 5.4s, 1.67 MB/s
+- [x] 50MB text → 28.8s, 1.56 MB/s
+- [x] 100MB text → 89.0s, 1.01 MB/s (throughput drops — knee of curve is ~50MB)
 - [ ] 500MB → measure (target upper bound)
 - [ ] 1GB → find where it breaks
 - [ ] Plot: file size vs ingest time. Find the knee of the curve.
-- [ ] Set MAX_INGEST_SIZE = (knee point) + 40% overhead
+- [ ] Set MAX_INGEST_SIZE = (knee point) + 40% overhead → suggest ~70MB based on 50MB knee
 - [ ] Add config setting + validation that rejects files above limit with clear error
+
+### 1.1b Batch Size Ladder (2026-03-11 PC — all PASS)
+- [x] 10 batch → 0.7s (69ms/item)
+- [x] 100 batch → 3.3s (33ms/item)
+- [x] 500 batch → 15.0s (30ms/item)
+- [x] 1000 batch → 27.4s (27ms/item)
+- [x] 2000 batch → 57.9s (29ms/item) — linear scaling, no degradation
+
+### 1.1c Search Performance Baseline (2026-03-11 PC)
+- [x] 5 queries: avg 84ms, worst 306ms (first query cold). Sub-30ms warm.
 
 ### 1.2 Image Size Ladder (Qwen-VL specific)
 Known: large images choke Qwen-VL. Find the real limit.
@@ -108,6 +120,17 @@ Goal: Data survives restart. No silent loss.
 ## Section 4: GPU Health & APU Stress (Phase 3 — PC + GPU)
 
 Goal: Detect frozen routines, recover VRAM. Small model leaks don't block big models.
+
+### 4.0 APU Baseline (2026-03-11 PC — 8/8 PASS)
+Tests in `Alchemy/tests/test_apu/test_apu_integration.py`. Run with `pytest -m gpu`.
+- [x] VRAM matches nvidia-smi within 500MB (GPU0: diff=271MB, GPU1: diff=260MB)
+- [x] 12 models in fleet, all tracked with valid locations
+- [x] 2 GPUs detected, matches hardware
+- [x] All Ollama models have valid location (gpu_0/gpu_1/cpu_ram/disk)
+- [x] GPU-resident models report >0 VRAM (qwen2.5vl:7b on gpu_1, 13.5GB)
+- [x] Voice status endpoint responds (voice not started but endpoint healthy)
+- [x] APU status latency: avg 55ms, worst 260ms
+- [x] /v1/modules: 16 modules registered
 
 ### 4.1 VRAM Leak Detection
 Known pain: small 0.5-1GB models sit as broken links, eat VRAM, make Qwen overflow to CPU or freeze.
