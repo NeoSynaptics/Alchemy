@@ -157,7 +157,14 @@ class TestPlaywrightAgent:
         page = _mock_page(SIMPLE_TREE)
 
         agent = PlaywrightAgent(ollama_client=ollama, think=False)
-        result = await agent.run_task("Click Go", page)
+        # Deterministic clock: each call advances by 50ms
+        _tick = [1.0]
+        def _clock():
+            val = _tick[0]
+            _tick[0] += 0.05
+            return val
+        with patch("alchemy.core.agent.time.monotonic", side_effect=_clock):
+            result = await agent.run_task("Click Go", page)
 
         assert result.total_ms > 0
         assert result.steps[0].inference_ms >= 0

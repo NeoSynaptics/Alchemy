@@ -1,6 +1,6 @@
 """Tests for Synthesizer — LLM decomposition + scoring + synthesis."""
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
@@ -145,11 +145,13 @@ class TestSynthesize:
         synth = Synthesizer(ollama_client=mock_ollama)
 
         pages = [_make_page("Page One", "source content here")]
-        result = await synth.synthesize("test question", pages)
+        clock = iter([1.0, 1.05]).__next__
+        with patch("alchemy.research.synthesizer.time.monotonic", side_effect=clock):
+            result = await synth.synthesize("test question", pages)
 
         assert isinstance(result, SynthesisResult)
         assert "Here is the answer" in result.answer
-        assert result.inference_ms > 0
+        assert result.inference_ms == pytest.approx(50.0, abs=0.1)
 
     async def test_extracts_sources(self):
         answer_text = (

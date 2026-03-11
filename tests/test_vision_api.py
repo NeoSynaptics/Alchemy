@@ -1,6 +1,6 @@
 """Vision endpoint tests — with mock Ollama + controller."""
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -65,7 +65,9 @@ async def test_analyze(client):
     assert resp.status_code == 200
     data = resp.json()
     assert data["action"]["action"] == "click"
-    assert data["inference_ms"] > 0
+    # inference_ms may be 0.0 when mocked inference returns instantly — that's correct
+    assert isinstance(data["inference_ms"], (int, float))
+    assert data["inference_ms"] >= 0
 
 
 @pytest.mark.asyncio

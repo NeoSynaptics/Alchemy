@@ -1,6 +1,6 @@
 """Vision agent tests — full agent loop with all deps mocked."""
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -176,12 +176,14 @@ class TestAnalyzeSingle:
 
         agent = _make_agent(*deps)
         png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 100
-        resp = await agent.analyze_single(png, "click the button")
+        clock = iter([1.0, 1.05]).__next__
+        with patch("alchemy.click.flow.vision_agent.time.monotonic", side_effect=clock):
+            resp = await agent.analyze_single(png, "click the button")
 
         assert resp.action.action == "click"
         assert resp.action.x == 750   # 500/1280*1920 (IMAGE_PIXEL mode)
         assert resp.action.y == 375   # 250/720*1080
-        assert resp.inference_ms > 0
+        assert resp.inference_ms == pytest.approx(50.0, abs=0.1)
         assert resp.model == "test-model"
 
     async def test_non_streaming_analyze(self, deps):
