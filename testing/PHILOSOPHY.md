@@ -158,6 +158,62 @@ For testing: inject content in Spanish, search in English, verify the result is 
 
 ---
 
+## Test Architecture
+
+### Two Layers: Mocked (Laptop) + Real (PC)
+
+**Laptop tests** run against mocked infrastructure — no Docker, no GPU. They verify logic, edge cases, and behavioral contracts. All 98 NEOSY tests and 1100+ Alchemy tests are laptop-safe.
+
+**PC tests** run against real Docker services (PostgreSQL, Qdrant) and real GPUs. They verify persistence, performance, VRAM management, and end-to-end flows. These are TESTING_TODO.md Sections 1-9.
+
+The boundary is clean: if a test needs `docker compose up` or `nvidia-smi`, it's PC-only. Everything else runs anywhere.
+
+### pytest Markers
+
+```
+@pytest.mark.integration  — requires Docker (PostgreSQL + Qdrant running)
+@pytest.mark.benchmark    — size ladder / performance measurement
+@pytest.mark.gpu          — requires GPU for model inference
+@pytest.mark.serpentine   — the full end-to-end walk
+```
+
+Laptop: `pytest tests/` (unmarked = laptop-safe)
+PC: `pytest tests/ -m integration` or `pytest tests/ -m gpu`
+
+### The Timing Rule
+
+Every PC test prints its timing:
+
+```python
+t0 = time.perf_counter()
+# ... do the thing ...
+elapsed = time.perf_counter() - t0
+print(f"\n  {test_name}: {elapsed:.1f}s")
+```
+
+Without timing, we can't build size ladders, detect regressions, or set limits.
+
+### The Three-Source Truth Pattern
+
+For GPU state, three sources must agree:
+
+1. **The code** — what the APU reports via API
+2. **The screen** — what the dashboard shows (screenshot)
+3. **The hardware** — what `nvidia-smi` reports
+
+If any two disagree, the test fails and all three values are logged.
+
+### Dev Order (4 Phases)
+
+**Phase 1 — Laptop-safe:** Fix voice timing mocks, build test harness, scaffold Serpentine.
+**Phase 2 — PC + Docker (no GPU):** Persistence & Recovery (Section 3), Buffer Stress (Section 2).
+**Phase 3 — PC + GPU:** Size Ladders (1), APU Stress (4), Voice (6), NEO Intelligence (8).
+**Phase 4 — Polish:** Playwright Scraping (5), Visual Debugging (7), wire into Serpentine, nightly runs.
+
+See `PC_TEST_GUIDE.md` for full implementation specs per section.
+
+---
+
 ## Where Tests Live
 
 | Location | What |
@@ -172,11 +228,19 @@ For testing: inject content in Spanish, search in English, verify the result is 
 
 ## How to Work on Tests
 
-1. Read this file first (PHILOSOPHY.md)
-2. Read TESTING_TODO.md for the checklist
-3. Pick a section
-4. Write tests that answer user-visible questions
-5. Use synthetic data from `BaratzaMemory/tests/synthetic.py`
-6. Run tests, log results
-7. Any failure = investigate and fix the code, not the test
-8. Commit and push
+### If You're on the Laptop (no GPU, no Docker):
+1. Read this file (PHILOSOPHY.md)
+2. Work on laptop-safe tests: logic, edge cases, behavioral contracts
+3. Run: `cd BaratzaMemory && PYTHONPATH=src pytest tests/`
+4. Run: `cd Alchemy && pytest tests/ -v`
+5. Fix failures in the code, not the test
+6. Commit and push
+
+### If You're on the PC (GPU + Docker):
+1. Read this file (PHILOSOPHY.md)
+2. Read `PC_TEST_GUIDE.md` for implementation specs and dev order
+3. Read TESTING_TODO.md for the checklist
+4. Follow the phase order: Persistence → Stress → Size Ladders → APU → Voice → NEO
+5. Every test prints timing. Every failure captures a debug dump.
+6. Update TESTING_TODO.md with results (check boxes, add findings)
+7. Commit and push

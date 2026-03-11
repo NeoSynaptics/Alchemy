@@ -2,6 +2,9 @@
 
 Distilled from test results + user requirements. Claude reads this, fixes issues, re-runs tests.
 
+**Implementation order:** Phase 1 (laptop) → Phase 2 (Docker) → Phase 3 (GPU) → Phase 4 (polish).
+See `PC_TEST_GUIDE.md` for full implementation specs with code examples.
+
 ---
 
 ## Current Baselines
@@ -15,16 +18,16 @@ Distilled from test results + user requirements. Claude reads this, fixes issues
 1. **5 timing mock issues** — `test_voice/` tests with `asyncio.sleep` mocking fragility
 2. **8 missing `duckduckgo_search` dep** — `test_research/` needs the package installed (PC only)
 
-### Alchemy Action Items
+### Alchemy Action Items — Phase 1 (Laptop)
 - [ ] Fix voice timing mocks (laptop-safe, no GPU needed)
 - [ ] Install `duckduckgo_search` on PC and re-run research tests
 
-### NEOSY Action Items
-- [ ] Run edge cases against real Docker + Qdrant on PC (Task 24)
+### NEOSY Action Items — Phase 2 (PC + Docker)
+- [ ] Run edge cases against real Docker + Qdrant on PC
 
 ---
 
-## Section 1: Size & Performance Limits (PC)
+## Section 1: Size & Performance Limits (Phase 3 — PC + GPU)
 
 Goal: Load increasingly larger files, plot size vs time, find the cutoff. Set limits with 40% overhead margin.
 
@@ -58,7 +61,7 @@ Videos not yet tested. Find the limits.
 
 ---
 
-## Section 2: Buffer & Queue Stress (PC)
+## Section 2: Buffer & Queue Stress (Phase 2 — PC + Docker)
 
 Goal: Ingest buffer handles massive dumps (10-20x normal) without blocking day tasks. Store fast, classify later.
 
@@ -84,7 +87,7 @@ Goal: Ingest buffer handles massive dumps (10-20x normal) without blocking day t
 
 ---
 
-## Section 3: Persistence & Recovery (PC)
+## Section 3: Persistence & Recovery (Phase 2 — PC + Docker, DO FIRST)
 
 Goal: Data survives restart. No silent loss.
 
@@ -100,7 +103,7 @@ Goal: Data survives restart. No silent loss.
 
 ---
 
-## Section 4: GPU Health & APU Stress (PC)
+## Section 4: GPU Health & APU Stress (Phase 3 — PC + GPU)
 
 Goal: Detect frozen routines, recover VRAM. Small model leaks don't block big models.
 
@@ -129,7 +132,7 @@ Known pain: small 0.5-1GB models sit as broken links, eat VRAM, make Qwen overfl
 
 ---
 
-## Section 5: Playwright & Scraping (PC)
+## Section 5: Playwright & Scraping (Phase 4 — Polish)
 
 Goal: Scraping gets real data. Errors are clear, never silent.
 
@@ -147,7 +150,7 @@ Goal: Scraping gets real data. Errors are clear, never silent.
 
 ---
 
-## Section 6: Voice Reliability (PC)
+## Section 6: Voice Reliability (Phase 3 — PC + GPU)
 
 Goal: Core voice commands work 100%.
 
@@ -169,7 +172,7 @@ Goal: Core voice commands work 100%.
 
 ---
 
-## Section 7: Visual Debugging & Screenshot Assertions (PC)
+## Section 7: Visual Debugging & Screenshot Assertions (Phase 4 — Polish)
 
 Goal: Screenshot real UI, assert against expected state. Visual = trustworthy.
 
@@ -194,7 +197,7 @@ Goal: Screenshot real UI, assert against expected state. Visual = trustworthy.
 
 ---
 
-## Section 8: NEO Personality & Intelligence (PC + GPU)
+## Section 8: NEO Personality & Intelligence (Phase 3 — PC + GPU)
 
 ### 8.1 Classification Quality
 - [ ] 10 known-topic documents → NEO classifies → extracted topics vs expected
@@ -217,7 +220,7 @@ Goal: Screenshot real UI, assert against expected state. Visual = trustworthy.
 
 ---
 
-## Section 9: End-to-End Serpentine (PC — Full Stack)
+## Section 9: End-to-End Serpentine (Phase 1 scaffold + Phase 4 wire-up)
 
 One continuous unattended test through every major path:
 
