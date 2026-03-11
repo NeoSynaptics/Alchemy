@@ -124,4 +124,6 @@ class TestSearchProvider:
             results = provider._search_sync("test query")
 
         assert len(results) == 1
-        mock_ddgs.text.assert_called_once_with("test query", max_results=3)
+        mock_ddgs.text.assert_called_once_with(
+            "test query", region="wt-wt", safesearch="moderate", max_results=3
+        )

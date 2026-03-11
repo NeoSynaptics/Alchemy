@@ -1,6 +1,6 @@
 """Tests for ResearchEngine — pipeline orchestration."""
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -64,7 +64,9 @@ class TestRunSemantic:
         engine, synth, searcher, collector = _make_engine()
         progress = ResearchProgress()
 
-        result = await engine.run_semantic("test question", progress)
+        with patch("alchemy.research.engine.time") as mock_time:
+            mock_time.monotonic.side_effect = [0.0, 1.0]
+            result = await engine.run_semantic("test question", progress)
 
         assert result.stage == PipelineStage.COMPLETED
         assert result.result is not None
@@ -115,7 +117,9 @@ class TestRunSemantic:
         synth.decompose_query = AsyncMock(side_effect=Exception("unexpected crash"))
         progress = ResearchProgress()
 
-        result = await engine.run_semantic("test", progress)
+        with patch("alchemy.research.engine.time") as mock_time:
+            mock_time.monotonic.side_effect = [0.0, 1.0]
+            result = await engine.run_semantic("test", progress)
 
         assert result.stage == PipelineStage.FAILED
         assert "unexpected crash" in result.error

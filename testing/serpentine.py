@@ -74,12 +74,20 @@ async def main():
     runner = SerpentineRunner()
     memory_ids = []
 
-    # Step 1: Health check
+    # Step 1: Health check — both services
     async def check_health():
         async with httpx.AsyncClient(timeout=10) as c:
-            r = await c.get(f"{NEOSY}/health")
-            assert r.status_code == 200
-            return "NEOSY healthy"
+            r_neosy = await c.get(f"{NEOSY}/health")
+            assert r_neosy.status_code == 200, f"NEOSY health failed: {r_neosy.status_code}"
+            neosy_data = r_neosy.json()
+            assert neosy_data.get("status") == "ok", f"NEOSY not ok: {neosy_data}"
+
+            r_alchemy = await c.get(f"{ALCHEMY}/health")
+            assert r_alchemy.status_code == 200, f"Alchemy health failed: {r_alchemy.status_code}"
+            alchemy_data = r_alchemy.json()
+            assert alchemy_data.get("status") == "ok", f"Alchemy not ok: {alchemy_data}"
+
+        return f"NEOSY healthy | Alchemy v{alchemy_data.get('version', '?')} healthy"
 
     # Step 2: Ingest 5 text files
     async def ingest_texts():
@@ -117,15 +125,25 @@ async def main():
             assert r.status_code == 200
             return f"Pinned {mid}"
 
-    # Step 5: Batch ingest 100 items
+    # Step 5: Batch ingest 100 items + Alchemy APU smoke check under load
     async def batch_ingest():
         items = [{"text": f"Batch serpentine item {i}", "title": f"Batch #{i}"} for i in range(100)]
         async with httpx.AsyncClient(timeout=120) as c:
+            t0 = time.perf_counter()
             r = await c.post(f"{NEOSY}/ingest/batch", json={"items": items, "entity": "user"})
+            batch_elapsed = time.perf_counter() - t0
             assert r.status_code == 200
             data = r.json()
             assert data["completed"] == 100, f"Only {data['completed']}/100 completed"
-            return f"100 items ingested, {data['completed']} completed"
+
+            # Alchemy APU status — verify GPU orchestrator alive while NEOSY was under load
+            r_apu = await c.get(f"{ALCHEMY}/v1/apu/status", timeout=10)
+            assert r_apu.status_code == 200, f"APU status failed: {r_apu.status_code}"
+
+        return (
+            f"100 items ingested in {batch_elapsed:.1f}s, {data['completed']} completed"
+            f" | Alchemy APU responsive"
+        )
 
     # Step 6: Search during/after batch (latency check)
     async def search_latency():
