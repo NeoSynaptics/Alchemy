@@ -160,6 +160,8 @@ Known pain: small 0.5-1GB models sit as broken links, eat VRAM, make Qwen overfl
 - [ ] Qwen needs 10GB, only 8GB free → small model MUST be evicted
 
 ### 4.2 Frozen Routine Detection
+- [x] APU health + event tracking: PASS (500ms, 100 events, 0 slow) — 2026-03-11 PC
+- [x] Health endpoint: responds 200 but `healthy: False` — GPU0 drift 7864MB, GPU1 drift 5164MB (system processes + Ollama overhead not in registry)
 - [ ] Model takes 60s instead of 3s → APU logs "slow"
 - [ ] Model never returns (infinite hang) → timeout fires, model killed
 - [ ] After timeout kill → GPU VRAM actually freed (not just marked free)
