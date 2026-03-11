@@ -36,6 +36,9 @@ _TIER_PRIORITY = {
 }
 
 
+# NOTE: Currently limited to 2 GPUs (GPU_0, GPU_1). If expanding to more GPUs,
+# add new enum members and update gpu_location() below — it's the single point
+# of control for the GPU index <-> ModelLocation mapping.
 class ModelLocation(str, Enum):
     GPU_0 = "gpu_0"
     GPU_1 = "gpu_1"
@@ -54,6 +57,15 @@ class ModelLocation(str, Enum):
         if self == ModelLocation.GPU_1:
             return 1
         return None
+
+
+def gpu_location(index: int) -> ModelLocation:
+    """Map GPU index to ModelLocation. Single place to extend for >2 GPUs."""
+    _GPU_MAP = {0: ModelLocation.GPU_0, 1: ModelLocation.GPU_1}
+    loc = _GPU_MAP.get(index)
+    if loc is None:
+        raise ValueError(f"Unsupported GPU index: {index} (supported: {list(_GPU_MAP)})")
+    return loc
 
 
 class ModelBackend(str, Enum):

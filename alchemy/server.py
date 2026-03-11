@@ -493,14 +493,16 @@ from alchemy.memory.api.memory_api import router as memory_router
 app.include_router(memory_router)
 
 # NEOSY routes
-if settings.neosy.enabled:
+if settings.neosy.enabled and settings.neosy.src_path:
     try:
-        sys.path.insert(0, r'C:\Users\monic\BaratzaMemory\src')
+        sys.path.insert(0, settings.neosy.src_path)
         from baratza.api.routes import router as neosy_router
         app.include_router(neosy_router, prefix="/v1/neosy")
         logger.info("NEOSY routes mounted at /v1/neosy/*")
     except Exception:
-        logger.warning("NEOSY routes not available")
+        logger.warning("NEOSY routes not available (src_path=%s)", settings.neosy.src_path)
+elif settings.neosy.enabled:
+    logger.info("NEOSY enabled but src_path not set — skipping route mount")
 
 
 @app.get("/health")

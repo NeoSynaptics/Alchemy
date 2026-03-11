@@ -241,7 +241,7 @@ Concurrency test #4 from the Task 7 spec was skipped. Add it.
 
 ---
 
-## Task 10: APU Audit Fixes — Rollback Bug, Test Quality, Invariant Gaps
+## [DONE] Task 10: APU Audit Fixes — Rollback Bug, Test Quality, Invariant Gaps
 
 Code review found real issues in the Tasks 5-8 implementation that need fixing before we build on top.
 
@@ -300,7 +300,7 @@ The global `_state_lock` blocks ALL model operations while one loads. This is co
 
 ---
 
-## Task 11: Portability Pass — No Hardcoded Paths, Zip-and-Ship Ready
+## [DONE] Task 11: Portability Pass — No Hardcoded Paths, Zip-and-Ship Ready
 
 Alchemy must be portable. Right now it's welded to one machine. Fix that.
 

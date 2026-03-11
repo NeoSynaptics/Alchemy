@@ -61,6 +61,10 @@ class StackOrchestrator:
         self._ollama_host = ollama_host.rstrip("/")
         self._mode = "auto"
         self._started = False
+        # TODO: per-GPU lock for better throughput — the global lock blocks ALL
+        # model operations while one loads.  This is correct (no races) but slow
+        # when loading independent models on different GPUs.  Switching to per-GPU
+        # locks would allow concurrent loads on GPU 0 and GPU 1.
         self._state_lock = asyncio.Lock()
         self._event_log = APUEventLog()
         self._pending_operations: set[str] = set()
@@ -239,33 +243,37 @@ class StackOrchestrator:
         vram_before = self._registry.total_vram_on_gpu(target_gpu)
 
         # Ensure enough VRAM (evict if needed)
-        evicted = await self._make_room(target_gpu, card.vram_mb, card.current_tier)
-        if evicted is None:
+        evicted_tiers = await self._make_room(target_gpu, card.vram_mb, card.current_tier)
+        if evicted_tiers is None:
             return LoadResult(
                 success=False,
                 error=f"Cannot free enough VRAM on GPU {target_gpu} for {card.name} ({card.vram_mb}MB)",
             )
 
+        evicted = list(evicted_tiers.keys())
+
         # Perform the actual load
         ok = await self._backend_load(card, target_gpu)
         if not ok:
             # Rollback: re-promote evicted models since we failed to use the space
+            rollback_failures = []
             for evicted_name in evicted:
                 evicted_card = self._registry.get(evicted_name)
                 if evicted_card:
                     reload_ok = await self._backend_load(evicted_card, target_gpu)
                     if reload_ok:
                         loc = ModelLocation.GPU_0 if target_gpu == 0 else ModelLocation.GPU_1
-                        self._registry.update_location(evicted_name, loc, evicted_card.default_tier)
+                        self._registry.update_location(evicted_name, loc, evicted_tiers[evicted_name])
                         logger.info("Rollback: restored %s to GPU %d", evicted_name, target_gpu)
                     else:
-                        logger.warning("Rollback: failed to restore %s", evicted_name)
+                        rollback_failures.append(evicted_name)
+                        logger.warning("Rollback: failed to restore %s — needs manual reconciliation", evicted_name)
             self._event_log.record(
                 "error", model_name=name, gpu_index=target_gpu,
                 vram_before_mb=vram_before, vram_expected_mb=card.vram_mb,
                 duration_ms=(time.monotonic() - t0) * 1000,
                 success=False, error="Backend load failed",
-                details={"evicted_then_rolled_back": evicted},
+                details={"evicted_then_rolled_back": evicted, "rollback_failures": rollback_failures},
             )
             return LoadResult(success=False, error=f"Backend load failed for {name}")
 
@@ -809,12 +817,15 @@ class StackOrchestrator:
 
     async def _make_room(
         self, gpu_index: int, needed_mb: int, requester_tier: ModelTier
-    ) -> list[str] | None:
+    ) -> dict[str, ModelTier] | None:
         """Evict models from GPU until needed_mb is free.
 
         No model is immune. Eviction order from eviction_candidates():
         app models first, then infra, then core. Within each: LRU first.
         Evicted models go to RAM (warm) for fast reload, not disk.
+
+        Returns dict mapping evicted model name -> original tier before eviction,
+        or None if not enough VRAM can be freed.
         """
         snap = await self._monitor.snapshot()
         gpu = next((g for g in snap.gpus if g.index == gpu_index), None)
@@ -825,9 +836,9 @@ class StackOrchestrator:
         available = gpu.total_vram_mb - registry_used
 
         if available >= needed_mb:
-            return []  # Already enough room
+            return {}  # Already enough room
 
-        evicted: list[str] = []
+        evicted: dict[str, ModelTier] = {}
         candidates = self._registry.eviction_candidates(
             gpu_index, app_priorities=self.all_app_priorities(),
         )
@@ -837,11 +848,12 @@ class StackOrchestrator:
             if candidate.current_tier.priority <= requester_tier.priority:
                 continue
 
+            original_tier = candidate.current_tier
             await self._backend_unload(candidate)
             self._registry.update_location(
                 candidate.name, ModelLocation.CPU_RAM, ModelTier.WARM
             )
-            evicted.append(candidate.name)
+            evicted[candidate.name] = original_tier
             available += candidate.vram_mb
 
             if available >= needed_mb:
@@ -853,11 +865,12 @@ class StackOrchestrator:
             if candidate.name in evicted:
                 continue
 
+            original_tier = candidate.current_tier
             await self._backend_unload(candidate)
             self._registry.update_location(
                 candidate.name, ModelLocation.CPU_RAM, ModelTier.WARM
             )
-            evicted.append(candidate.name)
+            evicted[candidate.name] = original_tier
             available += candidate.vram_mb
 
             if available >= needed_mb:

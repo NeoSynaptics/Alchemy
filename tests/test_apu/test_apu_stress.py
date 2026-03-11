@@ -36,33 +36,55 @@ def _make_card(name: str, vram_mb: int = 1000, gpu: int = 0, tier: ModelTier = M
     )
 
 
-def _mock_snapshot() -> HardwareSnapshot:
-    return HardwareSnapshot(
-        gpus=[
-            GPUInfo(index=0, name="GPU0", total_vram_mb=12000,
-                    used_vram_mb=0, free_vram_mb=12000, temperature_c=40, utilization_pct=0),
-            GPUInfo(index=1, name="GPU1", total_vram_mb=16000,
-                    used_vram_mb=0, free_vram_mb=16000, temperature_c=40, utilization_pct=0),
-        ],
-        ram=RAMInfo(total_mb=131072, used_mb=40000, free_mb=91072, available_mb=91072),
-    )
+class FakeGPUMonitor:
+    """Stateful GPU monitor that tracks VRAM usage from load/unload calls."""
+
+    def __init__(self):
+        self.gpu_used = {0: 0, 1: 0}
+        self.gpu_total = {0: 12000, 1: 16000}
+
+    async def snapshot(self) -> HardwareSnapshot:
+        return HardwareSnapshot(
+            gpus=[
+                GPUInfo(index=0, name="GPU0", total_vram_mb=self.gpu_total[0],
+                        used_vram_mb=self.gpu_used[0],
+                        free_vram_mb=self.gpu_total[0] - self.gpu_used[0],
+                        temperature_c=40, utilization_pct=0),
+                GPUInfo(index=1, name="GPU1", total_vram_mb=self.gpu_total[1],
+                        used_vram_mb=self.gpu_used[1],
+                        free_vram_mb=self.gpu_total[1] - self.gpu_used[1],
+                        temperature_c=40, utilization_pct=0),
+            ],
+            ram=RAMInfo(total_mb=131072, used_mb=40000, free_mb=91072, available_mb=91072),
+        )
+
+    async def start(self): pass
+    async def close(self): pass
 
 
 async def _make_orch(cards: list[ModelCard] | None = None) -> StackOrchestrator:
-    """Create orchestrator with mock monitor and backend."""
+    """Create orchestrator with stateful fake monitor and backend."""
     registry = ModelRegistry()
     for card in (cards or []):
         registry.register(card)
 
-    monitor = AsyncMock(spec=GPUMonitor)
-    monitor.snapshot = AsyncMock(return_value=_mock_snapshot())
-    monitor.start = AsyncMock()
-    monitor.close = AsyncMock()
+    monitor = FakeGPUMonitor()
 
     orch = StackOrchestrator(monitor=monitor, registry=registry, ollama_host="http://fake:11434")
-    # Mock backend calls
-    orch._backend_load = AsyncMock(return_value=True)
-    orch._backend_unload = AsyncMock(return_value=True)
+
+    # Stateful backend mocks that track VRAM in the fake monitor
+    async def _fake_load(card, gpu_index):
+        monitor.gpu_used[gpu_index] += card.vram_mb
+        return True
+
+    async def _fake_unload(card):
+        gpu_idx = card.current_location.gpu_index
+        if gpu_idx is not None:
+            monitor.gpu_used[gpu_idx] = max(0, monitor.gpu_used[gpu_idx] - card.vram_mb)
+        return True
+
+    orch._backend_load = _fake_load
+    orch._backend_unload = _fake_unload
     orch._ollama_list_running = AsyncMock(return_value={})
     orch._started = True
 
@@ -241,15 +263,13 @@ async def test_load_failure_rollback():
     # Load existing first
     await orch.load_model(existing.name, gpu=0)
 
-    # Make new model's load fail
-    call_count = 0
-    original_load = orch._backend_load
+    # Make new model's load fail — but still track VRAM for successful loads
+    monitor = orch._monitor
 
     async def _failing_load(card, gpu):
-        nonlocal call_count
-        call_count += 1
         if card.name == "new-model":
             return False
+        monitor.gpu_used[gpu] += card.vram_mb
         return True
 
     orch._backend_load = _failing_load

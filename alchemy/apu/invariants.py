@@ -18,6 +18,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# VRAM drift threshold: flag if tracked vs actual differs by more than this
+_VRAM_DRIFT_THRESHOLD_MB = 500
+
 
 async def check_invariants(
     registry: ModelRegistry,
@@ -30,6 +33,7 @@ async def check_invariants(
     all_models = registry.all_models()
 
     # 1. VRAM accounting: sum of model cards on GPU <= GPU total
+    snap = None
     try:
         snap = await monitor.snapshot()
         for gpu in snap.gpus:
@@ -42,17 +46,12 @@ async def check_invariants(
     except Exception as e:
         violations.append(f"Cannot check GPU VRAM: {e}")
 
-    # 2. No model in two locations at once (each model has exactly one location)
-    for model in all_models:
-        if model.current_location is None:
-            violations.append(f"{model.name} has no location")
-
-    # 3. No negative VRAM values
+    # 2. No negative VRAM values
     for model in all_models:
         if model.vram_mb < 0:
             violations.append(f"{model.name} has negative VRAM: {model.vram_mb}MB")
 
-    # 4. Location-tier consistency
+    # 3. Location-tier consistency
     for model in all_models:
         if model.current_location.is_gpu and model.current_tier in (ModelTier.WARM, ModelTier.COLD):
             violations.append(
@@ -62,6 +61,25 @@ async def check_invariants(
             violations.append(
                 f"{model.name} in RAM but tier=cold"
             )
+
+    # 4. RESIDENT tier model NOT on GPU → violation
+    for model in all_models:
+        if model.current_tier == ModelTier.RESIDENT and not model.current_location.is_gpu:
+            violations.append(
+                f"{model.name} is RESIDENT but location={model.current_location.value} (should be on GPU)"
+            )
+
+    # 5. VRAM drift: tracked total vs actual used — flag drift > threshold
+    if snap is not None:
+        for gpu in snap.gpus:
+            tracked = registry.total_vram_on_gpu(gpu.index)
+            actual = gpu.used_vram_mb
+            drift = abs(tracked - actual)
+            if drift > _VRAM_DRIFT_THRESHOLD_MB:
+                violations.append(
+                    f"GPU {gpu.index} VRAM drift: tracked={tracked}MB, "
+                    f"actual={actual}MB, drift={drift}MB (threshold={_VRAM_DRIFT_THRESHOLD_MB}MB)"
+                )
 
     # Log violations
     for v in violations:

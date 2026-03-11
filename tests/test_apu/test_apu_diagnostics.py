@@ -218,3 +218,64 @@ async def test_invariants_detect_tier_mismatch():
 
     violations = await check_invariants(registry, monitor)
     assert any("tier=cold" in v for v in violations)
+
+
+@pytest.mark.asyncio
+async def test_invariants_detect_vram_drift():
+    """Flag when tracked VRAM vs actual VRAM differs by >500MB."""
+    from unittest.mock import AsyncMock
+    from alchemy.apu.invariants import check_invariants
+    from alchemy.apu.monitor import GPUInfo, HardwareSnapshot, RAMInfo
+    from alchemy.apu.registry import ModelCard, ModelBackend, ModelLocation, ModelRegistry, ModelTier
+
+    registry = ModelRegistry()
+    # Registry says 1000MB on GPU 0
+    card = ModelCard(
+        name="drifted", backend=ModelBackend.OLLAMA, vram_mb=1000,
+        current_location=ModelLocation.GPU_0, current_tier=ModelTier.RESIDENT,
+    )
+    registry.register(card)
+
+    # But actual GPU reports 2000MB used — drift of 1000MB > 500MB threshold
+    monitor = AsyncMock()
+    monitor.snapshot = AsyncMock(return_value=HardwareSnapshot(
+        gpus=[
+            GPUInfo(index=0, name="GPU0", total_vram_mb=12000,
+                    used_vram_mb=2000, free_vram_mb=10000, temperature_c=40, utilization_pct=10),
+            GPUInfo(index=1, name="GPU1", total_vram_mb=16000,
+                    used_vram_mb=0, free_vram_mb=16000, temperature_c=40, utilization_pct=0),
+        ],
+        ram=RAMInfo(total_mb=131072, used_mb=40000, free_mb=91072, available_mb=91072),
+    ))
+
+    violations = await check_invariants(registry, monitor)
+    assert any("drift" in v.lower() for v in violations)
+
+
+@pytest.mark.asyncio
+async def test_invariants_detect_resident_not_on_gpu():
+    """RESIDENT tier model not on GPU should be flagged."""
+    from unittest.mock import AsyncMock
+    from alchemy.apu.invariants import check_invariants
+    from alchemy.apu.monitor import GPUInfo, HardwareSnapshot, RAMInfo
+    from alchemy.apu.registry import ModelCard, ModelBackend, ModelLocation, ModelRegistry, ModelTier
+
+    registry = ModelRegistry()
+    # RESIDENT model stuck in RAM — invariant violation
+    card = ModelCard(
+        name="lost-resident", backend=ModelBackend.OLLAMA, vram_mb=1000,
+        current_location=ModelLocation.CPU_RAM, current_tier=ModelTier.RESIDENT,
+    )
+    registry.register(card)
+
+    monitor = AsyncMock()
+    monitor.snapshot = AsyncMock(return_value=HardwareSnapshot(
+        gpus=[
+            GPUInfo(index=0, name="GPU0", total_vram_mb=12000,
+                    used_vram_mb=0, free_vram_mb=12000, temperature_c=40, utilization_pct=0),
+        ],
+        ram=RAMInfo(total_mb=131072, used_mb=40000, free_mb=91072, available_mb=91072),
+    ))
+
+    violations = await check_invariants(registry, monitor)
+    assert any("RESIDENT" in v for v in violations)

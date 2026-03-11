@@ -14,10 +14,12 @@ from pathlib import Path
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from config.settings import Settings
 from alchemy.memory.timeline.store import TimelineStore
 from alchemy.memory.timeline.vectordb import VectorStore
 
-DB_PATH = Path("D:/AlchemyMemory/timeline.db")
+_settings = Settings()
+DB_PATH = Path(_settings.memory.storage_path) / _settings.memory.ltm_db
 
 
 def main() -> None:

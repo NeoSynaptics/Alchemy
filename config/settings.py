@@ -10,7 +10,7 @@ Environment variables work both ways:
     GATE_ENABLED=false      (flat, legacy)
 """
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 from pydantic_settings import BaseSettings
 
 
@@ -242,6 +242,7 @@ class AgentsSettings(BaseModel):
 class NeosySettings(BaseModel):
     """NEOSY — knowledge graph (PostgreSQL + Qdrant)."""
     enabled: bool = True
+    src_path: str = ""  # Path to BaratzaMemory/src — empty = NEOSY not mounted. Set via ALCHEMY_NEOSY__SRC_PATH
     pg_host: str = "localhost"
     pg_port: int = 5432
     pg_user: str = "baratza"
@@ -260,13 +261,13 @@ class MemorySettings(BaseModel):
     screenshot_interval_idle: int = 300       # seconds when idle
     idle_threshold_seconds: int = 60          # no input for this long = idle
 
-    # Storage
-    storage_path: str = "D:/AlchemyMemory"
+    # Storage (relative paths resolved from repo root; override via ALCHEMY_MEMORY__STORAGE_PATH)
+    storage_path: str = "./data/memory"
     screenshot_quality: int = 70             # JPEG quality (lower = smaller files)
 
     # Long-term memory (timeline)
     ltm_db: str = "timeline.db"             # relative to storage_path
-    chroma_path: str = "D:/AlchemyMemory/chroma"
+    chroma_path: str = ""                    # defaults to {storage_path}/chroma if empty
     chroma_collection: str = "alchemy_timeline"
 
     # Short-term memory (cache)
@@ -291,6 +292,12 @@ class MemorySettings(BaseModel):
     vlm_worker_batch_size: int = 50
     vlm_worker_delay: float = 0.0         # seconds between VLM calls (0 = no throttle)
     vlm_auto_start: bool = True           # auto-start VLM worker after import
+
+    @model_validator(mode="after")
+    def _derive_chroma_path(self):
+        if not self.chroma_path:
+            self.chroma_path = f"{self.storage_path}/chroma"
+        return self
 
 
 # --- Root settings (composes all groups) ---
