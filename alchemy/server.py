@@ -33,6 +33,7 @@ from alchemy.api import modules_api
 from alchemy.api import click_api
 from alchemy.api import settings_api
 from alchemy.router.environment import EnvironmentDetector
+from alchemy.security.middleware import create_auth_middleware
 from config.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -451,6 +452,18 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+_auth_check = create_auth_middleware(
+    token=settings.auth.token,
+    enabled=settings.auth.enabled,
+)
+
+
+@app.middleware("http")
+async def bearer_auth(request, call_next):
+    """Validate bearer token when security is enabled."""
+    return await _auth_check(request, call_next)
 
 
 @app.middleware("http")

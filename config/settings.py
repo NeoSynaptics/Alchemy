@@ -39,6 +39,7 @@ class AuthSettings(BaseModel):
     """Authentication."""
     token: str = ""
     require: bool = False
+    enabled: bool = False
 
 
 class ScreenshotSettings(BaseModel):
@@ -350,6 +351,7 @@ class Settings(BaseSettings):
     # Auth
     auth_token: str = ""
     require_auth: bool = False
+    security_enabled: bool = False
 
     # Screenshot
     screenshot_format: str = "jpeg"
