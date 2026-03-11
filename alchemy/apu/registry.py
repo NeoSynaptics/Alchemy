@@ -103,7 +103,13 @@ class ModelCard(BaseModel):
 
 
 class ModelRegistry:
-    """Thread-safe model registry with tier-aware eviction ordering."""
+    """Model registry with tier-aware eviction ordering.
+
+    Not inherently thread-safe — callers must hold StackOrchestrator._state_lock
+    when performing state-changing operations (register, unregister, update_location).
+    Read-only methods (get, all_models, etc.) return snapshots and are safe to call
+    without the lock.
+    """
 
     def __init__(self) -> None:
         self._models: dict[str, ModelCard] = {}
@@ -133,7 +139,10 @@ class ModelRegistry:
         return True
 
     def models_on_gpu(self, gpu_index: int) -> list[ModelCard]:
-        loc = ModelLocation.GPU_0 if gpu_index == 0 else ModelLocation.GPU_1
+        try:
+            loc = gpu_location(gpu_index)
+        except ValueError:
+            return []
         return [m for m in self._models.values() if m.current_location == loc]
 
     def models_in_ram(self) -> list[ModelCard]:

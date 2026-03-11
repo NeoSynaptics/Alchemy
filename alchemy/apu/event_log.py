@@ -22,6 +22,8 @@ VALID_EVENT_TYPES = frozenset({
 
 # Rough estimate: 100ms per GB for Ollama loads
 _MS_PER_GB = 100.0
+# Absolute slow threshold: any operation longer than this is slow regardless of model size
+_ABSOLUTE_SLOW_MS = 5000.0
 
 
 @dataclass
@@ -86,7 +88,8 @@ class APUEventLog:
         """Record an event and return it."""
         # Estimate expected duration based on model VRAM size
         expected_ms = (vram_expected_mb / 1024.0) * _MS_PER_GB if vram_expected_mb > 0 else 0.0
-        slow = duration_ms > 2 * expected_ms if expected_ms > 0 else False
+        slow = (duration_ms > 2 * expected_ms if expected_ms > 0
+                else duration_ms > _ABSOLUTE_SLOW_MS)
 
         event = APUEvent(
             timestamp=datetime.now(timezone.utc),
@@ -137,7 +140,7 @@ class APUEventLog:
                 continue
             if app_name and event.app_name != app_name:
                 continue
-            if errors_only and event.success and event.event_type != "drift":
+            if errors_only and event.success:
                 continue
             result.append(event)
             if len(result) >= limit:
