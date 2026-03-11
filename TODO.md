@@ -337,77 +337,273 @@ Alchemy must be portable. Right now it's welded to one machine. Fix that.
 
 ---
 
-## Task 12: Alchemy Dashboard — Connect the Existing UI
+## ═══════════════════════════════════════════
+## LAPTOP TASKS (no GPU needed) — Tasks 12-21
+## ═══════════════════════════════════════════
 
-There's already a full React UI in `ui/` (Vite + React + TypeScript + shadcn/ui) with Dashboard, Memory, Settings pages and a Vite proxy to the API. There's also a standalone `dashboard/apu_staging.html`. But none of it is wired up for production use.
+## Task 12: NEOSY Bug Fixes (port, CLI column, vault path)
 
-**Goal:** Make `localhost:8000` serve the dashboard. One command (`make server`) gives you both API and UI.
+Three quick fixes found during code review.
 
-**Step 1: Build and serve the React UI from FastAPI**
+1. `.env.example` says `API_PORT=8000` but `config.py` defaults to 8001 → fix `.env.example`
+2. `cli.py` accesses `c["connection_type"]` but DB column is `connection` → fix accessor
+3. `vault_path: Path = Path("./vault")` is relative → resolve to absolute in config, or create in lifespan
 
-1. Add a build script: `cd ui && npm run build` outputs to `ui/dist/`
-2. Mount the built UI in `server.py`:
-   ```python
-   # Serve React UI (production build)
-   _ui_dist = Path(__file__).parent.parent / "ui" / "dist"
-   if _ui_dist.is_dir():
-       app.mount("/", StaticFiles(directory=str(_ui_dist), html=True), name="ui")
-   ```
-3. API routes at `/v1/*` take priority (they're registered before the catch-all mount)
-4. For development, keep using `npm run dev` on port 5173 with proxy — this mount is for production
-
-**Step 2: Verify the Dashboard page works with real API data**
-
-The `ui/src/pages/Dashboard.tsx` already exists. Verify it calls the right endpoints:
-- `GET /v1/apu/status` — GPU/model status
-- `GET /v1/apu/events` — recent events (new from Task 5)
-- `GET /v1/modules` — module discovery
-- `GET /v1/voice/status` — voice pipeline
-
-If the Dashboard page is a stub/placeholder, flesh it out with:
-- APU status cards (GPU utilization, VRAM, temperature)
-- Model placement table (what's on which GPU, tier, last used)
-- Recent events feed (from event log)
-- Module health indicators
-
-**Step 3: Add to Makefile**
-
-```makefile
-ui-build:
-	cd ui && npm install && npm run build
-
-server: ui-build
-	uvicorn alchemy.server:app --port 8000
-
-dev:
-	cd ui && npm run dev
-```
-
-**Files to modify:**
-- `alchemy/server.py` — add production UI mount
-- `ui/src/pages/Dashboard.tsx` — verify/fix API integration
-- `Makefile` — add ui-build target
-
-**Do NOT:**
-- Rewrite the UI framework — it's React+Vite, keep it
-- Add Jinja2 — the React SPA approach is already set up
-- Add new npm dependencies unless absolutely necessary
-
+**Repo:** BaratzaMemory
+**Files:** `.env.example`, `src/baratza/cli.py`, `src/baratza/config.py`
 **Commit when done.**
 
 ---
 
-## Completed (from previous codebase review)
+## Task 13: NEOSY Test Suite — Zero Tests Exist
 
-### [DONE] Click API tests
-- `tests/test_click_api.py` — 11 tests: auto-routing, flow, browser, functions, contract guard
+`tests/` is empty. Add baseline coverage for the core paths.
 
-### [DONE] Desktop API tests
-- `tests/test_desktop/test_desktop_api.py` — 15 tests: task submit, polling, summon/dismiss, mode, 503s, contract guard
+- `tests/test_ingest.py` — mock DB, test text ingest creates memory + calls embed
+- `tests/test_search.py` — mock Qdrant, test search returns ranked results
+- `tests/test_pinning.py` — test pin/unpin logic, registro logging
+- `tests/test_batch.py` — test batch ingest creates N memories, returns batch_id
+- `tests/test_registro.py` — test append-only, verify no mutations
 
-### [DONE] Gate API tests
-- `tests/test_gate/test_gate_api.py` — 10 tests: accept/deny/other, fail-open, timeout, validation, contract guard
+Use `httpx.AsyncClient` + `app` for route tests. Mock DB/Qdrant — don't need real Docker.
 
-### [DONE] Legacy playwright cleanup
-- Removed `alchemy/playwright/` and `tests/test_playwright/` — no production imports
-- Cleaned up `.importlinter` reference
+**Repo:** BaratzaMemory
+**Commit when done.**
+
+---
+
+## Task 14: Dashboard Code Wiring (React UI → FastAPI)
+
+Wire the existing React UI to serve from FastAPI in production.
+
+1. Mount `ui/dist/` in `server.py` as catch-all static files (after `/v1/*` routes)
+2. Verify `ui/src/pages/Dashboard.tsx` calls correct endpoints (`/v1/apu/status`, `/v1/apu/events`, `/v1/modules`)
+3. Add `ui-build` and `dev` targets to Makefile
+4. If Dashboard.tsx is a stub, build it out: APU status cards, model table, event feed, module health
+
+**Repo:** Alchemy
+**Files:** `alchemy/server.py`, `ui/src/pages/Dashboard.tsx`, `Makefile`
+**Do NOT** add Jinja2 or rewrite the React framework.
+**Commit when done.**
+
+---
+
+## Task 15: Security Module — Currently 1 Line
+
+`alchemy/security/` is just a docstring. Implement basic auth.
+
+1. Bearer token validation middleware (read token from `ALCHEMY_API_TOKEN` env var)
+2. Apply to all `/v1/*` routes except `/v1/health`
+3. Add `security_enabled: bool = False` toggle in settings (off by default for dev)
+4. Add manifest.py for the module
+5. Tests: valid token passes, invalid rejected, disabled = no auth
+
+**Repo:** Alchemy
+**Files:** `alchemy/security/__init__.py`, `alchemy/security/middleware.py`, `alchemy/security/manifest.py`
+**Commit when done.**
+
+---
+
+## Task 16: AlchemyWord — Flesh Out the Stub
+
+`alchemy/word/` is 5 lines. Build the basic text generation pipeline.
+
+1. `alchemy/word/writer.py` — text generation via Ollama (qwen3:14b): summarize, rewrite, expand, translate
+2. `alchemy/word/api.py` — `POST /v1/word/generate` (prompt + mode → text)
+3. Mount in server.py
+4. Tests: mock Ollama, verify each mode produces output
+5. Keep it simple — no RAG, no memory, just clean text generation with mode selection
+
+**Repo:** Alchemy
+**Files:** `alchemy/word/writer.py`, `alchemy/word/api.py`, update `alchemy/word/__init__.py`
+**Commit when done.**
+
+---
+
+## Task 17: Docker Compose for Alchemy
+
+No docker-compose exists at repo root. Create one for full-stack local dev.
+
+```yaml
+services:
+  alchemy:
+    build: .
+    ports: ["8000:8000"]
+    env_file: .env
+    depends_on: [ollama]
+    volumes: ["./data:/app/data"]
+  ollama:
+    image: ollama/ollama
+    ports: ["11434:11434"]
+    volumes: ["ollama_data:/root/.ollama"]
+    deploy:
+      resources:
+        reservations:
+          devices: [{capabilities: [gpu]}]
+```
+
+Also create `Dockerfile` (Python 3.11, pip install, uvicorn CMD).
+Test: `docker-compose up` starts both services.
+
+**Repo:** Alchemy
+**Files:** `docker-compose.yml` (new), `Dockerfile` (new)
+**Commit when done.**
+
+---
+
+## Task 18: AlchemyHole Spec — Device Tunnel Design
+
+Write architecture spec only (no code). Like the Instagram saves agent spec.
+
+Save to `alchemy/hole/SPEC.md`:
+- Phone/tablet pushes files to PC via HTTP tunnel (local network or Tailscale)
+- PC receives into `~/neosy_inbox/hole/` with metadata sidecar
+- NEOSY batch ingest picks up files automatically
+- Akinator-style query: model asks clarifying questions to find content
+- Security: device pairing via one-time code
+
+**Repo:** Alchemy
+**Files:** `alchemy/hole/SPEC.md` (new), `alchemy/hole/__init__.py` (empty)
+**Commit when done.**
+
+---
+
+## Task 19: Voice Test Audit — Do 18 Test Files Cover Real Paths?
+
+Voice has 40 source files and 18 test files. Audit coverage quality.
+
+1. List all test files, check what they test vs what they mock
+2. Identify: are STT/TTS/wake word tested with real audio or just mocked?
+3. Identify: is the pipeline state machine (IDLE→LISTENING→RECORDING→PROCESSING→SPEAKING) fully tested?
+4. Identify: is the smart router tested with real conversation vs GUI task routing?
+5. Write a report as `tests/test_voice/COVERAGE_REPORT.md` with gaps and suggested tests
+
+**Repo:** Alchemy
+**Read only — don't change voice code. Just document gaps.**
+**Commit when done.**
+
+---
+
+## Task 20: Import Boundary Audit
+
+Run `lint-imports` and fix any violations. The module conventions say:
+- Core/adapters never import from features
+- Features never import from each other (lateral isolation)
+- Only server.py wires things together
+
+Check if Tasks 5-11 introduced any violations. Fix them.
+
+**Repo:** Alchemy
+**Commit when done.**
+
+---
+
+## Task 21: README + Setup Guide
+
+No setup guide exists for new users. Create one.
+
+1. `README.md` — what Alchemy is (3 sentences), architecture diagram (ASCII), module list
+2. Setup: clone, copy `.env.example`, `pip install`, `make server`
+3. Docker: `docker-compose up`
+4. Link to each module's purpose (1 line each)
+5. Keep it under 100 lines. No marketing fluff.
+
+**Repo:** Alchemy
+**Commit when done.**
+
+---
+
+## ═══════════════════════════════════════════
+## PC TASKS (needs GPU / Docker / Ollama) — Tasks 22-26
+## ═══════════════════════════════════════════
+
+## Task 22: Dashboard E2E — Live APU Data
+
+Start the full server, open browser, verify the dashboard shows real GPU data.
+
+1. `make server` → open `localhost:8000`
+2. Verify APU status cards show real VRAM numbers from nvidia-smi
+3. Verify event feed shows real load/unload events
+4. Verify module health indicators reflect actual module state
+5. Fix any API mismatches between frontend and backend
+
+**Repo:** Alchemy
+**Requires:** GPU, Ollama running
+
+---
+
+## Task 23: NEOSY E2E with Ollama — NEO Queue Processing
+
+Task 9 skipped this because Ollama wasn't running. Now test it.
+
+1. Start Docker (PostgreSQL + Qdrant), Ollama with qwen3:14b
+2. Ingest 5 test documents via POST /ingest
+3. Run POST /neo/queue/process
+4. Verify Qwen classified each memory (properties populated)
+5. Search for classified content, verify enriched results
+
+**Repo:** BaratzaMemory
+**Requires:** Docker, Ollama + qwen3:14b
+
+---
+
+## Task 24: Voice Pipeline E2E — Mic to Speaker
+
+Full voice loop test.
+
+1. Start server with voice enabled
+2. Test wake word detection (openWakeWord)
+3. Test STT: speak → verify transcription
+4. Test LLM response: verify Qwen generates coherent reply
+5. Test TTS: verify audio output (Piper or Kokoro)
+6. Test full loop: wake word → speak → get voice response
+7. Test mode switching: conversation vs command vs dictation
+
+**Repo:** Alchemy
+**Requires:** GPU (Whisper + TTS models), microphone, speakers
+
+---
+
+## Task 25: RLHF Foundation — Reaction Logging for Voice
+
+Wire voice responses + user reactions into NEOSY registro.
+
+1. After voice responds, log: `{action: "voice_response", content: response_text, context: user_query}`
+2. Detect user reactions: explicit ("that's funny", "that's dumb") + implicit (laugh detection via audio, silence = boring)
+3. Log reactions: `{action: "user_reaction", sentiment: "positive"|"negative"|"neutral", intensity: 0.0-1.0}`
+4. Store as NEOSY registro entries linked to the voice response
+5. This creates the preference dataset for future DPO/RLHF fine-tuning
+
+**Repo:** Alchemy + BaratzaMemory
+**Requires:** GPU, voice pipeline working (Task 24 first)
+
+---
+
+## Task 26: Full Integration Smoke Test
+
+Everything up, everything connected, end-to-end.
+
+1. `docker-compose up` (Alchemy + Ollama + PostgreSQL + Qdrant)
+2. Open dashboard at `localhost:8000` — verify all green
+3. Ingest a document via API → verify it appears in NEOSY
+4. Search for it via API → verify ranked results
+5. Voice query "what did I just save?" → verify voice response references the document
+6. Check APU events show the full model load/unload cycle
+7. Check registro has entries for ingest, search, voice interaction
+
+**Repo:** Both
+**Requires:** Everything running
+
+---
+
+## ═══════════════════════════════════════════
+## Completed
+## ═══════════════════════════════════════════
+
+### [DONE] Tasks 1-11
+- GPU fleet registration, NEOSY settings, server mount
+- APU stabilization, event logger, concurrency fix, stress tests, invariants
+- APU health endpoint, periodic reconciliation
+- APU concurrency review fixes, audit fixes
+- Portability pass (hardcoded paths removed)
+- Click/Desktop/Gate API tests, legacy playwright removal
