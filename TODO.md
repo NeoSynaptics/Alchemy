@@ -717,7 +717,7 @@ No setup guide exists for new users. Create one.
 ## PC TASKS (needs GPU / Docker / Ollama) — Tasks 23-27
 ## ═══════════════════════════════════════════
 
-## Task 23: Dashboard E2E — Live APU Data
+## [DONE] Task 23: Dashboard E2E — Live APU Data
 
 Start the full server, open browser, verify the dashboard shows real GPU data.
 
