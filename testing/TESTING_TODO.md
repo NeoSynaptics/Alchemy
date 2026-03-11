@@ -156,7 +156,7 @@ Tests in `Alchemy/tests/test_apu/test_apu_integration.py`. Run with `pytest -m g
 Known pain: small 0.5-1GB models sit as broken links, eat VRAM, make Qwen overflow to CPU or freeze.
 - [x] Load/unload small model (qwen2.5:0.5b): PASS — load 0.5s, unload 0.4s, VRAM leak -13MB (tolerance 200MB) — 2026-03-11 PC
 - [ ] Small model idle 5min → APU reclaims if Qwen needs VRAM
-- [ ] Load/unload 10 small models → VRAM accounting stays accurate
+- [x] 10 load/unload cycles: PASS — total leak -14MB (tolerance 500MB), APU drift stable at 271MB — 2026-03-11 PC
 - [ ] Qwen needs 10GB, only 8GB free → small model MUST be evicted
 
 ### 4.2 Frozen Routine Detection
