@@ -572,7 +572,7 @@ Use `httpx.AsyncClient` + `app` for route tests. Mock DB/Qdrant — don't need r
 
 ---
 
-## Task 15: Dashboard Code Wiring (React UI → FastAPI)
+## [DONE] Task 15: Dashboard Code Wiring (React UI → FastAPI)
 
 Wire the existing React UI to serve from FastAPI in production.
 
@@ -588,7 +588,7 @@ Wire the existing React UI to serve from FastAPI in production.
 
 ---
 
-## Task 16: Security Module — Currently 1 Line
+## [DONE] Task 16: Security Module — Currently 1 Line
 
 `alchemy/security/` is just a docstring. Implement basic auth.
 
@@ -604,7 +604,7 @@ Wire the existing React UI to serve from FastAPI in production.
 
 ---
 
-## Task 17: AlchemyWord — Flesh Out the Stub
+## [DONE] Task 17: AlchemyWord — Flesh Out the Stub
 
 `alchemy/word/` is 5 lines. Build the basic text generation pipeline.
 
@@ -620,7 +620,7 @@ Wire the existing React UI to serve from FastAPI in production.
 
 ---
 
-## Task 18: Docker Compose for Alchemy
+## [DONE] Task 18: Docker Compose for Alchemy
 
 No docker-compose exists at repo root. Create one for full-stack local dev.
 
@@ -651,7 +651,7 @@ Test: `docker-compose up` starts both services.
 
 ---
 
-## Task 19: AlchemyHole Spec — Device Tunnel Design
+## [DONE] Task 19: AlchemyHole Spec — Device Tunnel Design
 
 Write architecture spec only (no code). Like the Instagram saves agent spec.
 
@@ -668,7 +668,7 @@ Save to `alchemy/hole/SPEC.md`:
 
 ---
 
-## Task 20: Voice Test Audit — Do 18 Test Files Cover Real Paths?
+## [DONE] Task 20: Voice Test Audit — Do 18 Test Files Cover Real Paths?
 
 Voice has 40 source files and 18 test files. Audit coverage quality.
 
@@ -684,7 +684,7 @@ Voice has 40 source files and 18 test files. Audit coverage quality.
 
 ---
 
-## Task 21: Import Boundary Audit
+## [DONE] Task 21: Import Boundary Audit
 
 Run `lint-imports` and fix any violations. The module conventions say:
 - Core/adapters never import from features
@@ -698,7 +698,7 @@ Check if Tasks 5-11 introduced any violations. Fix them.
 
 ---
 
-## Task 22: README + Setup Guide
+## [DONE] Task 22: README + Setup Guide
 
 No setup guide exists for new users. Create one.
 
@@ -815,3 +815,13 @@ Everything up, everything connected, end-to-end.
 - Event log: errors_only filter fixed, absolute slow threshold added
 - Tests: stronger assertions, concurrent same-model test, snapshot failure test
 - Invariant checker: GPU bounds check, RESIDENT+RAM flag, safe event recording
+
+### [DONE] Tasks 15-22 (Laptop Tasks)
+- Dashboard: mounted ui/dist/ as catch-all, Makefile targets (ui-build, ui-dev)
+- Security: bearer token middleware with toggle, 7 tests
+- AlchemyWord: text generation (summarize/rewrite/expand/translate), 10 tests
+- Docker: Dockerfile + docker-compose.yml (Alchemy + Ollama with GPU)
+- AlchemyHole: device tunnel spec (pairing, upload, Akinator query)
+- Voice audit: coverage report (65% unit, 0% real audio, key gaps documented)
+- Import boundary: all 11 contracts clean, 0 violations
+- README: architecture diagram, setup guide, Docker instructions
