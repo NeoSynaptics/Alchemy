@@ -11,16 +11,17 @@ See `PC_TEST_GUIDE.md` for full implementation specs with code examples.
 
 | Repo | Passed | Failed | Notes |
 |------|--------|--------|-------|
-| Alchemy | 1104 | 13 | 5 timing mocks, 8 missing dep |
+| Alchemy | 1109 | 8 | 8 missing dep (research), timing mocks FIXED |
 | NEOSY | 98 | 0 | 42 unit + 14 behavioral + 42 edge cases |
 | NEOSY integration | 10 | 0 | 4 persistence + 6 stress (2026-03-11) |
 
 ### Alchemy Known Failures
-1. **5 timing mock issues** — `test_voice/` tests with `asyncio.sleep` mocking fragility
+1. ~~**5 timing mock issues** — FIXED (inference_ms mocks now use perf_counter patch)~~
 2. **8 missing `duckduckgo_search` dep** — `test_research/` needs the package installed (PC only)
 
 ### Alchemy Action Items — Phase 1 (Laptop)
-- [ ] Fix voice timing mocks (laptop-safe, no GPU needed)
+- [x] Fix voice timing mocks (laptop-safe, no GPU needed) — DONE, 279 voice tests passing
+- [x] Build serpentine scaffold — DONE, `testing/serpentine.py` created
 - [ ] Install `duckduckgo_search` on PC and re-run research tests
 
 ### NEOSY Action Items — Phase 2 (PC + Docker)
