@@ -337,7 +337,7 @@ Alchemy must be portable. Right now it's welded to one machine. Fix that.
 
 ---
 
-## Task 12a: APU Orchestrator — Race Conditions & Missing Locks
+## [DONE] Task 12a: APU Orchestrator — Race Conditions & Missing Locks
 
 Code review found race conditions in orchestrator methods that read/modify state without holding `_state_lock`.
 
@@ -385,7 +385,7 @@ Fix: Add `event_log.record("error", ...)` for each rollback failure with context
 
 ---
 
-## Task 12b: Registry Thread-Safety & Event Log Filter Bug
+## [DONE] Task 12b: Registry Thread-Safety & Event Log Filter Bug
 
 **Bug 1: Registry docstring claims "thread-safe" but has NO locks (registry.py line 105-109)**
 
@@ -443,7 +443,7 @@ slow = (duration_ms > 2 * expected_ms if expected_ms > 0
 
 ---
 
-## Task 12c: APU Test Quality — Weak Assertions & Missing Coverage
+## [DONE] Task 12c: APU Test Quality — Weak Assertions & Missing Coverage
 
 Tests pass but several don't actually prove the code works correctly.
 
@@ -502,7 +502,7 @@ No test creates a card with negative `vram_mb` to verify the invariant checker c
 
 ---
 
-## Task 12d: Invariant Checker — Missing Checks & Edge Cases
+## [DONE] Task 12d: Invariant Checker — Missing Checks & Edge Cases
 
 **Fix 1: GPU index bounds not validated (invariants.py line 39-45)**
 
@@ -807,3 +807,11 @@ Everything up, everything connected, end-to-end.
 - APU concurrency review fixes, audit fixes
 - Portability pass (hardcoded paths removed)
 - Click/Desktop/Gate API tests, legacy playwright removal
+
+### [DONE] Tasks 12a-12d (Review)
+- Orchestrator race conditions: rebalance/user_idle/app_deactivate snapshot-before-iterate
+- Event logging added to app_deactivate, user_active, rollback failures
+- Registry docstring fixed, gpu_location() used consistently
+- Event log: errors_only filter fixed, absolute slow threshold added
+- Tests: stronger assertions, concurrent same-model test, snapshot failure test
+- Invariant checker: GPU bounds check, RESIDENT+RAM flag, safe event recording
