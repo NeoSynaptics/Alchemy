@@ -74,18 +74,20 @@ def build_default_registry() -> ModelRegistry:
         )
     )
 
-    # UI-TARS-72B — CPU via Alchemy, slow
-    registry.register(
-        ModelCard(
-            name="ui-tars:72b",
-            capabilities=[ModelCapability.VISION],
-            speed_tier="slow",
-            location="cpu_remote",
-            endpoint=settings.alchemy_host,
-            ram_gb=42.0,
-            max_context_tokens=8192,
-            is_default_for=[ModelCapability.VISION],
+    # UI-TARS-72B — CPU via Alchemy, slow (optional, requires alchemy_host setting)
+    alchemy_host = getattr(settings, "alchemy_host", None)
+    if alchemy_host:
+        registry.register(
+            ModelCard(
+                name="ui-tars:72b",
+                capabilities=[ModelCapability.VISION],
+                speed_tier="slow",
+                location="cpu_remote",
+                endpoint=alchemy_host,
+                ram_gb=42.0,
+                max_context_tokens=8192,
+                is_default_for=[ModelCapability.VISION],
+            )
         )
-    )
 
     return registry
