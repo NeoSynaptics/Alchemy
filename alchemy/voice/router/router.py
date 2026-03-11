@@ -236,6 +236,21 @@ class SmartRouter:
                 )
             )
 
+        # RLHF: log voice turn to NEOSY for preference dataset (fire-and-forget)
+        from alchemy.voice.reactions import VoiceResponseLog, get_reaction_logger
+        reaction_logger = get_reaction_logger()
+        if reaction_logger:
+            asyncio.create_task(
+                reaction_logger.log_voice_response(VoiceResponseLog(
+                    conversation_id=request.conversation_id,
+                    user_query=request.message,
+                    response_text=full_response,
+                    model_used=conv_model.name,
+                    inference_ms=elapsed_ms,
+                    route_intent=decision.intent.value,
+                ))
+            )
+
         yield StreamChunk(
             content="", done=True, model_used=conv_model.name, inference_ms=elapsed_ms
         )
@@ -334,6 +349,21 @@ class SmartRouter:
                 self._reporter.report_conversation(
                     request.conversation_id, "assistant", cleaned
                 )
+            )
+
+        # RLHF: log voice turn to NEOSY for preference dataset (fire-and-forget)
+        from alchemy.voice.reactions import VoiceResponseLog, get_reaction_logger
+        reaction_logger = get_reaction_logger()
+        if reaction_logger:
+            asyncio.create_task(
+                reaction_logger.log_voice_response(VoiceResponseLog(
+                    conversation_id=request.conversation_id,
+                    user_query=request.message,
+                    response_text=cleaned,
+                    model_used=conv_model.name,
+                    inference_ms=elapsed_ms,
+                    route_intent=decision.intent.value,
+                ))
             )
 
         return ChatResponse(

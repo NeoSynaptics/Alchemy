@@ -1,4 +1,4 @@
-"""Chat endpoints — /chat (non-streaming) and /chat/stream (SSE)."""
+"""Chat endpoints — /chat (non-streaming), /chat/stream (SSE), /chat/reaction (RLHF)."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 
 from alchemy.voice.models.schemas import ChatRequest, ChatResponse
+from alchemy.voice.reactions import VoiceReaction, get_reaction_logger
 from alchemy.voice.router.router import SmartRouter
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -47,3 +48,13 @@ async def chat_stream(request: ChatRequest, req: Request) -> StreamingResponse:
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@router.post("/reaction")
+async def submit_reaction(reaction: VoiceReaction):
+    """Log a user reaction to a voice response for RLHF preference data."""
+    reaction_logger = get_reaction_logger()
+    if not reaction_logger:
+        return {"status": "skipped", "reason": "reaction logging not initialized"}
+    await reaction_logger.log_reaction(reaction)
+    return {"status": "logged", "sentiment": reaction.sentiment.value}
