@@ -764,7 +764,7 @@ Full voice loop test.
 
 ---
 
-## Task 26: RLHF Foundation — Reaction Logging for Voice
+## [DONE] Task 26: RLHF Foundation — Reaction Logging for Voice
 
 Wire voice responses + user reactions into NEOSY registro.
 
