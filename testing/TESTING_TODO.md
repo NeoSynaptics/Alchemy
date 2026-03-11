@@ -154,7 +154,7 @@ Tests in `Alchemy/tests/test_apu/test_apu_integration.py`. Run with `pytest -m g
 ### 4.1 VRAM Leak Detection
 **Test scaffold ready:** `Alchemy/tests/test_apu/test_vram_live.py` — run with `pytest -m gpu`
 Known pain: small 0.5-1GB models sit as broken links, eat VRAM, make Qwen overflow to CPU or freeze.
-- [ ] Load small model (0.5GB) → APU tracks it
+- [x] Load/unload small model (qwen2.5:0.5b): PASS — load 0.5s, unload 0.4s, VRAM leak -13MB (tolerance 200MB) — 2026-03-11 PC
 - [ ] Small model idle 5min → APU reclaims if Qwen needs VRAM
 - [ ] Load/unload 10 small models → VRAM accounting stays accurate
 - [ ] Qwen needs 10GB, only 8GB free → small model MUST be evicted
