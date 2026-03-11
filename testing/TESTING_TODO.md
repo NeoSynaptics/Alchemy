@@ -7,20 +7,47 @@ See `PC_TEST_GUIDE.md` for full implementation specs with code examples.
 
 ---
 
-## STATUS (2026-03-11 evening)
+## STATUS (2026-03-11 late)
 
 - **Phase 1: DONE** — timing mocks fixed, serpentine scaffold, baselines
 - **Phase 2: DONE** — persistence, stress, all items checked (10K batch: 99.89%)
-- **Phase 3: IN PROGRESS** — APU baseline 8/8, size/batch ladder done, VRAM live tests scaffolded
+- **Phase 3: IN PROGRESS** — APU baseline 8/8, VRAM leak tests 3/3, concurrency/priority scaffolded
 - **Phase 4: NOT STARTED**
 
-### Known Issues
-1. **10K batch: 11/10000 failures** — likely DB connection pool timeout under sustained load. Investigate `asyncpg` pool `max_size` in NEOSY config.
-2. **Section 2.3 items** — classification-dependent, need NEO running (Phase 3)
+### Blocking Issues
+1. **10K batch: 11/10000 failures** — asyncpg `max_size=10` pool exhaustion. Fix: bump to 20 + add semaphore(8) in batch route. PC Task 1.
+2. **APU VRAM drift 5-8GB** — `_make_room()` trusts registry, not nvidia-smi. OOM risk on tight GPUs. Fix: pre-load reality check. See Alchemy TODO Task A.
 
-### Next Up
-- **PC**: Finish current tasks (10K batch fix, image ladder), then Section 4.5 concurrency/priority tests (scaffolds ready), then Section 6 voice
-- **Laptop**: Flesh out serpentine, research test fixes, synthetic voice scaffold
+### Priority Order
+1. **PC**: Fix 10K batch pool → APU VRAM reality check → test consolidation → run live GPU tests → image ladder
+2. **Laptop**: Research test fixes → test consolidation → baselines update
+3. **Defer**: Serpentine flesh-out, synthetic voice, Section 6 voice reliability
+
+### ⚠ Test Suite Health Review (2026-03-11)
+
+**STOP expanding synthetic/stress tests. Start consolidating.**
+
+The test suite has hit diminishing returns. 14K LOC of tests vs 26K LOC production (1.84:1 ratio).
+APU alone has 3,200 LOC of tests for 2,600 LOC of source — 120% test density. That's enough.
+
+**What's adding real value:**
+- Mocked stress tests with failure injection (test_apu_stress.py) — keep expanding these
+- Invariant checks (VRAM consistency, append-only) — keep
+- Edge case parametrization (NEOSY synthetic.py) — keep, it's infrastructure not bloat
+- Size/stress ladders (NEOSY) — keep, they found the 10K batch bug
+
+**What's bloated or redundant:**
+- Safety helpers (`get_real_vram`, `assert_vram_safe`, `vram_snapshot_str`) copy-pasted across 3 live test files — extract to `tests/test_apu/conftest.py`
+- Voice latency tested in BOTH test_apu_priority_live.py AND test_apu_concurrency_live.py — pick one owner
+- test_vram_live.py overlaps heavily with test_apu_concurrency_live.py — consider merging
+- test_apu_api.py is shallow (status codes only, no error cases, no response validation) — deepen, don't add more files
+
+**Consolidation tasks (do before writing ANY new tests):**
+1. Extract shared GPU safety helpers to `tests/test_apu/conftest.py`
+2. Merge duplicate voice latency tests into one location (priority_live owns it)
+3. Merge test_vram_live.py into test_apu_concurrency_live.py (or delete if fully redundant)
+4. Deepen test_apu_api.py: error cases, response content validation, edge inputs
+5. Add invariant checks AFTER every operation in test_apu_stress.py (currently only spot-checked)
 
 ---
 

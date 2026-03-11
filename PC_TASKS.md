@@ -4,135 +4,99 @@ Read this file on startup. Do tasks in order. Commit and push after each task. D
 
 ---
 
-## Current State (2026-03-11 evening)
+## Current State (2026-03-11)
 
 - Alchemy server: running on :8000, Qwen loaded on 5060 Ti (~14.8GB)
-- APU baseline 8/8: confirmed passing (57ms avg, 266ms worst)
-- Phase 2 (NEOSY Docker): DONE
-- Phase 3 (GPU): IN PROGRESS — APU baseline done, VRAM live tests next
+- APU baseline 8/8: confirmed passing
+- VRAM leak tests: 3/3 passing (load/unload, 10 cycles, eviction)
+- Phase 3 (GPU): IN PROGRESS
+- **10K batch test froze** — likely asyncpg pool exhaustion (max_size=10). Fix is in Task 1 below.
 
 ---
 
-## Task 1 — VRAM health check (read-only, safe)
+## Task 1 — Fix NEOSY 10K batch (make it async)
 
-Run this single test first to confirm VRAM scaffold is wired:
+**Status:** Semaphore + command_timeout already applied (commit `84b5130`). Still fails — the real problem is the batch endpoint processes 10K items synchronously in one HTTP request (600-1000s total, httpx times out).
 
-```bash
-pytest tests/test_apu/test_vram_live.py::TestFrozenRoutine::test_apu_detects_slow_inference -v -s -m gpu
-```
+**Fix:** Make `POST /ingest/batch` async — accept immediately, process in background.
 
-This only reads APU status and health endpoints — no model loads, no GPU pressure.
+In `src/baratza/api/routes/ingest.py`:
+1. POST creates batch record, starts `asyncio.create_task(process_batch(...))`, returns batch_id immediately
+2. Background task processes items sequentially (with existing semaphore), updates batch record as it goes
+3. Client polls `GET /batch/{batch_id}` for progress (endpoint already exists)
 
-**Expected:** 1 test passes, prints APU event count + health status.
-
-Update `testing/TESTING_TODO.md` Section 4.2 with result. Commit + push.
-
----
-
-## Task 2 — VRAM load/unload cycle (touches GPU — do alone)
-
-Run ONE load/unload test:
+Then update the 10K test in `tests/integration/test_stress.py` to:
+1. POST batch → get batch_id
+2. Poll `GET /batch/{batch_id}` every 5s until status != 'in_progress'
+3. Assert completed == 10000
 
 ```bash
-pytest tests/test_apu/test_vram_live.py::TestVRAMLeak::test_load_unload_small_model_vram_returns -v -s -m gpu
-```
-
-**What it does:** Loads `qwen2.5:0.5b`, unloads it, checks VRAM returns within 200MB of baseline.
-
-**If `/v1/apu/load` returns 404:** Run `curl http://localhost:8000/docs 2>/dev/null | grep -i "apu\|load\|unload"` to find the real endpoint names. Report back what endpoints exist — do NOT modify the test yet, just report.
-
-**If it passes:** Update TESTING_TODO.md Section 4.1, commit + push. Then move to Task 3.
-
-**If it fails or hangs >2 min:** Stop, report the error. Do not retry.
-
----
-
-## Task 3 — 10 cycle VRAM leak check
-
-Only run this if Task 2 passed:
-
-```bash
-pytest tests/test_apu/test_vram_live.py::TestVRAMLeak::test_10_load_unload_cycles_no_drift -v -s -m gpu
-```
-
-**What it does:** 10 load/unload cycles of the small model, checks total VRAM drift <500MB.
-
-Update TESTING_TODO.md Section 4.1 with result. Commit + push.
-
----
-
-## Task 4 — NEOSY 10K batch fix (no GPU needed)
-
-Switch to BaratzaMemory repo:
-
-```bash
-cd ~/BaratzaMemory  # adjust path if different
-git pull
-```
-
-Read `src/baratza/ingest/pipeline.py` — find where batch items are processed concurrently (look for `asyncio.gather` or a loop over items). Add a semaphore to cap concurrent DB writes:
-
-```python
-_batch_semaphore = asyncio.Semaphore(8)
-
-async def _ingest_one(item):
-    async with _batch_semaphore:
-        # existing per-item ingest logic
-        ...
-```
-
-Then re-run:
-
-```bash
+cd ~/BaratzaMemory && git pull
+# Apply fix, then:
 pytest tests/integration/test_stress.py::TestMassIngestExtended::test_10000_batch_no_loss -v -s
 ```
 
-Target: 10000/10000. If it passes, update TESTING_TODO.md Section 2.1 (change "11 failed" to "0 failed"), commit + push.
+Target: 10000/10000. Update TESTING_TODO.md Section 2.1. Commit + push.
 
 ---
 
-## Task 5 — Image size ladder (GPU, run alone)
+## Task 2 — APU VRAM reality check (prevents OOM)
 
-Only after Tasks 1-4 are done and GPU is idle.
+**Read Alchemy `TODO.md` Task A** for the full spec. This is the OOM prevention fix.
 
-```bash
-cd ~/BaratzaMemory  # adjust path
-pip install Pillow
-pytest tests/integration/test_image_ladder.py -v -s
-```
+Key changes in `alchemy/apu/orchestrator.py`:
+1. Pre-load: query nvidia-smi before `_backend_load()`, refuse if real VRAM insufficient
+2. Post-load: verify VRAM changed by ~expected, flag drift
+3. `_make_room()`: use `gpu.free_mb` (nvidia-smi) instead of `total - registry_used`
+4. Wrap `_backend_load()` in try/except for Ollama crash/timeout
 
-This runs 1MP → 50MP image ingests. Does NOT hard-fail — records where Qwen-VL starts struggling. Each image may take 30-90s. Total: ~10 min.
+**This MUST be done before running concurrency/priority tests (Task 4).**
 
-Record each result in TESTING_TODO.md Section 1.2. Commit + push.
+Commit + push.
 
 ---
 
-## Task 6 — GPU Concurrency & Priority tests (GPU, run alone)
+## Task 3 — Test consolidation
 
-Only after Tasks 1-5 are done. These test what happens when multiple things hit the GPU simultaneously.
+**Read Alchemy `TODO.md` Task B** for the full spec.
 
-**IMPORTANT SAFETY:** These tests have built-in safety nets — they bail out if VRAM is too low, use only small models (0.5b), and auto-cleanup after each test with frozen baseline restore. Still, run them one at a time.
+1. Create `tests/test_apu/conftest.py` with shared `get_real_vram()`, `assert_vram_safe()`, `vram_snapshot_str()`
+2. Remove voice latency tests from concurrency_live (priority_live owns them)
+3. Merge test_vram_live.py into test_apu_concurrency_live.py or delete if redundant
 
-First, run the concurrency tests:
+Commit + push.
+
+---
+
+## Task 4 — GPU Concurrency & Priority tests
+
+Only after Tasks 2 + 3 are done.
 
 ```bash
 cd ~/Documents/Alchemy_explore
 pytest tests/test_apu/test_apu_concurrency_live.py -v -s -m gpu
 ```
 
-**What it tests:** Concurrent model loads (double allocation prevention), load/unload race conditions, voice survival during GPU churn, status consistency during operations.
-
-**Expected:** All tests pass or skip (SAFETY BAIL if VRAM too low). If any test hangs >2 min, kill it.
-
-Then run the priority tests:
-
+Then:
 ```bash
 pytest tests/test_apu/test_apu_priority_live.py -v -s -m gpu
 ```
 
-**What it tests:** Priority ordering (voice=10 highest), app activation/deactivation, voice latency during model loads, event logging completeness, frozen baseline restore.
+**Safety nets are built in** — VRAM baseline capture/restore, hard HTTP timeouts, small models only. If any test hangs >2 min, kill it.
 
 Update TESTING_TODO.md Section 4.5 with results. Commit + push.
+
+---
+
+## Task 5 — Image size ladder (GPU, run alone)
+
+```bash
+cd ~/BaratzaMemory
+pip install Pillow
+pytest tests/integration/test_image_ladder.py -v -s
+```
+
+Record results in TESTING_TODO.md Section 1.2. Commit + push.
 
 ---
 
@@ -141,5 +105,5 @@ Update TESTING_TODO.md Section 4.5 with results. Commit + push.
 - One test at a time
 - Never run two GPU-heavy tests simultaneously
 - If anything hangs >3 min, kill it and report
-- Commit after every task, don't batch commits
+- Commit after every task
 - Update TESTING_TODO.md with real numbers after every test
