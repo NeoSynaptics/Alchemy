@@ -303,6 +303,11 @@ async def lifespan(app: FastAPI):
             app.state.voice_system = voice_system
             app.state.voice_ollama = voice_ollama
             logger.info("AlchemyVoice started")
+
+            # RLHF reaction logger — logs voice turns to NEOSY
+            from alchemy.voice.reactions import init_reaction_logger
+            app.state.reaction_logger = await init_reaction_logger()
+            logger.info("RLHF reaction logger started")
         except ImportError as e:
             logger.warning("Voice dependencies not available: %s", e)
         except Exception:
@@ -420,6 +425,9 @@ async def lifespan(app: FastAPI):
         logger.info("AlchemyVoice stopped")
     if getattr(app.state, "voice_ollama", None):
         await app.state.voice_ollama.close()
+    if getattr(app.state, "reaction_logger", None):
+        from alchemy.voice.reactions import shutdown_reaction_logger
+        await shutdown_reaction_logger()
 
     reconcile_task = getattr(app.state, "_reconcile_task", None)
     if reconcile_task:
