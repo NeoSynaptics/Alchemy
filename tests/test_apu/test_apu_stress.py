@@ -132,7 +132,11 @@ async def test_concurrent_ensure_loaded_different_models():
 
     results = await asyncio.gather(*[orch.ensure_loaded(c.name) for c in cards])
     successes = [r for r in results if r.success]
-    assert len(successes) >= 1  # At least some should succeed
+    # 10 models × 500MB = 5000MB; GPUs have 12000+16000 = 28000MB total — all should fit
+    assert len(successes) == 10, (
+        f"Expected all 10 loads to succeed, got {len(successes)}; "
+        f"failures: {[(r.error) for r in results if not r.success]}"
+    )
     await assert_apu_invariants(orch)
 
 
@@ -174,16 +178,24 @@ async def test_concurrent_app_activate():
 
 @pytest.mark.asyncio
 async def test_rapid_promote_demote_cycles():
-    """100 rapid promote/demote cycles — model ends up in correct state."""
+    """100 rapid promote/demote cycles — model alternates correctly, no VRAM leak."""
     card = _make_card("cycle-model", vram_mb=1000, gpu=0)
     orch = await _make_orch([card])
 
-    for _ in range(100):
-        await orch.promote(card.name, gpu=0)
-        await orch.demote(card.name)
+    for i in range(100):
+        result = await orch.promote(card.name, gpu=0)
+        assert result.success, f"Cycle {i} promote failed: {result.error}"
+        assert card.current_location.is_gpu, f"Cycle {i}: not on GPU after promote"
 
-    # After demote, should be in RAM
-    assert card.current_location == ModelLocation.CPU_RAM
+        ok = await orch.demote(card.name)
+        assert ok, f"Cycle {i} demote failed"
+        assert card.current_location == ModelLocation.CPU_RAM, f"Cycle {i}: not in RAM after demote"
+
+    # VRAM should be back to 0 after all demotes
+    snap = await orch._monitor.snapshot()
+    assert snap.gpus[0].used_vram_mb == 0, (
+        f"GPU 0 VRAM leaked after 100 cycles: {snap.gpus[0].used_vram_mb}MB"
+    )
     assert card.current_tier == ModelTier.WARM
     await assert_apu_invariants(orch)
 
@@ -277,6 +289,12 @@ async def test_load_failure_rollback():
     result = await orch.load_model(new.name, gpu=0)
     assert not result.success
     assert "Backend load failed" in result.error
+
+    # Evicted model should be restored back to GPU after rollback
+    assert existing.current_location.is_gpu, (
+        f"Evicted model should be restored after failed load, "
+        f"got location={existing.current_location}"
+    )
     await assert_apu_invariants(orch)
 
 
@@ -294,8 +312,11 @@ async def test_unload_failure_keeps_gpu_state():
     result = await orch.demote(card.name)
     assert result is False, "Demote should return False when backend unload fails"
     assert card.current_location.is_gpu, "Model should stay on GPU after unload failure"
-    events = orch._event_log.filter(event_type="error")
-    assert len(events) >= 1, "Error event should be logged for unload failure"
+    events = orch._event_log.filter(event_type="error", model_name="sticky-model")
+    assert len(events) >= 1, "Error event should be logged for sticky-model unload failure"
+    assert any("unload" in (e.error or "").lower() for e in events), (
+        f"Error event should mention unload: {[e.error for e in events]}"
+    )
     await assert_apu_invariants(orch)
 
 
@@ -357,20 +378,20 @@ async def test_event_log_captures_operations():
 
 @pytest.mark.asyncio
 async def test_concurrent_ensure_loaded_same_model():
-    """Two concurrent ensure_loaded on SAME model — second gets 'busy' error."""
+    """Two concurrent ensure_loaded on SAME model — both should not corrupt state."""
     card = _make_card("same-model", vram_mb=1000, gpu=0)
     orch = await _make_orch([card])
 
-    # Simulate first load in progress
-    orch._pending_operations.add("same-model")
-
-    # Second call should get rejected
-    result = await orch._load_model_unlocked("same-model")
-    assert not result.success
-    assert "currently being loaded" in result.error
-
-    # Clean up
-    orch._pending_operations.discard("same-model")
+    # Fire two concurrent loads for the same model
+    results = await asyncio.gather(
+        orch.ensure_loaded(card.name),
+        orch.ensure_loaded(card.name),
+    )
+    # Both may succeed (second sees model already on GPU) or one gets "busy" —
+    # the key invariant is no state corruption
+    successes = [r for r in results if r.success]
+    assert len(successes) >= 1, "At least one load should succeed"
+    assert card.current_location.is_gpu, "Model should be on GPU after concurrent loads"
     await assert_apu_invariants(orch)
 
 
@@ -405,3 +426,43 @@ async def test_unload_failure_keeps_gpu_state_unload_method():
     assert result is False, "unload_model should return False when backend fails"
     assert card.current_location.is_gpu, "Model should stay on GPU after unload failure"
     await assert_apu_invariants(orch)
+
+
+@pytest.mark.asyncio
+async def test_monitor_snapshot_failure():
+    """GPU monitor snapshot raises — ensure_loaded handles gracefully."""
+    card = _make_card("snap-fail", vram_mb=1000)
+    card.preferred_gpu = None  # Force auto-select which calls snapshot
+    orch = await _make_orch([card])
+
+    # Save original and make snapshot raise
+    original_snapshot = orch._monitor.snapshot
+    orch._monitor.snapshot = AsyncMock(side_effect=RuntimeError("GPU driver crashed"))
+
+    result = await orch.ensure_loaded(card.name)
+    # Should fail gracefully, not crash with unhandled exception
+    assert not result.success
+    assert "snapshot" in result.error.lower() or "GPU" in result.error
+
+    # Restore monitor for invariant check
+    orch._monitor.snapshot = original_snapshot
+    await assert_apu_invariants(orch)
+
+
+@pytest.mark.asyncio
+async def test_negative_vram_invariant():
+    """Invariant checker catches models with negative VRAM."""
+    from alchemy.apu.invariants import check_invariants
+
+    card = ModelCard(
+        name="negative-vram", backend=ModelBackend.OLLAMA, vram_mb=-100,
+        current_location=ModelLocation.DISK, current_tier=ModelTier.COLD,
+    )
+    registry = ModelRegistry()
+    registry.register(card)
+
+    monitor = FakeGPUMonitor()
+    violations = await check_invariants(registry, monitor)
+    assert any("negative" in v.lower() for v in violations), (
+        f"Expected negative VRAM violation, got: {violations}"
+    )

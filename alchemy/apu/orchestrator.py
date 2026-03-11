@@ -402,7 +402,13 @@ class StackOrchestrator:
                 other = 1 - card.preferred_gpu
                 gpus_to_try.append(other)
             else:
-                snap = await self._monitor.snapshot()
+                try:
+                    snap = await self._monitor.snapshot()
+                except Exception as e:
+                    return LoadResult(
+                        success=False,
+                        error=f"GPU monitor snapshot failed: {e}",
+                    )
                 sorted_gpus = sorted(snap.gpus, key=lambda g: g.free_vram_mb, reverse=True)
                 gpus_to_try = [g.index for g in sorted_gpus]
 
