@@ -30,18 +30,23 @@ class TestOllamaProvider:
             json={"message": {"content": "Hello!"}, "done": True},
             request=httpx.Request("POST", "http://test-ollama:11434/api/chat"),
         )
-        with patch.object(
-            provider._clients["http://test-ollama:11434"],
-            "post",
-            new_callable=AsyncMock,
-            return_value=mock_response,
+        # Use deterministic monotonic clock so elapsed_ms is always 50.0
+        clock = iter([1.0, 1.05]).__next__
+        with (
+            patch.object(
+                provider._clients["http://test-ollama:11434"],
+                "post",
+                new_callable=AsyncMock,
+                return_value=mock_response,
+            ),
+            patch("alchemy.voice.models.provider.time.monotonic", side_effect=clock),
         ):
             text, ms = await provider.generate(
                 "qwen3:14b",
                 [ChatMessage(role="user", content="hi")],
             )
             assert text == "Hello!"
-            assert ms > 0
+            assert ms == pytest.approx(50.0, abs=0.1)
 
     async def test_generate_with_endpoint_override(self, provider):
         """Test dual-host: per-model endpoint override."""

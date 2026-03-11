@@ -125,13 +125,9 @@ class TestPipelineCycle:
             router_response="It's 3 PM.",
         )
 
-        await pipeline.start()
-        # Let one cycle complete
-        await asyncio.sleep(0.2)
-        await pipeline.stop()
+        # Call _cycle() directly — deterministic, no sleep needed
+        await pipeline._cycle()
 
-        # Verify each component was called (listen is a plain async function,
-        # but record being called proves listen ran first in the cycle)
         mocks["listener"].record.assert_called_once()
         mocks["stt"].transcribe.assert_called_once()
         mocks["tts"].speak_streamed.assert_called_once()
@@ -140,9 +136,7 @@ class TestPipelineCycle:
         """Empty transcription should not route or speak."""
         pipeline, mocks = _make_pipeline(transcription="")
 
-        await pipeline.start()
-        await asyncio.sleep(0.2)
-        await pipeline.stop()
+        await pipeline._cycle()
 
         mocks["tts"].speak_streamed.assert_not_called()
 
@@ -152,9 +146,7 @@ class TestPipelineCycle:
         # Override with very short audio (less than 1600 bytes)
         mocks["listener"].record = AsyncMock(return_value=b"\x00" * 100)
 
-        await pipeline.start()
-        await asyncio.sleep(0.2)
-        await pipeline.stop()
+        await pipeline._cycle()
 
         mocks["stt"].transcribe.assert_not_called()
 
@@ -198,9 +190,7 @@ class TestPipelineCycleWithVRAM:
             gpu_mode=GPUMode.SINGLE,
         )
 
-        await pipeline.start()
-        await asyncio.sleep(0.3)
-        await pipeline.stop()
+        await pipeline._cycle()
 
         # Should use speak() (buffered), NOT speak_streamed()
         mocks["tts"].speak.assert_called_once()
@@ -214,9 +204,7 @@ class TestPipelineCycleWithVRAM:
             gpu_mode=GPUMode.SINGLE,
         )
 
-        await pipeline.start()
-        await asyncio.sleep(0.3)
-        await pipeline.stop()
+        await pipeline._cycle()
 
         vram = mocks["vram"]
         fish = mocks["fish_process"]
@@ -238,9 +226,7 @@ class TestPipelineCycleWithVRAM:
             gpu_mode=GPUMode.DUAL,
         )
 
-        await pipeline.start()
-        await asyncio.sleep(0.3)
-        await pipeline.stop()
+        await pipeline._cycle()
 
         # Should use speak_streamed() (streaming), NOT speak()
         mocks["tts"].speak_streamed.assert_called_once()
@@ -258,9 +244,7 @@ class TestPipelineCycleWithVRAM:
             router_response="Hi!",
         )
 
-        await pipeline.start()
-        await asyncio.sleep(0.3)
-        await pipeline.stop()
+        await pipeline._cycle()
 
         mocks["tts"].speak_streamed.assert_called_once()
 
@@ -271,9 +255,7 @@ class TestPipelineCycleWithVRAM:
             gpu_mode=GPUMode.SINGLE,
         )
 
-        await pipeline.start()
-        await asyncio.sleep(0.3)
-        await pipeline.stop()
+        await pipeline._cycle()
 
         # STT swap happened then was released
         mocks["vram"].ensure_stt.assert_called_once()
