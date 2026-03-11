@@ -467,6 +467,14 @@ async def bearer_auth(request, call_next):
 
 
 @app.middleware("http")
+async def strip_api_prefix(request, call_next):
+    """Strip /api prefix so the React UI works in production (Vite proxy adds /api in dev)."""
+    if request.url.path.startswith("/api/"):
+        request.scope["path"] = request.url.path[4:]  # "/api/v1/..." → "/v1/..."
+    return await call_next(request)
+
+
+@app.middleware("http")
 async def add_request_id(request, call_next):
     """Stamp every request with a unique ID for cross-module log tracing."""
     request_id = request.headers.get("X-Request-ID") or str(uuid4())[:12]
