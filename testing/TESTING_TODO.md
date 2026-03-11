@@ -19,8 +19,8 @@ See `PC_TEST_GUIDE.md` for full implementation specs with code examples.
 2. **Section 2.3 items** — classification-dependent, need NEO running (Phase 3)
 
 ### Next Up
-- **PC**: Section 1.2 image ladder, Section 4.1-4.2 VRAM leak (test scaffolds ready), then Section 6 voice
-- **Laptop**: Flesh out serpentine, connection pool investigation, duckduckgo dep fix
+- **PC**: Finish current tasks (10K batch fix, image ladder), then Section 4.5 concurrency/priority tests (scaffolds ready), then Section 6 voice
+- **Laptop**: Flesh out serpentine, research test fixes, synthetic voice scaffold
 
 ---
 
@@ -176,6 +176,37 @@ Known pain: small 0.5-1GB models sit as broken links, eat VRAM, make Qwen overfl
 - [ ] Load wrong model intentionally → APU detects, cleans up, logs error
 - [ ] Fill GPU with synthetic waste (controlled small models) → APU cleans and restarts correct models
 - [ ] Voice keeps running during GPU cleanup
+
+### 4.5 GPU Concurrency & Multi-App Contention (NEW — 2026-03-11)
+**Test scaffolds ready:** `Alchemy/tests/test_apu/test_apu_concurrency_live.py` + `test_apu_priority_live.py` — run with `pytest -m gpu`
+**Safety nets:** VRAM baseline capture/restore, hard HTTP timeouts, auto-cleanup fixture, nvidia-smi cross-check, frozen baseline restore after each test. Only uses small models (0.5b) to prevent OOM.
+
+**Concurrency (test_apu_concurrency_live.py):**
+- [ ] 2 concurrent loads of SAME model → no double VRAM allocation
+- [ ] Load during unload race → model ends in valid state (no corruption)
+- [ ] 3 concurrent load requests → VRAM accounting stays valid (no overcommit)
+- [ ] Voice responds during concurrent model loads
+- [ ] Voice responds during rapid load/unload churn (3 cycles)
+- [ ] APU status returns valid data during model operations
+- [ ] Event log captures all concurrent operations
+- [ ] nvidia-smi matches APU tracking after load/unload cycle
+
+**Priority (test_apu_priority_live.py):**
+- [ ] Default priorities correct: voice=10 (highest), gate=60 (lowest)
+- [ ] All GPU models report valid tier + location (no warm/cold on GPU)
+- [ ] High-priority app activation always succeeds
+- [ ] Low-priority app model demoted after deactivation
+- [ ] Voice latency baseline <2s with no GPU pressure
+- [ ] Voice latency <2s during model load
+- [ ] APU health check detects and reports VRAM drift
+- [ ] Every operation generates event log entry
+- [ ] Frozen baseline restore returns server to known-good state
+
+**Known APU limitations (documented in orchestrator.py TODO):**
+- Global `asyncio.Lock()` serializes ALL model ops across both GPUs
+- No load queue prioritization — FCFS when waiting for lock
+- No preemption of in-flight loads
+- No request deduplication for same-model concurrent loads
 
 ---
 

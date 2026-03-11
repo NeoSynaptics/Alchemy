@@ -107,6 +107,35 @@ Record each result in TESTING_TODO.md Section 1.2. Commit + push.
 
 ---
 
+## Task 6 — GPU Concurrency & Priority tests (GPU, run alone)
+
+Only after Tasks 1-5 are done. These test what happens when multiple things hit the GPU simultaneously.
+
+**IMPORTANT SAFETY:** These tests have built-in safety nets — they bail out if VRAM is too low, use only small models (0.5b), and auto-cleanup after each test with frozen baseline restore. Still, run them one at a time.
+
+First, run the concurrency tests:
+
+```bash
+cd ~/Documents/Alchemy_explore
+pytest tests/test_apu/test_apu_concurrency_live.py -v -s -m gpu
+```
+
+**What it tests:** Concurrent model loads (double allocation prevention), load/unload race conditions, voice survival during GPU churn, status consistency during operations.
+
+**Expected:** All tests pass or skip (SAFETY BAIL if VRAM too low). If any test hangs >2 min, kill it.
+
+Then run the priority tests:
+
+```bash
+pytest tests/test_apu/test_apu_priority_live.py -v -s -m gpu
+```
+
+**What it tests:** Priority ordering (voice=10 highest), app activation/deactivation, voice latency during model loads, event logging completeness, frozen baseline restore.
+
+Update TESTING_TODO.md Section 4.5 with results. Commit + push.
+
+---
+
 ## Rules
 
 - One test at a time
