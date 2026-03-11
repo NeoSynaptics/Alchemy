@@ -337,11 +337,211 @@ Alchemy must be portable. Right now it's welded to one machine. Fix that.
 
 ---
 
+## Task 12a: APU Orchestrator — Race Conditions & Missing Locks
+
+Code review found race conditions in orchestrator methods that read/modify state without holding `_state_lock`.
+
+**Bug 1: `rebalance()` reads model state without lock (lines 414-441)**
+
+`rebalance()` iterates `all_models()`, reads `current_location` and `preferred_gpu`, then calls `demote()` and `load_model()`. Between the reads and the lock acquisitions inside those methods, another coroutine can change state.
+
+Fix: Wrap the entire rebalance loop body. Since `demote()` and `load_model()` acquire `_state_lock` internally, either:
+- Make internal `_demote_unlocked()` / `_load_model_unlocked()` variants callable from rebalance while it holds the lock, OR
+- Snapshot model names + preferred GPUs first, then operate on each sequentially (each call acquires its own lock, state may change but operations are individually safe)
+
+**Bug 2: `user_idle()` mutates collection during iteration (lines 552-559)**
+
+`models_by_tier()` returns a list, but `demote()` changes the model's tier. If `models_by_tier()` ever returns a view instead of a copy, this corrupts iteration.
+
+Fix: Snapshot names before iterating:
+```python
+model_names = [c.name for c in self._registry.models_by_tier(ModelTier.USER_ACTIVE)]
+for name in model_names:
+    ok = await self.demote(name)
+```
+
+**Bug 3: `app_deactivate()` has no lock protection (lines 523-548)**
+
+`_app_models.pop()` and `card.owner_app = None` happen without lock. Concurrent `app_activate()` for the same app can race with deactivation.
+
+Fix: Wrap in `async with self._state_lock:` or snapshot names first.
+
+**Bug 4: `app_deactivate()` and `user_active()` missing event log (lines 523-572)**
+
+Unlike `app_activate()`, neither records events. No audit trail for app lifecycle.
+
+Fix: Add `event_log.record("app_deactivate", ...)` and `event_log.record("user_active", ...)`.
+
+**Bug 5: Rollback failures not recorded as events (lines 256-278)**
+
+When `_backend_load` fails and rollback of evicted models also fails, only a `logger.warning` is emitted. No event is logged for the rollback failure itself.
+
+Fix: Add `event_log.record("error", ...)` for each rollback failure with context about which model couldn't be restored.
+
+**Files to modify:**
+- `alchemy/apu/orchestrator.py` — fix all 5 bugs above
+
+**Commit when done.**
+
+---
+
+## Task 12b: Registry Thread-Safety & Event Log Filter Bug
+
+**Bug 1: Registry docstring claims "thread-safe" but has NO locks (registry.py line 105-109)**
+
+`ModelRegistry.__init__` creates a bare `dict` with no lock. The docstring says "Thread-safe model registry" but concurrent calls to `register()`, `unregister()`, `update_location()` can corrupt state. The orchestrator's `_state_lock` only protects orchestrator-level operations — if any code calls registry directly, it's unprotected.
+
+Fix: The registry is protected by the orchestrator's lock in practice, but the docstring is misleading. Either:
+- (Minimal) Fix docstring to say "Not inherently thread-safe — callers must hold orchestrator._state_lock"
+- (Better) Use `gpu_location()` in `models_on_gpu()` line 136 instead of re-implementing the GPU index mapping inline
+
+**Bug 2: `models_on_gpu()` doesn't use `gpu_location()` helper (registry.py line 135-137)**
+
+```python
+loc = ModelLocation.GPU_0 if gpu_index == 0 else ModelLocation.GPU_1  # hardcoded
+```
+
+The `gpu_location()` function (line 62) exists as the single point of control for GPU mapping but isn't used here. If GPU_2 is added, `models_on_gpu()` breaks silently.
+
+Fix: Use `gpu_location(gpu_index)` with try/except for invalid index.
+
+**Bug 3: Event log `errors_only` filter includes successful drift events (event_log.py line 140)**
+
+```python
+if errors_only and event.success and event.event_type != "drift":
+    continue
+```
+
+This special-cases drift events to always pass through `errors_only` filter, even when `success=True`. A successful drift event is contradictory — drift detection that succeeded at recovery should NOT appear in error-only views.
+
+Fix: Remove the drift exception. If drift events should always be errors, ensure they're recorded with `success=False`:
+```python
+if errors_only and event.success:
+    continue
+```
+
+**Bug 4: Slow detection fails when `vram_expected_mb=0` (event_log.py line 89)**
+
+```python
+slow = duration_ms > 2 * expected_ms if expected_ms > 0 else False
+```
+
+If `vram_expected_mb=0` (e.g., custom backend models), `expected_ms=0` and `slow` is always `False` — even for 30-second loads. A 5-second load should always be flagged as slow regardless of expected time.
+
+Fix: Add absolute threshold fallback:
+```python
+_ABSOLUTE_SLOW_MS = 5000.0  # 5 seconds is always slow
+slow = (duration_ms > 2 * expected_ms if expected_ms > 0
+        else duration_ms > _ABSOLUTE_SLOW_MS)
+```
+
+**Files to modify:**
+- `alchemy/apu/registry.py` — fix docstring, use `gpu_location()` in `models_on_gpu()`
+- `alchemy/apu/event_log.py` — fix `errors_only` filter, add absolute slow threshold
+
+**Commit when done.**
+
+---
+
+## Task 12c: APU Test Quality — Weak Assertions & Missing Coverage
+
+Tests pass but several don't actually prove the code works correctly.
+
+**Fix 1: Concurrent load assertion too weak (test_apu_stress.py ~line 135)**
+
+```python
+assert len(successes) >= 1  # At least some should succeed
+```
+
+10 models × 500MB = 5000MB on GPUs with 28GB total. ALL should succeed. Fix:
+```python
+assert len(successes) == 10, f"Expected all 10, got {len(successes)}"
+```
+
+**Fix 2: Pending operations test doesn't test real concurrency (test_apu_stress.py ~line 237-250)**
+
+Manually inserts into `_pending_operations` set, then calls `_load_model_unlocked()` directly. This tests the guard check but NOT actual concurrent `load_model()` calls racing.
+
+Fix: Use `asyncio.gather()` with two concurrent `load_model()` calls on the same model:
+```python
+results = await asyncio.gather(
+    orch.load_model(card.name, gpu=0),
+    orch.load_model(card.name, gpu=0),
+)
+assert sum(1 for r in results if r.success) == 1
+```
+
+**Fix 3: Promote/demote cycles don't verify intermediate state (test_apu_stress.py ~line 176-188)**
+
+After 100 cycles, only checks final state. Add per-cycle assertion that model alternates between GPU and RAM correctly. Also verify VRAM returns to 0 after all demotes (no leak).
+
+**Fix 4: Load failure rollback doesn't verify evicted model was restored (test_apu_stress.py ~line 256-280)**
+
+Test checks `not result.success` but doesn't assert the evicted model is back on GPU. Add:
+```python
+assert existing.current_location.is_gpu, "Evicted model should be restored after failed load"
+```
+
+**Fix 5: Event log assertions too loose (multiple tests)**
+
+`assert len(events) >= 1` will pass with any error event, not necessarily the one being tested. Fix: Filter by `model_name` and check error message content.
+
+**Fix 6: Add missing test — monitor snapshot failure**
+
+No test covers what happens when `monitor.snapshot()` raises an exception (e.g., GPU driver crash). Add a test that makes snapshot raise `RuntimeError` and verify `ensure_loaded()` handles it gracefully.
+
+**Fix 7: Add missing test — negative VRAM invariant**
+
+No test creates a card with negative `vram_mb` to verify the invariant checker catches it.
+
+**Files to modify:**
+- `tests/test_apu/test_apu_stress.py` — fixes 1-4, 6
+- `tests/test_apu/test_apu_diagnostics.py` — fixes 5, 7
+
+**Commit when done.**
+
+---
+
+## Task 12d: Invariant Checker — Missing Checks & Edge Cases
+
+**Fix 1: GPU index bounds not validated (invariants.py line 39-45)**
+
+If pynvml reports GPU indices beyond 0-1, `registry.total_vram_on_gpu()` silently returns 0 (no models match). Add bounds check:
+```python
+for gpu in snap.gpus:
+    if gpu.index > 1:
+        violations.append(f"GPU index {gpu.index} found but APU only supports GPU 0-1")
+        continue
+```
+
+**Fix 2: RESIDENT+RAM not flagged (invariants.py line 60-63)**
+
+Only checks COLD+RAM. But RESIDENT models in RAM is also an invariant violation — RESIDENT means "should always be on GPU."
+
+Fix: Expand the RAM check:
+```python
+if model.current_location == ModelLocation.CPU_RAM and model.current_tier == ModelTier.RESIDENT:
+    violations.append(f"{model.name} in RAM but tier=resident (must be on GPU)")
+```
+
+Note: Check #4 (lines 65-70) catches RESIDENT not on GPU, but using `current_tier` not `default_tier`. If a RESIDENT model was temporarily demoted (tier changed to WARM), check #4 won't catch it but check #3 should. Verify both checks complement each other correctly.
+
+**Fix 3: Event log `record()` errors silently swallowed (invariants.py line 89-95)**
+
+If `event_log.record()` raises, the invariant check silently fails to record violations. Wrap in try/except with logger fallback.
+
+**Files to modify:**
+- `alchemy/apu/invariants.py` — all 3 fixes
+
+**Commit when done.**
+
+---
+
 ## ═══════════════════════════════════════════
-## LAPTOP TASKS (no GPU needed) — Tasks 12-21
+## LAPTOP TASKS (no GPU needed) — Tasks 13-23
 ## ═══════════════════════════════════════════
 
-## Task 12: NEOSY Bug Fixes (port, CLI column, vault path)
+## Task 13: NEOSY Bug Fixes (port, CLI column, vault path)
 
 Three quick fixes found during code review.
 
@@ -355,7 +555,7 @@ Three quick fixes found during code review.
 
 ---
 
-## Task 13: NEOSY Test Suite — Zero Tests Exist
+## Task 14: NEOSY Test Suite — Zero Tests Exist
 
 `tests/` is empty. Add baseline coverage for the core paths.
 
@@ -372,7 +572,7 @@ Use `httpx.AsyncClient` + `app` for route tests. Mock DB/Qdrant — don't need r
 
 ---
 
-## Task 14: Dashboard Code Wiring (React UI → FastAPI)
+## Task 15: Dashboard Code Wiring (React UI → FastAPI)
 
 Wire the existing React UI to serve from FastAPI in production.
 
@@ -388,7 +588,7 @@ Wire the existing React UI to serve from FastAPI in production.
 
 ---
 
-## Task 15: Security Module — Currently 1 Line
+## Task 16: Security Module — Currently 1 Line
 
 `alchemy/security/` is just a docstring. Implement basic auth.
 
@@ -404,7 +604,7 @@ Wire the existing React UI to serve from FastAPI in production.
 
 ---
 
-## Task 16: AlchemyWord — Flesh Out the Stub
+## Task 17: AlchemyWord — Flesh Out the Stub
 
 `alchemy/word/` is 5 lines. Build the basic text generation pipeline.
 
@@ -420,7 +620,7 @@ Wire the existing React UI to serve from FastAPI in production.
 
 ---
 
-## Task 17: Docker Compose for Alchemy
+## Task 18: Docker Compose for Alchemy
 
 No docker-compose exists at repo root. Create one for full-stack local dev.
 
@@ -451,7 +651,7 @@ Test: `docker-compose up` starts both services.
 
 ---
 
-## Task 18: AlchemyHole Spec — Device Tunnel Design
+## Task 19: AlchemyHole Spec — Device Tunnel Design
 
 Write architecture spec only (no code). Like the Instagram saves agent spec.
 
@@ -468,7 +668,7 @@ Save to `alchemy/hole/SPEC.md`:
 
 ---
 
-## Task 19: Voice Test Audit — Do 18 Test Files Cover Real Paths?
+## Task 20: Voice Test Audit — Do 18 Test Files Cover Real Paths?
 
 Voice has 40 source files and 18 test files. Audit coverage quality.
 
@@ -484,7 +684,7 @@ Voice has 40 source files and 18 test files. Audit coverage quality.
 
 ---
 
-## Task 20: Import Boundary Audit
+## Task 21: Import Boundary Audit
 
 Run `lint-imports` and fix any violations. The module conventions say:
 - Core/adapters never import from features
@@ -498,7 +698,7 @@ Check if Tasks 5-11 introduced any violations. Fix them.
 
 ---
 
-## Task 21: README + Setup Guide
+## Task 22: README + Setup Guide
 
 No setup guide exists for new users. Create one.
 
@@ -514,10 +714,10 @@ No setup guide exists for new users. Create one.
 ---
 
 ## ═══════════════════════════════════════════
-## PC TASKS (needs GPU / Docker / Ollama) — Tasks 22-26
+## PC TASKS (needs GPU / Docker / Ollama) — Tasks 23-27
 ## ═══════════════════════════════════════════
 
-## Task 22: Dashboard E2E — Live APU Data
+## Task 23: Dashboard E2E — Live APU Data
 
 Start the full server, open browser, verify the dashboard shows real GPU data.
 
@@ -532,7 +732,7 @@ Start the full server, open browser, verify the dashboard shows real GPU data.
 
 ---
 
-## Task 23: NEOSY E2E with Ollama — NEO Queue Processing
+## Task 24: NEOSY E2E with Ollama — NEO Queue Processing
 
 Task 9 skipped this because Ollama wasn't running. Now test it.
 
@@ -547,7 +747,7 @@ Task 9 skipped this because Ollama wasn't running. Now test it.
 
 ---
 
-## Task 24: Voice Pipeline E2E — Mic to Speaker
+## Task 25: Voice Pipeline E2E — Mic to Speaker
 
 Full voice loop test.
 
@@ -564,7 +764,7 @@ Full voice loop test.
 
 ---
 
-## Task 25: RLHF Foundation — Reaction Logging for Voice
+## Task 26: RLHF Foundation — Reaction Logging for Voice
 
 Wire voice responses + user reactions into NEOSY registro.
 
@@ -575,11 +775,11 @@ Wire voice responses + user reactions into NEOSY registro.
 5. This creates the preference dataset for future DPO/RLHF fine-tuning
 
 **Repo:** Alchemy + BaratzaMemory
-**Requires:** GPU, voice pipeline working (Task 24 first)
+**Requires:** GPU, voice pipeline working (Task 25 first)
 
 ---
 
-## Task 26: Full Integration Smoke Test
+## Task 27: Full Integration Smoke Test
 
 Everything up, everything connected, end-to-end.
 
