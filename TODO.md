@@ -717,7 +717,7 @@ No setup guide exists for new users. Create one.
 ## PC TASKS (needs GPU / Docker / Ollama) — Tasks 23-27
 ## ═══════════════════════════════════════════
 
-## Task 23: Dashboard E2E — Live APU Data
+## [DONE] Task 23: Dashboard E2E — Live APU Data
 
 Start the full server, open browser, verify the dashboard shows real GPU data.
 
@@ -732,7 +732,7 @@ Start the full server, open browser, verify the dashboard shows real GPU data.
 
 ---
 
-## Task 24: NEOSY E2E with Ollama — NEO Queue Processing
+## [DONE] Task 24: NEOSY E2E with Ollama — NEO Queue Processing
 
 Task 9 skipped this because Ollama wasn't running. Now test it.
 
@@ -747,7 +747,7 @@ Task 9 skipped this because Ollama wasn't running. Now test it.
 
 ---
 
-## Task 25: Voice Pipeline E2E — Mic to Speaker
+## [DONE] Task 25: Voice Pipeline E2E — Mic to Speaker
 
 Full voice loop test.
 
