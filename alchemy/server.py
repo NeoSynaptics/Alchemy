@@ -70,7 +70,7 @@ async def lifespan(app: FastAPI):
     # --- APU (Alchemy Processing Unit) ---
     try:
         from pathlib import Path
-        from alchemy.apu import GPUMonitor, ModelRegistry, StackOrchestrator
+        from alchemy.apu import APUGateway, GPUMonitor, ModelRegistry, StackOrchestrator
 
         gpu_monitor = GPUMonitor()
         model_registry = ModelRegistry()
@@ -93,7 +93,15 @@ async def lifespan(app: FastAPI):
         from alchemy.apu.profiler import ModelProfiler
         app.state.profiler = ModelProfiler(ollama_host=settings.ollama_host)
 
-        logger.info("APU started (%d models registered)",
+        # APU Inference Gateway — single point of contact for all LLM calls
+        gateway = APUGateway(
+            ollama=ollama,
+            orchestrator=orchestrator,
+            registry=model_registry,
+        )
+        app.state.apu_gateway = gateway
+
+        logger.info("APU started (%d models registered, gateway active)",
                      len(model_registry.all_models()))
 
         # Periodic VRAM reconciliation + invariant checks (every 60s)
@@ -136,6 +144,7 @@ async def lifespan(app: FastAPI):
         app.state.orchestrator = None
         app.state.gpu_monitor = None
         app.state.model_registry = None
+        app.state.apu_gateway = None
         app.state.contract_reports = {}
 
     # --- Playwright Agent (Tier 1) ---
@@ -560,6 +569,7 @@ async def health():
         "desktop_mode": desktop_mode,
         "gui_actor": gui_actor_ok,
         "gpu_orchestrator": orchestrator_ok,
+        "apu_gateway": getattr(app.state, "apu_gateway", None) is not None,
         "voice_enabled": voice_ok,
         "connect_enabled": connect_ok,
         "connect_devices": connect.connected_devices if connect else 0,

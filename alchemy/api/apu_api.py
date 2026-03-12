@@ -659,3 +659,40 @@ async def apu_events_errors(request: Request, limit: int = 100):
     orch = _get_orchestrator(request)
     events = orch._event_log.filter(errors_only=True, limit=limit)
     return [e.to_dict() for e in events]
+
+
+# --- Inference Gateway Metrics ---
+
+
+def _get_gateway(request: Request):
+    from alchemy.apu.gateway import APUGateway
+
+    gw = getattr(request.app.state, "apu_gateway", None)
+    if gw is None:
+        raise HTTPException(status_code=503, detail="APU inference gateway not initialized")
+    return gw
+
+
+@router.get("/inference/metrics")
+async def inference_metrics(
+    request: Request,
+    limit: int = 50,
+    caller: str | None = None,
+    model: str | None = None,
+):
+    """Recent inference metrics from the APU gateway.
+
+    Filter by caller (e.g. "baratza", "click", "gate") or model name.
+    """
+    gw = _get_gateway(request)
+    if caller:
+        records = gw._metrics.by_caller(caller, limit)
+    elif model:
+        records = gw._metrics.by_model(model, limit)
+    else:
+        records = gw.get_metrics(limit)
+    return {
+        "queue_depth": gw.queue_depth,
+        "total_records": len(gw._metrics),
+        "records": records,
+    }
