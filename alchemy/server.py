@@ -101,6 +101,14 @@ async def lifespan(app: FastAPI):
         )
         app.state.apu_gateway = gateway
 
+        # Inject gateway into BaratzaMemory inference (runs in lifespan, after gateway exists)
+        if settings.baratza.enabled and settings.baratza.src_path:
+            try:
+                from baratza.neo.inference import set_gateway
+                set_gateway(gateway)
+            except ImportError:
+                pass
+
         logger.info("APU started (%d models registered, gateway active)",
                      len(model_registry.all_models()))
 
@@ -537,12 +545,6 @@ if settings.baratza.enabled and settings.baratza.src_path:
         sys.path.insert(0, settings.baratza.src_path)
         from baratza.api.routes import router as baratza_router
         app.include_router(baratza_router, prefix="/v1/baratza")
-        # Wire BaratzaMemory inference through APU gateway
-        gateway = getattr(app.state, "apu_gateway", None)
-        if gateway:
-            from baratza.neo.inference import set_gateway
-            set_gateway(gateway)
-            logger.info("BaratzaMemory inference routed through APU gateway")
         logger.info("BaratzaMemory routes mounted at /v1/baratza/*")
     except Exception:
         logger.warning("BaratzaMemory routes not available (src_path=%s)", settings.baratza.src_path)
