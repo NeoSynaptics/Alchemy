@@ -135,6 +135,7 @@ class StackOrchestrator:
         registry: ModelRegistry,
         ollama_host: str = "http://localhost:11434",
         vram_safety_margin_mb: int = 200,
+        auto_preload: bool = False,
     ) -> None:
         self._monitor = monitor
         self._registry = registry
@@ -175,6 +176,7 @@ class StackOrchestrator:
         self._thrash_detector = ThrashDetector(window_s=60.0, threshold=3)
         self._pattern_predictor = UsagePatternPredictor()
         self._batch_holds: dict[str, int] = defaultdict(int)
+        self._auto_preload = auto_preload
 
     # --- Module Priority (unified 0-10 scale) ---
 
@@ -246,9 +248,12 @@ class StackOrchestrator:
             logger.info("Startup reconcile: %s", action)
 
         # Restore frozen baseline (replaces old hardcoded resident loading)
-        actions = await self.restore_frozen_baseline()
-        for action in actions:
-            logger.info("Boot: %s", action)
+        if self._auto_preload:
+            actions = await self.restore_frozen_baseline()
+            for action in actions:
+                logger.info("Boot: %s", action)
+        else:
+            logger.info("Auto-preload disabled — skipping frozen baseline restore")
 
         # Start periodic VRAM reconciliation (every 5 minutes)
         self._reconcile_task = asyncio.create_task(self._periodic_reconcile())
@@ -274,6 +279,8 @@ class StackOrchestrator:
         """Background task: reconcile VRAM state every 5 minutes."""
         while self._started:
             await asyncio.sleep(300)
+            if not self._auto_preload:
+                continue
             try:
                 actions = await self.reconcile_vram()
                 if actions:

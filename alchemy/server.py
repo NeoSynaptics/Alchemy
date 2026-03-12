@@ -84,6 +84,7 @@ async def lifespan(app: FastAPI):
             registry=model_registry,
             ollama_host=settings.ollama_host,
             vram_safety_margin_mb=settings.apu.vram_safety_margin_mb,
+            auto_preload=settings.apu.auto_preload,
         )
         await orchestrator.start()
         app.state.orchestrator = orchestrator

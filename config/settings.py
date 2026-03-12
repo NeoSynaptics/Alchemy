@@ -237,6 +237,7 @@ class ConnectSettings(BaseModel):
 class APUSettings(BaseModel):
     """APU (Alchemy Processing Unit) — GPU fleet management."""
     vram_safety_margin_mb: int = 200  # CUDA kernel overhead buffer for pre-load check
+    auto_preload: bool = False  # Auto-load models on startup and periodic reconcile
 
 
 class AgentsSettings(BaseModel):

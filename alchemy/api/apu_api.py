@@ -457,6 +457,34 @@ async def set_app_gpu(
 
 
 
+class AutoPreloadResponse(BaseModel):
+    auto_preload: bool
+
+
+class SetAutoPreloadRequest(BaseModel):
+    enabled: bool
+
+
+@router.get("/auto-preload", response_model=AutoPreloadResponse)
+async def get_auto_preload(request: Request) -> AutoPreloadResponse:
+    """Get auto-preload status."""
+    orch = _get_orchestrator(request)
+    return AutoPreloadResponse(auto_preload=orch._auto_preload)
+
+
+@router.post("/auto-preload", response_model=AutoPreloadResponse)
+async def set_auto_preload(request: Request, body: SetAutoPreloadRequest) -> AutoPreloadResponse:
+    """Toggle auto-preload. When enabled, models auto-load on reconcile."""
+    orch = _get_orchestrator(request)
+    orch._auto_preload = body.enabled
+    if body.enabled:
+        actions = await orch.restore_frozen_baseline()
+        for a in actions:
+            import logging
+            logging.getLogger(__name__).info("Auto-preload restored: %s", a)
+    return AutoPreloadResponse(auto_preload=orch._auto_preload)
+
+
 class OffloadResponse(BaseModel):
     offloaded: list[str] = []
 
