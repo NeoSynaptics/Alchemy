@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run tests for both Alchemy and NEOSY, output results to testing/results/
+# Run tests for both Alchemy and BaratzaMemory, output results to testing/results/
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -22,22 +22,22 @@ cd "$ALCHEMY_ROOT"
 
 echo "Alchemy results written to $RESULTS_DIR/alchemy_latest.md"
 
-# --- NEOSY Tests ---
-NEOSY_ROOT="$HOME/BaratzaMemory"
-if [ -d "$NEOSY_ROOT/tests" ]; then
-    echo "=== Running NEOSY tests ==="
-    cd "$NEOSY_ROOT"
+# --- BaratzaMemory Tests ---
+BARATZA_ROOT="$HOME/BaratzaMemory"
+if [ -d "$BARATZA_ROOT/tests" ]; then
+    echo "=== Running BaratzaMemory tests ==="
+    cd "$BARATZA_ROOT"
 
     {
-        echo "# NEOSY Test Results"
+        echo "# BaratzaMemory Test Results"
         echo "Run: $TIMESTAMP"
         echo ""
         PYTHONPATH=src pytest tests/ --tb=short -q 2>&1 || true
-    } > "$RESULTS_DIR/neosy_latest.md"
+    } > "$RESULTS_DIR/baratza_latest.md"
 
-    echo "NEOSY results written to $RESULTS_DIR/neosy_latest.md"
+    echo "BaratzaMemory results written to $RESULTS_DIR/baratza_latest.md"
 else
-    echo "NEOSY repo not found at $NEOSY_ROOT — skipping"
+    echo "BaratzaMemory repo not found at $BARATZA_ROOT — skipping"
 fi
 
 echo ""

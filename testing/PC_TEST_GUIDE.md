@@ -18,11 +18,11 @@ Docker Services (from BaratzaMemory/docker/docker-compose.yml):
 
 Servers:
   Alchemy        — port 8000 (FastAPI)
-  NEOSY          — port 8001 (FastAPI)
+  BaratzaMemory          — port 8001 (FastAPI)
 
 Repos:
   Alchemy:  C:\Users\info\GitHub\Alchemy  (branch: main)
-  NEOSY:    C:\Users\info\GitHub\BaratzaMemory               (branch: master)
+  BaratzaMemory:    C:\Users\info\GitHub\BaratzaMemory               (branch: master)
 ```
 
 ---
@@ -97,7 +97,7 @@ import asyncpg
 import subprocess
 import time
 
-NEOSY_URL = "http://localhost:8001"
+BaratzaMemory_URL = "http://localhost:8001"
 PG_DSN = "postgresql://baratza:baratza@localhost:5432/baratza"
 
 @pytest.fixture
@@ -123,7 +123,7 @@ class TestRestartSurvival:
         ids = []
         for i in range(10):
             async with httpx.AsyncClient() as c:
-                r = await c.post(f"{NEOSY_URL}/ingest", json={
+                r = await c.post(f"{BaratzaMemory_URL}/ingest", json={
                     "text": f"Persistence test item {i}: pole vault training",
                     "title": f"Persist #{i}",
                 })
@@ -170,7 +170,7 @@ class TestTransactionSafety:
 
         try:
             async with httpx.AsyncClient() as c:
-                r = await c.post(f"{NEOSY_URL}/ingest", json={
+                r = await c.post(f"{BaratzaMemory_URL}/ingest", json={
                     "text": "This should be saved as RAW",
                     "title": "Transaction safety test",
                 })
@@ -208,7 +208,7 @@ import time
 import httpx
 import pytest
 
-NEOSY_URL = "http://localhost:8001"
+BaratzaMemory_URL = "http://localhost:8001"
 
 class TestMassIngest:
     """Massive dumps don't lose data."""
@@ -219,7 +219,7 @@ class TestMassIngest:
         t0 = time.perf_counter()
         async with httpx.AsyncClient(timeout=30) as c:
             for i in range(100):
-                r = await c.post(f"{NEOSY_URL}/ingest", json={
+                r = await c.post(f"{BaratzaMemory_URL}/ingest", json={
                     "text": f"Stress item {i}: {'x' * 200}",
                     "title": f"Stress #{i}",
                 })
@@ -235,7 +235,7 @@ class TestMassIngest:
         items = [{"text": f"Batch stress {i}", "title": f"Batch #{i}"} for i in range(1000)]
         t0 = time.perf_counter()
         async with httpx.AsyncClient(timeout=120) as c:
-            r = await c.post(f"{NEOSY_URL}/ingest/batch", json={
+            r = await c.post(f"{BaratzaMemory_URL}/ingest/batch", json={
                 "items": items, "entity": "user"
             })
         elapsed = time.perf_counter() - t0
@@ -258,7 +258,7 @@ class TestConcurrentStreams:
             ids = []
             async with httpx.AsyncClient(timeout=30) as c:
                 for i in range(count):
-                    r = await c.post(f"{NEOSY_URL}/ingest", json={
+                    r = await c.post(f"{BaratzaMemory_URL}/ingest", json={
                         "text": f"Device {device_id} item {i}",
                         "title": f"Dev{device_id}-{i}",
                     })
@@ -281,7 +281,7 @@ class TestPriorityPath:
         async def mass_ingest():
             async with httpx.AsyncClient(timeout=60) as c:
                 for i in range(100):
-                    await c.post(f"{NEOSY_URL}/ingest", json={
+                    await c.post(f"{BaratzaMemory_URL}/ingest", json={
                         "text": f"Background item {i}", "title": f"BG-{i}"
                     })
 
@@ -289,7 +289,7 @@ class TestPriorityPath:
             await asyncio.sleep(1)  # Let ingest start
             async with httpx.AsyncClient(timeout=10) as c:
                 t0 = time.perf_counter()
-                r = await c.get(f"{NEOSY_URL}/search", params={"text": "pole vault"})
+                r = await c.get(f"{BaratzaMemory_URL}/search", params={"text": "pole vault"})
                 latency = time.perf_counter() - t0
             assert r.status_code == 200
             assert latency < 0.5, f"Search took {latency:.2f}s during mass ingest (max 0.5s)"
@@ -314,7 +314,7 @@ import httpx
 import pytest
 import json
 
-NEOSY_URL = "http://localhost:8001"
+BaratzaMemory_URL = "http://localhost:8001"
 
 SIZES_MB = [1, 10, 50, 100, 500]  # Start conservative, add 1GB manually
 
@@ -327,7 +327,7 @@ class TestIngestSizeLadder:
         text = "x" * (size_mb * 1_000_000)
         t0 = time.perf_counter()
         async with httpx.AsyncClient(timeout=300) as c:
-            r = await c.post(f"{NEOSY_URL}/ingest", json={
+            r = await c.post(f"{BaratzaMemory_URL}/ingest", json={
                 "text": text,
                 "title": f"Size ladder: {size_mb}MB",
             })
@@ -372,7 +372,7 @@ class TestImageSizeLadder:
 
         t0 = time.perf_counter()
         async with httpx.AsyncClient(timeout=120) as c:
-            r = await c.post(f"{NEOSY_URL}/ingest", files={
+            r = await c.post(f"{BaratzaMemory_URL}/ingest", files={
                 "file": (f"test_{width}x{height}.jpg", buf, "image/jpeg")
             })
         elapsed = time.perf_counter() - t0
@@ -499,7 +499,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-NEOSY = "http://localhost:8001"
+BaratzaMemory = "http://localhost:8001"
 ALCHEMY = "http://localhost:8000"
 RESULTS_DIR = Path(__file__).parent / "results"
 
@@ -561,9 +561,9 @@ async def main():
     # Step 1: Health check
     async def check_health():
         async with httpx.AsyncClient(timeout=10) as c:
-            r = await c.get(f"{NEOSY}/health")
+            r = await c.get(f"{BaratzaMemory}/health")
             assert r.status_code == 200
-            return "NEOSY healthy"
+            return "BaratzaMemory healthy"
 
     # Step 2: Ingest 5 text files
     async def ingest_texts():
@@ -576,7 +576,7 @@ async def main():
                 "Neurociencia: el cerebro consume 20% de la energia",
                 "3Blue1Brown: vectors are elements of a vector space",
             ]):
-                r = await c.post(f"{NEOSY}/ingest", json={"text": text, "title": f"Serpentine #{i+1}"})
+                r = await c.post(f"{BaratzaMemory}/ingest", json={"text": text, "title": f"Serpentine #{i+1}"})
                 assert r.status_code == 200, f"Ingest {i} failed: {r.text}"
                 ids.append(r.json()["memory_id"])
         memory_ids.extend(ids)
@@ -585,7 +585,7 @@ async def main():
     # Step 3: Search for known content
     async def search_pole_vault():
         async with httpx.AsyncClient(timeout=10) as c:
-            r = await c.get(f"{NEOSY}/search", params={"text": "pole vault approach speed"})
+            r = await c.get(f"{BaratzaMemory}/search", params={"text": "pole vault approach speed"})
             assert r.status_code == 200
             results = r.json()
             assert len(results) > 0, "Search returned nothing!"
@@ -597,7 +597,7 @@ async def main():
             raise RuntimeError("No memories to pin")
         mid = memory_ids[0]
         async with httpx.AsyncClient(timeout=10) as c:
-            r = await c.post(f"{NEOSY}/memories/{mid}/pin", json={"entity": "user", "reason": "Serpentine test"})
+            r = await c.post(f"{BaratzaMemory}/memories/{mid}/pin", json={"entity": "user", "reason": "Serpentine test"})
             assert r.status_code == 200
             return f"Pinned {mid}"
 
@@ -605,7 +605,7 @@ async def main():
     async def batch_ingest():
         items = [{"text": f"Batch serpentine item {i}", "title": f"Batch #{i}"} for i in range(100)]
         async with httpx.AsyncClient(timeout=120) as c:
-            r = await c.post(f"{NEOSY}/ingest/batch", json={"items": items, "entity": "user"})
+            r = await c.post(f"{BaratzaMemory}/ingest/batch", json={"items": items, "entity": "user"})
             assert r.status_code == 200
             data = r.json()
             assert data["completed"] == 100, f"Only {data['completed']}/100 completed"
@@ -615,7 +615,7 @@ async def main():
     async def search_latency():
         t0 = time.perf_counter()
         async with httpx.AsyncClient(timeout=10) as c:
-            r = await c.get(f"{NEOSY}/search", params={"text": "fibonacci algorithm"})
+            r = await c.get(f"{BaratzaMemory}/search", params={"text": "fibonacci algorithm"})
         latency = time.perf_counter() - t0
         assert latency < 0.5, f"Search too slow: {latency:.2f}s"
         return f"Search latency: {latency*1000:.0f}ms"
@@ -629,7 +629,7 @@ async def main():
 
         # Verify data survived
         async with httpx.AsyncClient(timeout=10) as c:
-            r = await c.get(f"{NEOSY}/search", params={"text": "pole vault"})
+            r = await c.get(f"{BaratzaMemory}/search", params={"text": "pole vault"})
             assert r.status_code == 200
             assert len(r.json()) > 0, "Data lost after restart!"
             return "Data survived restart"
@@ -669,7 +669,7 @@ All test output goes to `Alchemy/testing/results/`. The format:
 ```
 testing/results/
   alchemy_latest.txt        ← pytest output from Alchemy tests
-  neosy_latest.txt          ← pytest output from NEOSY tests
+  baratza_latest.txt          ← pytest output from BaratzaMemory tests
   serpentine_20260311_1430.json  ← Serpentine run with timing per step
   size_ladder_20260311.jsonl    ← Size ladder benchmark data
 ```
@@ -735,7 +735,7 @@ pytest tests/ -v
 [ ] Docker is running: docker compose -f BaratzaMemory/docker/docker-compose.yml up -d
 [ ] PostgreSQL healthy: docker exec baratza-postgres pg_isready
 [ ] Qdrant healthy: curl http://localhost:6333/healthz
-[ ] NEOSY server running: cd BaratzaMemory && PYTHONPATH=src uvicorn baratza.api.app:app --port 8001
+[ ] BaratzaMemory server running: cd BaratzaMemory && PYTHONPATH=src uvicorn baratza.api.app:app --port 8001
 [ ] Create test_persistence.py in BaratzaMemory/tests/
 [ ] Run: PYTHONPATH=src pytest tests/test_persistence.py -m integration -v
 [ ] Create test_stress.py in BaratzaMemory/tests/

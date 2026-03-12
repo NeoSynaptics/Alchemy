@@ -2,7 +2,7 @@
 
 ## What It Does
 
-Automated agent that scrolls through your Instagram Saved posts, downloads all videos and images to a staging folder, and saves metadata. NEOSY batch-ingests from that folder later.
+Automated agent that scrolls through your Instagram Saved posts, downloads all videos and images to a staging folder, and saves metadata. BaratzaMemory batch-ingests from that folder later.
 
 **This agent ONLY downloads and stores. No classification, no embedding, no AI. Just scrape and save.**
 
@@ -261,20 +261,20 @@ POST /v1/click/agents/instagram-saves
 Body: {"username": "yourusername", "max_posts": 50}
 ```
 
-## After Download — NEOSY Ingest
+## After Download — BaratzaMemory Ingest
 
-Once files are in the staging folder, run NEOSY batch ingest (Task 11 in BaratzaMemory TODO):
+Once files are in the staging folder, run BaratzaMemory batch ingest (Task 11 in BaratzaMemory TODO):
 ```
 POST http://localhost:8001/ingest/batch
 Body: {"source_dir": "C:\\Users\\monic\\neosy_inbox\\instagram", "source_platform": "instagram"}
 ```
 
-Or manually: point the NEOSY ingest at the folder and it reads each file + its .json sidecar for metadata.
+Or manually: point the BaratzaMemory ingest at the folder and it reads each file + its .json sidecar for metadata.
 
 ## Important Notes
 
 - User MUST be logged into Instagram in the Playwright browser session
 - Instagram may rate-limit or show CAPTCHAs — agent should detect and pause
-- Downloads go to staging folder, NOT directly to NEOSY vault
+- Downloads go to staging folder, NOT directly to BaratzaMemory vault
 - This agent is fire-and-forget: run it, let it scroll, come back when done
 - Carousel posts (multiple images): for v1, just grab the first one. Carousel support can come later.

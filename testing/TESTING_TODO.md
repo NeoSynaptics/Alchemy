@@ -44,9 +44,9 @@ See `PC_TEST_GUIDE.md` for full implementation specs with code examples.
 |------|--------|--------|-------|
 | Alchemy | 1128 | 0 | 13 modules, 39 deselected (GPU-only) |
 | Alchemy GPU (APU) | 8 | 0 | VRAM accounting, model tracking, voice, perf |
-| NEOSY | 98 | 0 | 42 unit + 14 behavioral + 42 edge cases |
-| NEOSY integration | 21 | 0 | 7 persistence + 9 stress + 5 image ladder. 10K batch FIXED |
-| NEOSY benchmark | 10 | 0 | Size ladder + batch ladder + search perf |
+| BaratzaMemory | 98 | 0 | 42 unit + 14 behavioral + 42 edge cases |
+| BaratzaMemory integration | 21 | 0 | 7 persistence + 9 stress + 5 image ladder. 10K batch FIXED |
+| BaratzaMemory benchmark | 10 | 0 | Size ladder + batch ladder + search perf |
 
 ### Known Failures
 1. ~~**5 timing mock issues** — FIXED~~
@@ -54,7 +54,7 @@ See `PC_TEST_GUIDE.md` for full implementation specs with code examples.
 
 ### Remaining Action Items
 - [ ] Install `duckduckgo_search` on PC and re-run research tests
-- [ ] Run NEOSY edge cases against real Docker + Qdrant on PC
+- [ ] Run BaratzaMemory edge cases against real Docker + Qdrant on PC
 
 ---
 

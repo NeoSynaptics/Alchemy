@@ -1,4 +1,4 @@
-# Testing Philosophy — Alchemy + NEOSY
+# Testing Philosophy — Alchemy + BaratzaMemory
 
 This document describes HOW and WHY we test. Any Claude window working on tests must read this first.
 
@@ -162,7 +162,7 @@ For testing: inject content in Spanish, search in English, verify the result is 
 
 ### Two Layers: Mocked (Laptop) + Real (PC)
 
-**Laptop tests** run against mocked infrastructure — no Docker, no GPU. They verify logic, edge cases, and behavioral contracts. All 98 NEOSY tests and 1100+ Alchemy tests are laptop-safe.
+**Laptop tests** run against mocked infrastructure — no Docker, no GPU. They verify logic, edge cases, and behavioral contracts. All 98 BaratzaMemory tests and 1100+ Alchemy tests are laptop-safe.
 
 **PC tests** run against real Docker services (PostgreSQL, Qdrant) and real GPUs. They verify persistence, performance, VRAM management, and end-to-end flows. These are TESTING_TODO.md Sections 1-9.
 
@@ -218,7 +218,7 @@ See `PC_TEST_GUIDE.md` for full implementation specs per section.
 
 | Location | What |
 |----------|------|
-| `BaratzaMemory/tests/` | NEOSY unit + behavioral + edge case tests (run on laptop, mocked infra) |
+| `BaratzaMemory/tests/` | BaratzaMemory unit + behavioral + edge case tests (run on laptop, mocked infra) |
 | `BaratzaMemory/tests/synthetic.py` | Synthetic data generator |
 | `Alchemy/tests/` | Alchemy unit tests (1100+ tests) |
 | `Alchemy/testing/TESTING_TODO.md` | Master checklist — all test sections with checkboxes |

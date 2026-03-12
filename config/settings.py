@@ -245,8 +245,8 @@ class AgentsSettings(BaseModel):
     flow_vs: FlowVSAgentSettings = FlowVSAgentSettings()
 
 
-class NeosySettings(BaseModel):
-    """NEOSY — knowledge graph (PostgreSQL + Qdrant)."""
+class BaratzaSettings(BaseModel):
+    """BaratzaMemory — knowledge graph (PostgreSQL + Qdrant)."""
     enabled: bool = True
     src_path: str = "C:/Users/info/GitHub/BaratzaMemory/src"
     pg_host: str = "localhost"
@@ -335,7 +335,7 @@ class Settings(BaseSettings):
     agents: AgentsSettings = AgentsSettings()
     memory: MemorySettings = MemorySettings()
     browser: BrowserSettings = BrowserSettings()
-    neosy: NeosySettings = NeosySettings()
+    baratza: BaratzaSettings = BaratzaSettings()
 
     # === Flat fields (backward compat -- used by server.py and existing code) ===
 

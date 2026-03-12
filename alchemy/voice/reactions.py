@@ -1,6 +1,6 @@
 """RLHF reaction logging — captures voice responses + user reactions for preference data.
 
-Voice responses and user reactions are logged to NEOSY registro via HTTP,
+Voice responses and user reactions are logged to BaratzaMemory registro via HTTP,
 creating a preference dataset for future DPO/RLHF fine-tuning.
 """
 
@@ -51,14 +51,14 @@ class VoiceResponseLog(BaseModel):
 
 
 class ReactionLogger:
-    """Async fire-and-forget logger that sends voice turns + reactions to NEOSY."""
+    """Async fire-and-forget logger that sends voice turns + reactions to BaratzaMemory."""
 
-    def __init__(self, neosy_url: str | None = None):
-        self._neosy_url = neosy_url or getattr(settings, "neosy_url", "http://localhost:8001")
+    def __init__(self, baratza_url: str | None = None):
+        self._baratza_url = baratza_url or getattr(settings, "baratza_url", "http://localhost:8001")
         self._client: httpx.AsyncClient | None = None
 
     async def start(self):
-        self._client = httpx.AsyncClient(base_url=self._neosy_url, timeout=10.0)
+        self._client = httpx.AsyncClient(base_url=self._baratza_url, timeout=10.0)
 
     async def stop(self):
         if self._client:
@@ -66,7 +66,7 @@ class ReactionLogger:
             self._client = None
 
     async def log_voice_response(self, log: VoiceResponseLog) -> None:
-        """Log a voice response turn to NEOSY registro.
+        """Log a voice response turn to BaratzaMemory registro.
 
         Creates a memory record with the conversation context,
         then logs a registro entry with action=voice_response.
@@ -75,7 +75,7 @@ class ReactionLogger:
             return
 
         try:
-            # Ingest the conversation turn as a NEOSY memory
+            # Ingest the conversation turn as a BaratzaMemory memory
             ingest_resp = await self._client.post("/ingest", json={
                 "text": f"[Voice Turn]\nUser: {log.user_query}\nAssistant: {log.response_text}",
                 "title": f"Voice conversation ({log.model_used})",
@@ -93,15 +93,15 @@ class ReactionLogger:
                 memory_id = data.get("memory_id")
                 logger.debug("Logged voice turn %s → memory %s", log.conversation_id, memory_id)
             else:
-                logger.warning("NEOSY ingest failed: %s", ingest_resp.text)
+                logger.warning("BaratzaMemory ingest failed: %s", ingest_resp.text)
 
         except httpx.ConnectError:
-            logger.debug("NEOSY not reachable — voice logging skipped")
+            logger.debug("BaratzaMemory not reachable — voice logging skipped")
         except Exception:
             logger.exception("Failed to log voice response")
 
     async def log_reaction(self, reaction: VoiceReaction) -> None:
-        """Log a user reaction to NEOSY registro.
+        """Log a user reaction to BaratzaMemory registro.
 
         Stores sentiment + intensity as a registro entry linked to the conversation.
         This creates the preference signal for future DPO/RLHF.
@@ -138,7 +138,7 @@ class ReactionLogger:
             )
 
         except httpx.ConnectError:
-            logger.debug("NEOSY not reachable — reaction logging skipped")
+            logger.debug("BaratzaMemory not reachable — reaction logging skipped")
         except Exception:
             logger.exception("Failed to log reaction")
 

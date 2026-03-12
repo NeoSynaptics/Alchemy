@@ -14,7 +14,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-NEOSY = "http://localhost:8001"
+BARATZA = "http://localhost:8001"
 ALCHEMY = "http://localhost:8000"
 RESULTS_DIR = Path(__file__).parent / "results"
 
@@ -77,17 +77,17 @@ async def main():
     # Step 1: Health check — both services
     async def check_health():
         async with httpx.AsyncClient(timeout=10) as c:
-            r_neosy = await c.get(f"{NEOSY}/health")
-            assert r_neosy.status_code == 200, f"NEOSY health failed: {r_neosy.status_code}"
-            neosy_data = r_neosy.json()
-            assert neosy_data.get("status") == "ok", f"NEOSY not ok: {neosy_data}"
+            r_baratza = await c.get(f"{BARATZA}/health")
+            assert r_baratza.status_code == 200, f"BaratzaMemory health failed: {r_baratza.status_code}"
+            baratza_data = r_baratza.json()
+            assert baratza_data.get("status") == "ok", f"BaratzaMemory not ok: {baratza_data}"
 
             r_alchemy = await c.get(f"{ALCHEMY}/health")
             assert r_alchemy.status_code == 200, f"Alchemy health failed: {r_alchemy.status_code}"
             alchemy_data = r_alchemy.json()
             assert alchemy_data.get("status") == "ok", f"Alchemy not ok: {alchemy_data}"
 
-        return f"NEOSY healthy | Alchemy v{alchemy_data.get('version', '?')} healthy"
+        return f"BaratzaMemory healthy | Alchemy v{alchemy_data.get('version', '?')} healthy"
 
     # Step 2: Ingest 5 text files
     async def ingest_texts():
@@ -100,7 +100,7 @@ async def main():
                 "Neurociencia: el cerebro consume 20% de la energia",
                 "3Blue1Brown: vectors are elements of a vector space",
             ]):
-                r = await c.post(f"{NEOSY}/ingest", json={"text": text, "title": f"Serpentine #{i+1}"})
+                r = await c.post(f"{BARATZA}/ingest", json={"text": text, "title": f"Serpentine #{i+1}"})
                 assert r.status_code == 200, f"Ingest {i} failed: {r.text}"
                 ids.append(r.json()["memory_id"])
         memory_ids.extend(ids)
@@ -109,7 +109,7 @@ async def main():
     # Step 3: Search for known content
     async def search_pole_vault():
         async with httpx.AsyncClient(timeout=10) as c:
-            r = await c.post(f"{NEOSY}/search", json={"text": "pole vault approach speed"})
+            r = await c.post(f"{BARATZA}/search", json={"text": "pole vault approach speed"})
             assert r.status_code == 200
             results = r.json()
             assert len(results) > 0, "Search returned nothing!"
@@ -121,7 +121,7 @@ async def main():
             raise RuntimeError("No memories to pin")
         mid = memory_ids[0]
         async with httpx.AsyncClient(timeout=10) as c:
-            r = await c.post(f"{NEOSY}/memories/{mid}/pin", json={"entity": "user", "reason": "Serpentine test"})
+            r = await c.post(f"{BARATZA}/memories/{mid}/pin", json={"entity": "user", "reason": "Serpentine test"})
             assert r.status_code == 200
             return f"Pinned {mid}"
 
@@ -130,13 +130,13 @@ async def main():
         items = [{"text": f"Batch serpentine item {i}", "title": f"Batch #{i}"} for i in range(100)]
         async with httpx.AsyncClient(timeout=120) as c:
             t0 = time.perf_counter()
-            r = await c.post(f"{NEOSY}/ingest/batch", json={"items": items, "entity": "user"})
+            r = await c.post(f"{BARATZA}/ingest/batch", json={"items": items, "entity": "user"})
             batch_elapsed = time.perf_counter() - t0
             assert r.status_code == 200
             data = r.json()
             assert data["completed"] == 100, f"Only {data['completed']}/100 completed"
 
-            # Alchemy APU status — verify GPU orchestrator alive while NEOSY was under load
+            # Alchemy APU status — verify GPU orchestrator alive while BaratzaMemory was under load
             r_apu = await c.get(f"{ALCHEMY}/v1/apu/status", timeout=10)
             assert r_apu.status_code == 200, f"APU status failed: {r_apu.status_code}"
 
@@ -149,7 +149,7 @@ async def main():
     async def search_latency():
         t0 = time.perf_counter()
         async with httpx.AsyncClient(timeout=10) as c:
-            r = await c.post(f"{NEOSY}/search", json={"text": "fibonacci algorithm"})
+            r = await c.post(f"{BARATZA}/search", json={"text": "fibonacci algorithm"})
         latency = time.perf_counter() - t0
         assert latency < 0.5, f"Search too slow: {latency:.2f}s"
         return f"Search latency: {latency*1000:.0f}ms"
@@ -163,7 +163,7 @@ async def main():
 
         # Verify data survived
         async with httpx.AsyncClient(timeout=10) as c:
-            r = await c.post(f"{NEOSY}/search", json={"text": "pole vault"})
+            r = await c.post(f"{BARATZA}/search", json={"text": "pole vault"})
             assert r.status_code == 200
             assert len(r.json()) > 0, "Data lost after restart!"
             return "Data survived restart"

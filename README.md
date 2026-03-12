@@ -98,7 +98,7 @@ GET  /v1/modules                    -> module discovery + contracts
 
 ## Connected Projects
 
-- **[NEOSY](https://github.com/NeoSynaptics/BaratzaMemory)** -- Permanent long-term memory (PostgreSQL + Qdrant)
+- **[BaratzaMemory](https://github.com/NeoSynaptics/BaratzaMemory)** -- Permanent long-term memory (PostgreSQL + Qdrant)
 - **[NEO-RX](https://github.com/NeoSynaptics/NEO-RX)** -- Temporal constitution + Nightwatch
 
 ## License

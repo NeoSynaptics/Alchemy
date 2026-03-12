@@ -76,7 +76,7 @@ Check off items in `testing/TESTING_TODO.md` Section 4.5 as each passes. **Commi
 ## BACKLOG — Do Later
 ## ═══════════════════════════════════════════
 
-## Task E: NEOSY Bug Fixes (port, CLI column, vault path)
+## Task E: BaratzaMemory Bug Fixes (port, CLI column, vault path)
 
 Three quick fixes found during code review.
 
@@ -109,10 +109,10 @@ Only after all Phase 3 items are done.
 ## COMPLETED (28 tasks)
 ## ═══════════════════════════════════════════
 
-**Tasks 1-4:** GPU fleet registration, NEOSY settings, server mount, APU stabilization
+**Tasks 1-4:** GPU fleet registration, BaratzaMemory settings, server mount, APU stabilization
 **Tasks 5-8:** APU event logger, concurrency fix (atomic decide-evict-load), stress tests + invariants, health endpoint + periodic reconciliation
 **Tasks 9-10:** APU concurrency review (5 bugs fixed), audit fixes (rollback tier, stateful FakeGPUMonitor)
 **Task 11:** Portability pass (hardcoded paths removed, .env.example created)
 **Tasks 12a-d:** Orchestrator race conditions, registry thread-safety, event log filter fix, invariant checker hardening, test quality improvements
 **Tasks 15-22:** Dashboard wiring, security middleware, AlchemyWord, Docker, AlchemyHole spec, voice audit, import boundaries, README
-**Tasks 23-27:** Dashboard E2E, NEOSY E2E with Ollama, voice pipeline E2E, RLHF foundation, full integration smoke test
+**Tasks 23-27:** Dashboard E2E, BaratzaMemory E2E with Ollama, voice pipeline E2E, RLHF foundation, full integration smoke test

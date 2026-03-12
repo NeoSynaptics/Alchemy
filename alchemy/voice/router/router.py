@@ -236,7 +236,7 @@ class SmartRouter:
                 )
             )
 
-        # RLHF: log voice turn to NEOSY for preference dataset (fire-and-forget)
+        # RLHF: log voice turn to BaratzaMemory for preference dataset (fire-and-forget)
         from alchemy.voice.reactions import VoiceResponseLog, get_reaction_logger
         reaction_logger = get_reaction_logger()
         if reaction_logger:
@@ -351,7 +351,7 @@ class SmartRouter:
                 )
             )
 
-        # RLHF: log voice turn to NEOSY for preference dataset (fire-and-forget)
+        # RLHF: log voice turn to BaratzaMemory for preference dataset (fire-and-forget)
         from alchemy.voice.reactions import VoiceResponseLog, get_reaction_logger
         reaction_logger = get_reaction_logger()
         if reaction_logger:

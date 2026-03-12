@@ -7,7 +7,7 @@ Read this file on startup. Do tasks in order. Commit and push after each task. N
 ## Current State (2026-03-11)
 
 - Alchemy: 1109 passed, 8 failed (all 8 = missing deps, not code bugs)
-- NEOSY: 98 passed, 0 failed
+- BaratzaMemory: 98 passed, 0 failed
 - PC is handling GPU work via PC_TASKS.md
 - **Priority: fix broken tests + consolidation, not new scaffolds**
 
@@ -46,7 +46,7 @@ Commit + push.
 
 ---
 
-## Task 3 — NEOSY test helpers to conftest
+## Task 3 — BaratzaMemory test helpers to conftest
 
 In BaratzaMemory repo:
 
@@ -72,7 +72,7 @@ Commit + push.
 
 - **Serpentine flesh-out** — Phase 4 polish, not urgent
 - **Synthetic voice scaffold** — needs understanding of TTS/STT APIs, lower priority than fixing tests
-- **NEOSY clusters (Task 16-17)** — new feature, do after consolidation
+- **BaratzaMemory clusters (Task 16-17)** — new feature, do after consolidation
 
 ---
 

@@ -2,16 +2,16 @@
 
 ## What It Does
 
-HTTP tunnel that lets phones/tablets push files to the PC over the local network (or Tailscale). Files land in a staging folder where NEOSY batch-ingests them automatically.
+HTTP tunnel that lets phones/tablets push files to the PC over the local network (or Tailscale). Files land in a staging folder where BaratzaMemory batch-ingests them automatically.
 
-**This module ONLY receives and stores files. No classification, no embedding, no AI. Just receive, save, and handoff to NEOSY.**
+**This module ONLY receives and stores files. No classification, no embedding, no AI. Just receive, save, and handoff to BaratzaMemory.**
 
 ## How It Works
 
 1. PC runs a lightweight HTTP receiver on a configurable port (default 8100)
 2. Phone/tablet sends files via multipart POST with metadata
 3. PC saves files + JSON sidecar to `~/neosy_inbox/hole/`
-4. NEOSY's batch ingest watcher picks up new files automatically
+4. BaratzaMemory's batch ingest watcher picks up new files automatically
 5. After successful ingest, files are moved to `~/neosy_inbox/hole/processed/`
 
 ## Device Pairing
@@ -59,7 +59,7 @@ Revoke a paired device.
 ├── 2026-03-15_iphone_note_def.txt
 ├── 2026-03-15_iphone_note_def.json
 └── processed/
-    └── (moved here after NEOSY ingests)
+    └── (moved here after BaratzaMemory ingests)
 ```
 
 Each `.json` sidecar:
@@ -87,7 +87,7 @@ When searching for a file received via Hole, the model can ask clarifying questi
 4. User: "The beach one"
 5. Model narrows to 3 results → returns them
 
-This works through NEOSY's search API with an iterative refinement loop. No special Hole code needed — the metadata sidecars provide the filter dimensions (date, device, tags, source app).
+This works through BaratzaMemory's search API with an iterative refinement loop. No special Hole code needed — the metadata sidecars provide the filter dimensions (date, device, tags, source app).
 
 ## Network Discovery
 
@@ -133,6 +133,6 @@ class HoleSettings(BaseModel):
 
 ## Dependencies
 
-- NEOSY batch ingest (for automatic file processing)
+- BaratzaMemory batch ingest (for automatic file processing)
 - Alchemy security module (for dashboard auth on pairing endpoints)
 - No GPU or model requirements
