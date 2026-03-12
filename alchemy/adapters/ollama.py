@@ -60,6 +60,7 @@ class OllamaClient:
         messages: list[dict],
         images: list[bytes] | None = None,
         options: dict | None = None,
+        think: bool | None = None,
     ) -> dict:
         """Send a chat completion request with retry logic.
 
@@ -68,6 +69,7 @@ class OllamaClient:
             messages: Chat messages in Ollama format.
             images: Optional list of raw image bytes to attach to the last user message.
             options: Optional Ollama options (temperature, num_predict, etc).
+            think: Optional Ollama think mode (True/False). Qwen3 uses this.
 
         Returns:
             Full Ollama response dict with 'message', 'total_duration', etc.
@@ -88,6 +90,8 @@ class OllamaClient:
         }
         if options:
             payload["options"] = options
+        if think is not None:
+            payload["think"] = think
 
         last_exc: Exception | None = None
         for attempt in range(self._retry_attempts):
@@ -245,6 +249,7 @@ class OllamaClient:
         messages: list[dict],
         images: list[bytes] | None = None,
         options: dict | None = None,
+        think: bool | None = None,
     ) -> AsyncGenerator[dict, None]:
         """Yield raw streaming chunks for low-level consumers."""
         client = self._ensure_client()
@@ -260,6 +265,8 @@ class OllamaClient:
         }
         if options:
             payload["options"] = options
+        if think is not None:
+            payload["think"] = think
 
         async with client.stream("POST", "/api/chat", json=payload) as resp:
             resp.raise_for_status()

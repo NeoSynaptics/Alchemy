@@ -299,7 +299,7 @@ async def lifespan(app: FastAPI):
 
             voice_system = VoiceSystem(settings)
             # Voice router needs the SmartRouter — build it
-            from alchemy.voice.models.provider import OllamaProvider
+            from alchemy.voice.models.provider import GatewayProvider, OllamaProvider
             from alchemy.voice.models.registry import build_default_registry
             from alchemy.voice.models.schemas import ModelLocation
             from alchemy.voice.router.cascade import ConversationToVisionCascade
@@ -307,12 +307,18 @@ async def lifespan(app: FastAPI):
             from alchemy.voice.models.conversation import ConversationManager
 
             voice_registry = build_default_registry()
-            voice_ollama = OllamaProvider(
-                host=settings.ollama_host,
-                timeout=120.0,
-                keep_alive=settings.gpu_model_keep_alive,
-            )
-            await voice_ollama.start()
+
+            # Prefer APU gateway (P0 = RESIDENT priority) over raw OllamaProvider
+            if gateway:
+                voice_ollama = GatewayProvider(gateway.with_caller("voice", priority=0))
+                logger.info("AlchemyVoice using APU gateway (P0 RESIDENT)")
+            else:
+                voice_ollama = OllamaProvider(
+                    host=settings.ollama_host,
+                    timeout=120.0,
+                    keep_alive=settings.gpu_model_keep_alive,
+                )
+                await voice_ollama.start()
 
             voice_providers = {ModelLocation.GPU_LOCAL: voice_ollama}
             voice_router = SmartRouter(

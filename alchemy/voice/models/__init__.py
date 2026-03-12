@@ -6,7 +6,12 @@ AlchemyVoice owns the GPU models for fast user interaction:
 """
 
 from alchemy.voice.models.conversation import ConversationManager
-from alchemy.voice.models.provider import AlchemyProvider, ModelProvider, OllamaProvider
+from alchemy.voice.models.provider import (
+    AlchemyProvider,
+    GatewayProvider,
+    ModelProvider,
+    OllamaProvider,
+)
 from alchemy.voice.models.registry import ModelRegistry, build_default_registry
 from alchemy.voice.models.schemas import (
     ChatMessage,
@@ -24,6 +29,7 @@ from alchemy.voice.models.schemas import (
 __all__ = [
     "ConversationManager",
     "AlchemyProvider",
+    "GatewayProvider",
     "ModelProvider",
     "OllamaProvider",
     "ModelRegistry",

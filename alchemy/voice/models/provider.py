@@ -243,3 +243,67 @@ class AlchemyProvider(ModelProvider):
             return True
         except Exception:
             return False
+
+
+class GatewayProvider(ModelProvider):
+    """Routes Voice inference through the APU inference gateway.
+
+    Wraps a _CallerProxy (from gateway.with_caller("voice", priority=0))
+    and adapts it to the ModelProvider interface that SmartRouter expects.
+    Gives Voice: model loading, VRAM management, per-caller metrics — zero
+    changes to SmartRouter or any voice module.
+    """
+
+    def __init__(self, proxy: object) -> None:
+        self._proxy = proxy
+
+    async def start(self) -> None:
+        pass  # Gateway manages its own lifecycle
+
+    async def close(self) -> None:
+        pass  # Gateway manages its own lifecycle
+
+    @staticmethod
+    def _to_dicts(messages: list[ChatMessage]) -> list[dict]:
+        return [{"role": m.role, "content": m.content} for m in messages]
+
+    async def generate(
+        self,
+        model: str,
+        messages: list[ChatMessage],
+        *,
+        temperature: float = 0.7,
+        endpoint: str | None = None,
+        think: bool | None = None,
+    ) -> tuple[str, float]:
+        options: dict = {"temperature": temperature}
+        kwargs: dict = {"options": options}
+        if think is not None:
+            kwargs["think"] = think
+        t0 = time.monotonic()
+        result = await self._proxy.chat(model, self._to_dicts(messages), **kwargs)
+        elapsed_ms = (time.monotonic() - t0) * 1000
+        return result.get("message", {}).get("content", ""), elapsed_ms
+
+    async def generate_stream(
+        self,
+        model: str,
+        messages: list[ChatMessage],
+        *,
+        temperature: float = 0.7,
+        endpoint: str | None = None,
+        think: bool | None = None,
+    ) -> AsyncGenerator[str, None]:
+        options: dict = {"temperature": temperature}
+        kwargs: dict = {"options": options}
+        if think is not None:
+            kwargs["think"] = think
+        async for chunk in self._proxy.chat_stream_raw(
+            model, self._to_dicts(messages), **kwargs,
+        ):
+            content = chunk.get("message", {}).get("content", "")
+            if content:
+                yield content
+
+    async def is_available(self, endpoint: str | None = None) -> bool:
+        return True  # Gateway is available if the server started

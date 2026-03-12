@@ -56,6 +56,12 @@ class _CallerProxy:
         kwargs.setdefault("priority", self._priority)
         return await self._gw.chat_stream(model, messages, **kwargs)
 
+    async def chat_stream_raw(self, model, messages, **kwargs):
+        kwargs.setdefault("caller", self._caller)
+        kwargs.setdefault("priority", self._priority)
+        async for chunk in self._gw.chat_stream_raw(model, messages, **kwargs):
+            yield chunk
+
     async def embed(self, model, text, **kwargs):
         kwargs.setdefault("caller", self._caller)
         kwargs.setdefault("priority", self._priority)
@@ -97,6 +103,7 @@ class APUGateway:
         *,
         images: list[bytes] | None = None,
         options: dict | None = None,
+        think: bool | None = None,
         caller: str = "unknown",
         priority: int = 2,
     ) -> dict:
@@ -113,7 +120,9 @@ class APUGateway:
         error_msg = None
         try:
             async with sem:
-                return await self._ollama.chat(model, messages, images=images, options=options)
+                return await self._ollama.chat(
+                    model, messages, images=images, options=options, think=think,
+                )
         except Exception as e:
             success = False
             error_msg = str(e)
@@ -183,6 +192,41 @@ class APUGateway:
             raise
         finally:
             self._record(caller, model, priority, "chat_stream", start, success, error_msg)
+
+    async def chat_stream_raw(
+        self,
+        model: str,
+        messages: list[dict],
+        *,
+        options: dict | None = None,
+        think: bool | None = None,
+        caller: str = "unknown",
+        priority: int = 2,
+    ) -> AsyncGenerator[dict, None]:
+        """Streaming chat yielding raw Ollama chunks through the gateway.
+
+        Unlike chat_stream (returns accumulated str), this yields individual
+        chunks — needed by Voice for real-time token streaming.
+        """
+        await self._ensure_model(model, priority, caller)
+        sem = self._get_semaphore(model)
+
+        start = time.monotonic()
+        success = True
+        error_msg = None
+        await sem.acquire()
+        try:
+            async for chunk in self._ollama.chat_stream_raw(
+                model, messages, options=options, think=think,
+            ):
+                yield chunk
+        except Exception as e:
+            success = False
+            error_msg = str(e)
+            raise
+        finally:
+            sem.release()
+            self._record(caller, model, priority, "chat_stream_raw", start, success, error_msg)
 
     async def embed(
         self,
