@@ -51,7 +51,7 @@ async def health(request: Request) -> HealthResponse:
         "timeline": mem.timeline.stats(),
         "vectors": {"count": mem.vectors.count()},
         "stm": mem.stm.stats(),
-        "activity": mem.classifier.current_activity,
+        "activity": mem.classifier.current_activity if mem.classifier else "disabled",
         "storage_path": mem.settings.storage_path,
     }
     return HealthResponse(**data)
@@ -197,8 +197,8 @@ async def stm_context(request: Request) -> ContextPackResponse:
 async def stm_activity(request: Request) -> ActivityResponse:
     mem = _get_memory(request)
     return ActivityResponse(
-        activity=mem.classifier.current_activity,
-        last_classified_at=mem.classifier.last_classified_at,
+        activity=mem.classifier.current_activity if mem.classifier else "disabled",
+        last_classified_at=mem.classifier.last_classified_at if mem.classifier else 0.0,
     )
 
 

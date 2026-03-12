@@ -27,7 +27,86 @@ from alchemy.apu.registry import (
     ModelTier,
 )
 
+from collections import defaultdict
+
 logger = logging.getLogger(__name__)
+
+
+class ThrashDetector:
+    """Detects models being evicted and reloaded repeatedly.
+
+    If the same model is evicted+reloaded more than threshold times
+    within window_s seconds, it is thrashing.
+    """
+
+    def __init__(self, window_s: float = 60.0, threshold: int = 3) -> None:
+        self._window_s = window_s
+        self._threshold = threshold
+        self._evictions: dict[str, list[float]] = defaultdict(list)
+        self._reloads: dict[str, list[float]] = defaultdict(list)
+
+    def record_eviction(self, model_name: str) -> None:
+        now = time.monotonic()
+        self._evictions[model_name].append(now)
+        self._cleanup(model_name, now)
+
+    def record_reload(self, model_name: str) -> None:
+        now = time.monotonic()
+        self._reloads[model_name].append(now)
+        self._cleanup(model_name, now)
+
+    def is_thrashing(self, model_name: str) -> bool:
+        now = time.monotonic()
+        self._cleanup(model_name, now)
+        evict_count = len(self._evictions.get(model_name, []))
+        reload_count = len(self._reloads.get(model_name, []))
+        return min(evict_count, reload_count) >= self._threshold
+
+    def thrashing_models(self) -> list[str]:
+        return [m for m in set(list(self._evictions) + list(self._reloads)) if self.is_thrashing(m)]
+
+    def _cleanup(self, model_name: str, now: float) -> None:
+        cutoff = now - self._window_s
+        if model_name in self._evictions:
+            self._evictions[model_name] = [t for t in self._evictions[model_name] if t > cutoff]
+        if model_name in self._reloads:
+            self._reloads[model_name] = [t for t in self._reloads[model_name] if t > cutoff]
+
+
+class UsagePatternPredictor:
+    """Simple transition table: when caller A finishes, pre-warm models for caller B.
+
+    Learns from observed call sequences and can also use static hints.
+    """
+
+    def __init__(self) -> None:
+        self._hints: dict[str, list[str]] = {}
+        self._transitions: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+        self._last_caller: str | None = None
+        self._caller_models: dict[str, set[str]] = defaultdict(set)
+
+    def add_hint(self, after_caller: str, pre_warm_models: list[str]) -> None:
+        self._hints[after_caller] = pre_warm_models
+
+    def record_call(self, caller: str, model: str) -> None:
+        self._caller_models[caller].add(model)
+        if self._last_caller and self._last_caller != caller:
+            self._transitions[self._last_caller][caller] += 1
+        self._last_caller = caller
+
+    def predict_next_models(self, current_caller: str) -> list[str]:
+        if current_caller in self._hints:
+            return self._hints[current_caller]
+        trans = self._transitions.get(current_caller)
+        if not trans:
+            return []
+        next_caller = max(trans, key=trans.get)
+        if trans[next_caller] < 3:
+            return []
+        return list(self._caller_models.get(next_caller, []))
+
+    def get_transitions(self) -> dict[str, dict[str, int]]:
+        return dict(self._transitions)
 
 
 @dataclass
@@ -88,44 +167,63 @@ class StackOrchestrator:
         self._profiles_path = Path("config/model_profiles.json")
         self._load_model_profiles()
 
-        # Known apps with default priorities
-        self._default_app_priority: dict[str, int] = {
-            "voice": 10,     # Voice pipeline — always responsive
-            "click": 15,     # GUI automation — near-real-time
-            "core": 20,      # Agent kernel
-            "router": 30,    # Request routing
-            "research": 40,  # AlchemyBrowser
-            "word": 50,      # AlchemyWord
-            "memory": 50,    # AlchemyMemory
-            "desktop": 50,   # Desktop agent
-            "gate": 60,      # Gate reviewer
-        }
+        # Module priorities: unified 0-10 scale (higher = more important = evicted last)
+        from alchemy.apu.registry import MODULE_PRIORITY_DEFAULTS
+        self._default_module_priority: dict[str, int] = dict(MODULE_PRIORITY_DEFAULTS)
 
-    # --- App Priority ---
+        # Smart scheduling
+        self._thrash_detector = ThrashDetector(window_s=60.0, threshold=3)
+        self._pattern_predictor = UsagePatternPredictor()
+        self._batch_holds: dict[str, int] = defaultdict(int)
 
-    def get_app_priority(self, app_name: str) -> int:
-        """Get an app's priority. 0=highest, 100=lowest."""
+    # --- Module Priority (unified 0-10 scale) ---
+
+    def get_module_priority(self, app_name: str) -> int:
+        """Get a module's priority. 0-10 scale, higher = more important."""
         return self._app_priority.get(
-            app_name, self._default_app_priority.get(app_name, 50)
+            app_name, self._default_module_priority.get(app_name, 5)
         )
 
-    def set_app_priority(self, app_name: str, priority: int) -> None:
-        """Set an app's priority. 0=highest, 100=lowest."""
-        self._app_priority[app_name] = max(0, min(100, priority))
+    # Backward-compat alias
+    get_app_priority = get_module_priority
 
-    def all_app_priorities(self) -> dict[str, int]:
-        """Return all known apps with their effective priority."""
+    def set_module_priority(self, app_name: str, priority: int) -> None:
+        """Set a module's priority. 0-10 scale, higher = more important.
+
+        0 = disabled (APU rejects calls, alert user)
+        10 = nuclear (everything else yields, alert user)
+        """
+        clamped = max(0, min(10, priority))
+        if clamped == 0:
+            logger.warning("Module '%s' priority set to 0 (DISABLED)", app_name)
+        elif clamped == 10:
+            logger.warning("Module '%s' priority set to 10 (NUCLEAR)", app_name)
+        self._app_priority[app_name] = clamped
+
+    # Backward-compat alias
+    set_app_priority = set_module_priority
+
+    def reset_module_priorities(self) -> dict[str, int]:
+        """Reset all priorities to defaults. Returns the default map."""
+        self._app_priority.clear()
+        return dict(self._default_module_priority)
+
+    def all_module_priorities(self) -> dict[str, int]:
+        """Return all known modules with their effective priority (0-10, sorted high->low)."""
         apps: dict[str, int] = {}
         # Defaults first
-        for name, prio in self._default_app_priority.items():
+        for name, prio in self._default_module_priority.items():
             apps[name] = prio
         # Active apps from app_models
         for name in self._app_models:
             if name not in apps:
-                apps[name] = 50
+                apps[name] = 5
         # User overrides
         apps.update(self._app_priority)
-        return dict(sorted(apps.items(), key=lambda x: x[1]))
+        return dict(sorted(apps.items(), key=lambda x: x[1], reverse=True))
+
+    # Backward-compat alias
+    all_app_priorities = all_module_priorities
 
     def set_app_gpu(self, app_name: str, gpu: int | None) -> None:
         """Set preferred GPU for an app. Affects all its models."""
@@ -424,18 +522,40 @@ class StackOrchestrator:
         """Move model from VRAM or RAM → disk (cold storage)."""
         return await self.unload_model(name)
 
+    async def offload_all_gpu(self, gpu_index: int | None = None) -> list[str]:
+        """Emergency: offload ALL models from GPU(s) to RAM.
+
+        If gpu_index is None, offloads from ALL GPUs.
+        Returns list of offloaded model names.
+        """
+        offloaded: list[str] = []
+        gpus = [gpu_index] if gpu_index is not None else [0, 1]
+        for gi in gpus:
+            models = self._registry.models_on_gpu(gi)
+            for card in models:
+                ok = await self.demote(card.name)
+                if ok:
+                    offloaded.append(card.name)
+                    logger.info("Emergency offload: %s from GPU %d", card.name, gi)
+        return offloaded
+
     # --- Smart Placement ---
 
-    async def ensure_loaded(self, name: str) -> LoadResult:
+    async def ensure_loaded(self, name: str, caller_priority: int = 5) -> LoadResult:
         """Ensure a model is on a GPU before inference.
 
-        1. Already on GPU? → done (touch LRU)
-        2. Find target GPU (preferred or any with space)
-        3. Enough free VRAM? → load directly
-        4. Not enough? → evict lowest-priority (app first, core last)
-        5. Still not enough? → try other GPU
+        caller_priority: 0-10 module priority of the requester.
+        0 = disabled (reject immediately). Higher = more important.
+
+        1. Priority 0? → reject (module disabled)
+        2. Already on GPU? → done (touch LRU)
+        3. Find target GPU (preferred or any with space)
+        4. Enough free VRAM? → load directly
+        5. Not enough? → evict lower-priority models
         6. No GPU works? → fail
         """
+        if caller_priority == 0:
+            return LoadResult(success=False, error=f"Module disabled (priority=0) for model '{name}'")
         async with self._state_lock:
             card = self._registry.get(name)
             if card is None:
@@ -444,6 +564,18 @@ class StackOrchestrator:
             if card.current_location.is_gpu:
                 card.touch()
                 return LoadResult(success=True, location=card.current_location)
+
+            # Thrash check: warn if this model keeps bouncing
+            if self._thrash_detector.is_thrashing(name):
+                logger.warning(
+                    "THRASH DETECTED: %s evicted+reloaded %d+ times in 60s",
+                    name, self._thrash_detector._threshold,
+                )
+                self._event_log.record(
+                    "thrash", model_name=name, success=True,
+                    error="Model thrashing detected",
+                )
+            self._thrash_detector.record_reload(name)
 
             # Try preferred GPU first, then the other
             gpus_to_try = []
@@ -459,8 +591,8 @@ class StackOrchestrator:
                         success=False,
                         error=f"GPU monitor snapshot failed: {e}",
                     )
-                sorted_gpus = sorted(snap.gpus, key=lambda g: g.free_vram_mb, reverse=True)
-                gpus_to_try = [g.index for g in sorted_gpus]
+                # Cost-aware GPU selection: pick GPU with lowest eviction cost
+                gpus_to_try = self._rank_gpus_by_eviction_cost(snap, card.vram_mb)
 
             for target in gpus_to_try:
                 result = await self._load_model_unlocked(name, gpu=target)
@@ -902,6 +1034,49 @@ class StackOrchestrator:
 
     # --- Internal Helpers ---
 
+    def _rank_gpus_by_eviction_cost(self, snap, needed_mb: int) -> list[int]:
+        """Rank GPUs by eviction cost. Cheapest first.
+
+        Cost = total VRAM of models that would need eviction to fit needed_mb.
+        If a GPU has enough free space, cost = 0 (best).
+        """
+        gpu_costs: list[tuple[int, int]] = []
+        prios = self.all_module_priorities()
+        for gpu in snap.gpus:
+            registry_free = gpu.total_vram_mb - self._registry.total_vram_on_gpu(gpu.index)
+            free = min(gpu.free_vram_mb, registry_free)
+            if free >= needed_mb:
+                gpu_costs.append((0, gpu.index))
+                continue
+            shortfall = needed_mb - free
+            candidates = self._registry.eviction_candidates(gpu.index, module_priorities=prios)
+            candidates = [c for c in candidates if self._batch_holds.get(c.name, 0) == 0]
+            cost = 0
+            freed = 0
+            for c in candidates:
+                cost += c.vram_mb
+                freed += c.vram_mb
+                if freed >= shortfall:
+                    break
+            else:
+                cost = 999999
+            gpu_costs.append((cost, gpu.index))
+        gpu_costs.sort()
+        return [idx for _, idx in gpu_costs]
+
+    def batch_hold(self, model_name: str) -> None:
+        """Prevent a model from being evicted during batch operations."""
+        self._batch_holds[model_name] += 1
+        logger.debug("Batch hold acquired: %s (count=%d)", model_name, self._batch_holds[model_name])
+
+    def batch_release(self, model_name: str) -> None:
+        """Release a batch hold on a model."""
+        if self._batch_holds.get(model_name, 0) > 0:
+            self._batch_holds[model_name] -= 1
+            if self._batch_holds[model_name] == 0:
+                del self._batch_holds[model_name]
+        logger.debug("Batch hold released: %s (count=%d)", model_name, self._batch_holds.get(model_name, 0))
+
     async def _auto_select_gpu(self, needed_mb: int) -> int | None:
         """Pick the GPU with the most free VRAM that can fit the model."""
         snap = await self._monitor.snapshot()
@@ -948,8 +1123,10 @@ class StackOrchestrator:
 
         evicted: dict[str, ModelTier] = {}
         candidates = self._registry.eviction_candidates(
-            gpu_index, app_priorities=self.all_app_priorities(),
+            gpu_index, module_priorities=self.all_module_priorities(),
         )
+        # Skip batch-held models
+        candidates = [c for c in candidates if self._batch_holds.get(c.name, 0) == 0]
 
         # Pass 1: evict lower-priority models first
         for candidate in candidates:
@@ -962,6 +1139,7 @@ class StackOrchestrator:
                 candidate.name, ModelLocation.CPU_RAM, ModelTier.WARM
             )
             evicted[candidate.name] = original_tier
+            self._thrash_detector.record_eviction(candidate.name)
             available += candidate.vram_mb
 
             if available >= needed_mb:
@@ -979,6 +1157,7 @@ class StackOrchestrator:
                 candidate.name, ModelLocation.CPU_RAM, ModelTier.WARM
             )
             evicted[candidate.name] = original_tier
+            self._thrash_detector.record_eviction(candidate.name)
             available += candidate.vram_mb
 
             if available >= needed_mb:

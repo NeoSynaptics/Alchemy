@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, AsyncGenerator
 
 from alchemy.apu.metrics import InferenceMetrics, InferenceRecord
@@ -29,7 +30,7 @@ logger = logging.getLogger(__name__)
 class _CallerProxy:
     """Thin proxy that sets default caller/priority on all gateway calls.
 
-    Created via ``gateway.with_caller("module_name", priority=2)``.
+    Created via ``gateway.with_caller("module_name", priority=5)``.
     Modules receive this instead of the raw gateway — their code stays
     unchanged while every inference call gets proper metrics attribution.
     """
@@ -66,6 +67,9 @@ class _CallerProxy:
         kwargs.setdefault("caller", self._caller)
         kwargs.setdefault("priority", self._priority)
         return await self._gw.embed(model, text, **kwargs)
+
+    def batch_hold(self, model: str):
+        return self._gw.batch_hold(model)
 
     @property
     def ollama(self):
@@ -105,7 +109,7 @@ class APUGateway:
         options: dict | None = None,
         think: bool | None = None,
         caller: str = "unknown",
-        priority: int = 2,
+        priority: int = 5,
     ) -> dict:
         """Chat completion through the gateway.
 
@@ -139,7 +143,7 @@ class APUGateway:
         options: dict | None = None,
         seed: int | None = None,
         caller: str = "unknown",
-        priority: int = 2,
+        priority: int = 5,
     ) -> dict:
         """Chat with Qwen3 think mode through the gateway.
 
@@ -172,7 +176,7 @@ class APUGateway:
         options: dict | None = None,
         stop_at: str | None = None,
         caller: str = "unknown",
-        priority: int = 2,
+        priority: int = 5,
     ) -> str:
         """Streaming chat through the gateway. Returns accumulated text."""
         await self._ensure_model(model, priority, caller)
@@ -201,7 +205,7 @@ class APUGateway:
         options: dict | None = None,
         think: bool | None = None,
         caller: str = "unknown",
-        priority: int = 2,
+        priority: int = 5,
     ) -> AsyncGenerator[dict, None]:
         """Streaming chat yielding raw Ollama chunks through the gateway.
 
@@ -234,7 +238,7 @@ class APUGateway:
         text: str,
         *,
         caller: str = "unknown",
-        priority: int = 3,
+        priority: int = 5,
     ) -> list[float]:
         """Embedding through the gateway. Default priority=3 (WARM)."""
         await self._ensure_model(model, priority, caller)
@@ -261,7 +265,7 @@ class APUGateway:
         prompt: str,
         *,
         caller: str = "unknown",
-        priority: int = 2,
+        priority: int = 5,
         options: dict | None = None,
     ) -> str:
         """Simple text generation. Wraps chat() for callers that just need text out.
@@ -279,7 +283,7 @@ class APUGateway:
         image_b64: str,
         *,
         caller: str = "unknown",
-        priority: int = 2,
+        priority: int = 5,
         options: dict | None = None,
     ) -> str:
         """Vision generation. Takes a base64-encoded image string.
@@ -302,11 +306,14 @@ class APUGateway:
     async def _ensure_model(self, model: str, priority: int, caller: str) -> None:
         """Ensure the requested model is loaded and ready for inference.
 
-        If orchestrator is available, delegates to ensure_loaded() which
-        handles VRAM management and eviction. If not, just checks availability.
+        Priority 0 = module disabled (reject call).
+        If orchestrator is available, passes caller_priority to ensure_loaded()
+        which uses it for eviction decisions.
         """
+        if priority == 0:
+            raise RuntimeError(f"Module '{caller}' is disabled (priority=0)")
         if self._orchestrator is not None:
-            result = await self._orchestrator.ensure_loaded(model)
+            result = await self._orchestrator.ensure_loaded(model, caller_priority=priority)
             if not result.success:
                 logger.warning(
                     "[APU Gateway] Failed to load %s for %s (priority=%d): %s",
@@ -347,6 +354,16 @@ class APUGateway:
         )
         self._metrics.record(rec)
 
+        # Feed usage pattern predictor
+        if self._orchestrator and success:
+            self._orchestrator._pattern_predictor.record_call(caller, model)
+            # Async pre-warm predicted next models (fire-and-forget)
+            predicted = self._orchestrator._pattern_predictor.predict_next_models(caller)
+            for pm in predicted:
+                card = self._orchestrator._registry.get(pm) if self._orchestrator._registry else None
+                if card and not card.current_location.is_gpu:
+                    asyncio.ensure_future(self._orchestrator.ensure_loaded(pm))
+
         if not success:
             logger.warning(
                 "[APU Gateway] %s %s/%s FAILED (%.0fms): %s",
@@ -370,13 +387,35 @@ class APUGateway:
             for model, sem in self._model_locks.items()
         }
 
-    def with_caller(self, caller: str, priority: int = 2) -> _CallerProxy:
+    @asynccontextmanager
+    async def batch_hold(self, model: str):
+        """Context manager: hold a model on GPU for the duration of a batch.
+
+        Usage::
+            async with gateway.batch_hold("qwen3:14b"):
+                for item in items:
+                    await gateway.chat("qwen3:14b", ...)
+        """
+        if self._orchestrator:
+            self._orchestrator.batch_hold(model)
+        try:
+            yield
+        finally:
+            if self._orchestrator:
+                self._orchestrator.batch_release(model)
+
+    def with_caller(self, caller: str, priority: int = 5) -> _CallerProxy:
         """Return a proxy that tags all calls with the given caller/priority.
+
+        Priority uses the unified 0-10 scale:
+          0 = disabled (calls rejected)
+          1-9 = active (higher = more important, evicted last)
+          10 = nuclear (everything else yields)
 
         Usage in server.py::
 
             app.state.gate_reviewer = GateReviewer(
-                ollama_client=gateway.with_caller("gate", priority=1),
+                ollama_client=gateway.with_caller("gate", priority=3),
             )
         """
         return _CallerProxy(self, caller, priority)

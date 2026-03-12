@@ -173,7 +173,7 @@ async def lifespan(app: FastAPI):
             if settings.pw_escalation_enabled:
                 from alchemy.core import StuckDetector, VisionEscalation
 
-                _escalation_client = gateway.with_caller("escalation", priority=1) if gateway else ollama
+                _escalation_client = gateway.with_caller("escalation", priority=7) if gateway else ollama
                 vision_escalation = VisionEscalation(
                     ollama_client=_escalation_client,
                     model=settings.pw_escalation_model,
@@ -187,7 +187,7 @@ async def lifespan(app: FastAPI):
                 )
                 logger.info("Tier 1.5 escalation ready (model=%s)", settings.pw_escalation_model)
 
-            _pw_client = gateway.with_caller("playwright", priority=1) if gateway else ollama
+            _pw_client = gateway.with_caller("playwright", priority=7) if gateway else ollama
             pw_agent = PlaywrightAgent(
                 ollama_client=_pw_client,
                 model=settings.pw_model,
@@ -227,7 +227,7 @@ async def lifespan(app: FastAPI):
                 screenshot_quality=settings.desktop_screenshot_quality,
                 mode=settings.desktop_default_mode,
             )
-            _desktop_client = gateway.with_caller("desktop", priority=1) if gateway else ollama
+            _desktop_client = gateway.with_caller("desktop", priority=7) if gateway else ollama
             app.state.desktop_agent = DesktopAgent(
                 ollama_client=_desktop_client,
                 controller=desktop_ctrl,
@@ -270,7 +270,7 @@ async def lifespan(app: FastAPI):
     if settings.gate_enabled:
         from alchemy.gate import GateReviewer
 
-        _gate_client = gateway.with_caller("gate", priority=1) if gateway else ollama
+        _gate_client = gateway.with_caller("gate", priority=3) if gateway else ollama
         app.state.gate_reviewer = GateReviewer(
             ollama_client=_gate_client,
             model=settings.gate_model,
@@ -310,8 +310,8 @@ async def lifespan(app: FastAPI):
 
             # Prefer APU gateway (P0 = RESIDENT priority) over raw OllamaProvider
             if gateway:
-                voice_ollama = GatewayProvider(gateway.with_caller("voice", priority=0))
-                logger.info("AlchemyVoice using APU gateway (P0 RESIDENT)")
+                voice_ollama = GatewayProvider(gateway.with_caller("voice", priority=8))
+                logger.info("AlchemyVoice using APU gateway (priority=8)")
             else:
                 voice_ollama = OllamaProvider(
                     host=settings.ollama_host,
@@ -372,7 +372,7 @@ async def lifespan(app: FastAPI):
                 getattr(app.state, "desktop_agent", None),
                 "_controller", None,
             )
-            _memory_client = gateway.with_caller("memory", priority=2) if gateway else ollama
+            _memory_client = gateway.with_caller("memory", priority=3) if gateway else ollama
             memory = MemorySystem(
                 ollama=_memory_client,
                 orchestrator=app.state.orchestrator,

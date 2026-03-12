@@ -66,7 +66,11 @@ class MemorySystem:
         # Cache (STM)
         self._stm = STMStore(storage / settings.stm_db, settings.stm_purge_interval_seconds)
         self._context_packer = ContextPacker(self._stm)
-        self._classifier = ActivityClassifier(ollama, self._stm, settings.classifier_model)
+        self._classifier_enabled = settings.classifier_enabled
+        self._classifier = (
+            ActivityClassifier(ollama, self._stm, settings.classifier_model)
+            if self._classifier_enabled else None
+        )
         self._apu_signal = APUSignal(orchestrator)
 
         # Capture loop
@@ -132,9 +136,12 @@ class MemorySystem:
 
         # Start background tasks
         self._stm.start_purge_loop()
-        self._classifier.on_activity_change(self._context_packer.set_activity)
-        self._classifier.start()
-        self._apu_signal.start(self._classifier)
+        if self._classifier:
+            self._classifier.on_activity_change(self._context_packer.set_activity)
+            self._classifier.start()
+            self._apu_signal.start(self._classifier)
+        else:
+            logger.info("ActivityClassifier disabled (memory.classifier_enabled=False)")
 
         if self._capture._controller is not None:
             await self._capture.start()
@@ -148,8 +155,9 @@ class MemorySystem:
         self._vlm_worker.stop()
         self._vlm_worker_cpu.stop()
         await self._capture.stop()
-        self._classifier.stop()
-        self._apu_signal.stop()
+        if self._classifier:
+            self._classifier.stop()
+            self._apu_signal.stop()
         self._stm.stop_purge_loop()
         logger.info("AlchemyMemory stopped")
 
@@ -176,7 +184,7 @@ class MemorySystem:
         return self._context_packer
 
     @property
-    def classifier(self) -> ActivityClassifier:
+    def classifier(self) -> ActivityClassifier | None:
         return self._classifier
 
     @property

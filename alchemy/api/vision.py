@@ -48,7 +48,7 @@ def _get_deps(request: Request):
     """
     gw = getattr(request.app.state, "apu_gateway", None)
     if gw:
-        inference = gw.with_caller("click", priority=1)
+        inference = gw.with_caller("click", priority=7)
     else:
         inference = getattr(request.app.state, "ollama_client", None)
     return (

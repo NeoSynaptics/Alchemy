@@ -28,7 +28,7 @@ async def generate_text(req: WordGenerateRequest, request: Request) -> WordGener
     """Generate text using an LLM (summarize, rewrite, expand, or translate)."""
     # Prefer APU gateway over raw OllamaClient
     _gw = getattr(request.app.state, "apu_gateway", None)
-    ollama = _gw.with_caller("word", priority=2) if _gw else getattr(request.app.state, "ollama_client", None)
+    ollama = _gw.with_caller("word", priority=3) if _gw else getattr(request.app.state, "ollama_client", None)
     if not ollama:
         raise HTTPException(status_code=503, detail="Ollama client not available")
 

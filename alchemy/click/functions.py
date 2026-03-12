@@ -217,7 +217,7 @@ async def dispatch_flow(
 
     # Resolve dependencies — prefer APU gateway over raw OllamaClient
     _gw = getattr(app_state, "apu_gateway", None) if app_state else None
-    ollama = _gw.with_caller("click", priority=1) if _gw else _get_or_raise(app_state, "ollama_client", OllamaClient)
+    ollama = _gw.with_caller("click", priority=7) if _gw else _get_or_raise(app_state, "ollama_client", OllamaClient)
     desktop_agent = getattr(app_state, "desktop_agent", None) if app_state else None
     controller = desktop_agent._controller if desktop_agent else None
     task_manager = _get_or_create(app_state, "task_manager", TaskManager)

@@ -286,6 +286,7 @@ class MemorySettings(BaseModel):
     embedder_model: str = "nomic-embed-text"
     synthesis_model: str = "qwen3:14b"
     classifier_model: str = "qwen3:3b"
+    classifier_enabled: bool = False         # disabled — concept good, needs polish (qwen3:3b 404s)
     synthesis_think: bool = True             # qwen3:14b think=true for search synthesis
 
     # Search

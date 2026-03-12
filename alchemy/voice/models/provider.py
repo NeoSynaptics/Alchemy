@@ -248,7 +248,7 @@ class AlchemyProvider(ModelProvider):
 class GatewayProvider(ModelProvider):
     """Routes Voice inference through the APU inference gateway.
 
-    Wraps a _CallerProxy (from gateway.with_caller("voice", priority=0))
+    Wraps a _CallerProxy (from gateway.with_caller("voice", priority=8))
     and adapts it to the ModelProvider interface that SmartRouter expects.
     Gives Voice: model loading, VRAM management, per-caller metrics — zero
     changes to SmartRouter or any voice module.

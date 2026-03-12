@@ -36,11 +36,5 @@ MANIFEST = ModuleManifest(
             preferred_model="qwen3:14b",
             min_tier="warm",
         ),
-        ModelRequirement(
-            capability="conversation",
-            required=True,
-            preferred_model="qwen3:3b",
-            min_tier="warm",
-        ),
     ],
 )

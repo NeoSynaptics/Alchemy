@@ -55,7 +55,7 @@ class ModelCardResponse(BaseModel):
     capabilities: list[str]
     last_used: str | None
     owner_app: str | None
-    app_priority: int = 50
+    module_priority: int = 5
 
 
 class StackStatusResponse(BaseModel):
@@ -125,7 +125,7 @@ def _model_to_response(card: Any) -> ModelCardResponse:
         capabilities=card.capabilities,
         last_used=card.last_used.isoformat() if card.last_used else None,
         owner_app=card.owner_app,
-        app_priority=card.app_priority,
+        module_priority=card.module_priority,
     )
 
 
@@ -373,7 +373,7 @@ async def app_deactivate(request: Request, app_name: str) -> DemotedResponse:
 
 class AppPriorityEntry(BaseModel):
     app_name: str
-    priority: int  # 0=highest, 100=lowest
+    priority: int  # 0-10 scale (higher = more important, evicted last)
     models: list[str] = []  # models currently owned by this app
     gpu: int | None = None  # preferred GPU if set
 
@@ -383,7 +383,7 @@ class AppPriorityListResponse(BaseModel):
 
 
 class SetAppPriorityRequest(BaseModel):
-    priority: int  # 0 = highest, 100 = lowest
+    priority: int  # 0-10 scale (0=disabled, 10=nuclear, higher=more important)
 
 
 class SetAppGPURequest(BaseModel):
@@ -408,9 +408,9 @@ class FrozenRestoreResponse(BaseModel):
 
 @router.get("/priority", response_model=AppPriorityListResponse)
 async def list_app_priorities(request: Request) -> AppPriorityListResponse:
-    """List all apps with their GPU priority ranking, sorted by priority (0=highest)."""
+    """List all modules with their priority ranking (0-10, higher=more important)."""
     orch = _get_orchestrator(request)
-    prios = orch.all_app_priorities()
+    prios = orch.all_module_priorities()
     app_models = orch._app_models
     entries = []
     for app_name, prio in prios.items():
@@ -426,12 +426,14 @@ async def list_app_priorities(request: Request) -> AppPriorityListResponse:
 async def set_app_priority(
     request: Request, app_name: str, body: SetAppPriorityRequest,
 ) -> AppPriorityEntry:
-    """Set an app's GPU priority. 0 = highest (models evicted last), 100 = lowest."""
+    """Set a module's priority. 0-10 scale (0=disabled, 10=nuclear)."""
+    if body.priority < 0 or body.priority > 10:
+        raise HTTPException(status_code=400, detail="Priority must be 0-10")
     orch = _get_orchestrator(request)
-    orch.set_app_priority(app_name, body.priority)
+    orch.set_module_priority(app_name, body.priority)
     return AppPriorityEntry(
         app_name=app_name,
-        priority=orch.get_app_priority(app_name),
+        priority=orch.get_module_priority(app_name),
         models=orch._app_models.get(app_name, []),
     )
 
@@ -451,6 +453,38 @@ async def set_app_gpu(
         models=orch._app_models.get(app_name, []),
         gpu=body.gpu,
     )
+
+
+
+
+class OffloadResponse(BaseModel):
+    offloaded: list[str] = []
+
+
+@router.post("/emergency-offload", response_model=OffloadResponse)
+async def emergency_offload(request: Request, gpu: int | None = None) -> OffloadResponse:
+    """Emergency: offload ALL models from GPU(s) to RAM.
+
+    Pass gpu=0 or gpu=1 for a single GPU, or omit for all GPUs.
+    Models go to RAM (warm) for fast reload, not disk.
+    """
+    orch = _get_orchestrator(request)
+    if gpu is not None and gpu not in (0, 1):
+        raise HTTPException(status_code=400, detail="GPU must be 0, 1, or omitted for all")
+    offloaded = await orch.offload_all_gpu(gpu)
+    return OffloadResponse(offloaded=offloaded)
+
+
+@router.post("/priority/reset", response_model=AppPriorityListResponse)
+async def reset_priorities(request: Request) -> AppPriorityListResponse:
+    """Reset all module priorities to defaults."""
+    orch = _get_orchestrator(request)
+    defaults = orch.reset_module_priorities()
+    entries = [
+        AppPriorityEntry(app_name=name, priority=prio)
+        for name, prio in sorted(defaults.items(), key=lambda x: x[1], reverse=True)
+    ]
+    return AppPriorityListResponse(apps=entries)
 
 
 # --- Frozen Baseline ---
