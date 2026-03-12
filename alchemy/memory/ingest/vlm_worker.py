@@ -18,7 +18,6 @@ import logging
 import sqlite3
 import time
 
-import httpx
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -338,29 +337,22 @@ class VLMWorker:
             return raw.strip(), {}
 
     async def _summarize_photo(self, image_bytes: bytes) -> str:
-        """Run VLM on a photo. Uses a dedicated httpx client to avoid contention."""
-        import base64
-
+        """Run VLM on a photo via the shared inference client (gateway or OllamaClient)."""
         try:
-            b64 = base64.b64encode(image_bytes).decode()
             options: dict = {"temperature": 0.0, "num_predict": 150}
             if self._use_cpu:
                 options["num_gpu"] = 0
 
-            payload = {
-                "model": self._summarizer._model,
-                "messages": [
+            result = await self._summarizer._ollama.chat(
+                model=self._summarizer._model,
+                messages=[
                     {"role": "system", "content": _PHOTO_PROMPT},
-                    {"role": "user", "content": "Describe this photo.", "images": [b64]},
+                    {"role": "user", "content": "Describe this photo."},
                 ],
-                "stream": False,
-                "options": options,
-            }
-
-            async with httpx.AsyncClient(timeout=httpx.Timeout(10.0, connect=5.0)) as client:
-                resp = await client.post("http://localhost:11434/api/chat", json=payload)
-                resp.raise_for_status()
-                return resp.json().get("message", {}).get("content", "").strip()
+                images=[image_bytes],
+                options=options,
+            )
+            return result.get("message", {}).get("content", "").strip()
         except Exception:
             logger.warning("Photo VLM [%s] summarization failed",
                            self._worker_name, exc_info=True)

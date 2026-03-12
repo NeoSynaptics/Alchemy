@@ -26,6 +26,47 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+class _CallerProxy:
+    """Thin proxy that sets default caller/priority on all gateway calls.
+
+    Created via ``gateway.with_caller("module_name", priority=2)``.
+    Modules receive this instead of the raw gateway — their code stays
+    unchanged while every inference call gets proper metrics attribution.
+    """
+
+    __slots__ = ("_gw", "_caller", "_priority")
+
+    def __init__(self, gateway: APUGateway, caller: str, priority: int) -> None:
+        self._gw = gateway
+        self._caller = caller
+        self._priority = priority
+
+    async def chat(self, model, messages, **kwargs):
+        kwargs.setdefault("caller", self._caller)
+        kwargs.setdefault("priority", self._priority)
+        return await self._gw.chat(model, messages, **kwargs)
+
+    async def chat_think(self, model, messages, **kwargs):
+        kwargs.setdefault("caller", self._caller)
+        kwargs.setdefault("priority", self._priority)
+        return await self._gw.chat_think(model, messages, **kwargs)
+
+    async def chat_stream(self, model, messages, **kwargs):
+        kwargs.setdefault("caller", self._caller)
+        kwargs.setdefault("priority", self._priority)
+        return await self._gw.chat_stream(model, messages, **kwargs)
+
+    async def embed(self, model, text, **kwargs):
+        kwargs.setdefault("caller", self._caller)
+        kwargs.setdefault("priority", self._priority)
+        return await self._gw.embed(model, text, **kwargs)
+
+    @property
+    def ollama(self):
+        """Direct access to underlying OllamaClient for non-gatewayed methods."""
+        return self._gw.ollama
+
+
 class APUGateway:
     """Inference gateway — wraps OllamaClient with model management and metrics.
 
@@ -284,6 +325,17 @@ class APUGateway:
             model: sem._value
             for model, sem in self._model_locks.items()
         }
+
+    def with_caller(self, caller: str, priority: int = 2) -> _CallerProxy:
+        """Return a proxy that tags all calls with the given caller/priority.
+
+        Usage in server.py::
+
+            app.state.gate_reviewer = GateReviewer(
+                ollama_client=gateway.with_caller("gate", priority=1),
+            )
+        """
+        return _CallerProxy(self, caller, priority)
 
     @property
     def ollama(self) -> OllamaClient:

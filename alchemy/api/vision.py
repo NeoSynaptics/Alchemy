@@ -42,9 +42,17 @@ router = APIRouter(
 
 
 def _get_deps(request: Request):
-    """Extract shared dependencies from app state."""
+    """Extract shared dependencies from app state.
+
+    Prefers APU gateway (with caller tracking) over raw OllamaClient.
+    """
+    gw = getattr(request.app.state, "apu_gateway", None)
+    if gw:
+        inference = gw.with_caller("click", priority=1)
+    else:
+        inference = getattr(request.app.state, "ollama_client", None)
     return (
-        getattr(request.app.state, "ollama_client", None),
+        inference,
         getattr(request.app.state, "task_manager", None),
     )
 

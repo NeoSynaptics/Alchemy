@@ -43,7 +43,9 @@ async def submit_research(req: ResearchTaskRequest, request: Request):
     if not settings.research_enabled:
         raise HTTPException(status_code=503, detail="Research module disabled")
 
-    ollama = getattr(request.app.state, "ollama_client", None)
+    # Prefer APU gateway over raw OllamaClient
+    _gw = getattr(request.app.state, "apu_gateway", None)
+    ollama = _gw.with_caller("research", priority=2) if _gw else getattr(request.app.state, "ollama_client", None)
     if not ollama:
         raise HTTPException(status_code=503, detail="Ollama client not available")
 

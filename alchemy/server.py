@@ -68,6 +68,7 @@ async def lifespan(app: FastAPI):
     app.state.task_manager = TaskManager()
 
     # --- APU (Alchemy Processing Unit) ---
+    gateway = None  # Set below if APU starts successfully
     try:
         from pathlib import Path
         from alchemy.apu import APUGateway, GPUMonitor, ModelRegistry, StackOrchestrator
@@ -172,8 +173,9 @@ async def lifespan(app: FastAPI):
             if settings.pw_escalation_enabled:
                 from alchemy.core import StuckDetector, VisionEscalation
 
+                _escalation_client = gateway.with_caller("escalation", priority=1) if gateway else ollama
                 vision_escalation = VisionEscalation(
-                    ollama_client=ollama,
+                    ollama_client=_escalation_client,
                     model=settings.pw_escalation_model,
                     temperature=settings.pw_escalation_temperature,
                     max_tokens=settings.pw_escalation_max_tokens,
@@ -185,8 +187,9 @@ async def lifespan(app: FastAPI):
                 )
                 logger.info("Tier 1.5 escalation ready (model=%s)", settings.pw_escalation_model)
 
+            _pw_client = gateway.with_caller("playwright", priority=1) if gateway else ollama
             pw_agent = PlaywrightAgent(
-                ollama_client=ollama,
+                ollama_client=_pw_client,
                 model=settings.pw_model,
                 max_steps=settings.pw_max_steps,
                 think=settings.pw_think,
@@ -224,8 +227,9 @@ async def lifespan(app: FastAPI):
                 screenshot_quality=settings.desktop_screenshot_quality,
                 mode=settings.desktop_default_mode,
             )
+            _desktop_client = gateway.with_caller("desktop", priority=1) if gateway else ollama
             app.state.desktop_agent = DesktopAgent(
-                ollama_client=ollama,
+                ollama_client=_desktop_client,
                 controller=desktop_ctrl,
                 model=settings.desktop_model,
                 max_steps=settings.desktop_max_steps,
@@ -266,8 +270,9 @@ async def lifespan(app: FastAPI):
     if settings.gate_enabled:
         from alchemy.gate import GateReviewer
 
+        _gate_client = gateway.with_caller("gate", priority=1) if gateway else ollama
         app.state.gate_reviewer = GateReviewer(
-            ollama_client=ollama,
+            ollama_client=_gate_client,
             model=settings.gate_model,
             timeout=settings.gate_timeout,
         )
@@ -361,8 +366,9 @@ async def lifespan(app: FastAPI):
                 getattr(app.state, "desktop_agent", None),
                 "_controller", None,
             )
+            _memory_client = gateway.with_caller("memory", priority=2) if gateway else ollama
             memory = MemorySystem(
-                ollama=ollama,
+                ollama=_memory_client,
                 orchestrator=app.state.orchestrator,
                 controller=desktop_ctrl,
                 settings=settings.memory,
