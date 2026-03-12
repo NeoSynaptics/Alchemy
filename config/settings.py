@@ -248,12 +248,12 @@ class AgentsSettings(BaseModel):
 class NeosySettings(BaseModel):
     """NEOSY — knowledge graph (PostgreSQL + Qdrant)."""
     enabled: bool = True
-    src_path: str = ""  # Path to BaratzaMemory/src — empty = NEOSY not mounted. Set via ALCHEMY_NEOSY__SRC_PATH
+    src_path: str = "C:/Users/info/GitHub/BaratzaMemory/src"
     pg_host: str = "localhost"
     pg_port: int = 5432
     pg_user: str = "baratza"
-    pg_password: str = "baratza_dev"
-    pg_database: str = "baratza_knowledge"
+    pg_password: str = "baratza_dev_password"
+    pg_database: str = "baratza"
     qdrant_host: str = "localhost"
     qdrant_port: int = 6333
 
