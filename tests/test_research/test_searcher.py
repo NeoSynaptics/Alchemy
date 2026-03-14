@@ -1,5 +1,6 @@
 """Tests for SearchProvider — DuckDuckGo search wrapper."""
 
+import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -113,17 +114,20 @@ class TestSearchProvider:
         """Verify _search_sync calls DDGS correctly."""
         provider = SearchProvider(max_results_per_query=3)
 
-        mock_ddgs = MagicMock()
-        mock_ddgs.text = MagicMock(return_value=[
+        mock_ddgs_instance = MagicMock()
+        mock_ddgs_instance.text = MagicMock(return_value=[
             {"href": "https://example.com", "title": "Test", "body": "Body"},
         ])
-        mock_ddgs.__enter__ = MagicMock(return_value=mock_ddgs)
-        mock_ddgs.__exit__ = MagicMock(return_value=False)
+        mock_ddgs_instance.__enter__ = MagicMock(return_value=mock_ddgs_instance)
+        mock_ddgs_instance.__exit__ = MagicMock(return_value=False)
 
-        with patch("duckduckgo_search.DDGS", return_value=mock_ddgs):
+        mock_ddgs_cls = MagicMock(return_value=mock_ddgs_instance)
+
+        # Patch both possible import paths (ddgs and duckduckgo_search)
+        with patch.dict("sys.modules", {"ddgs": MagicMock(DDGS=mock_ddgs_cls)}):
             results = provider._search_sync("test query")
 
         assert len(results) == 1
-        mock_ddgs.text.assert_called_once_with(
+        mock_ddgs_instance.text.assert_called_once_with(
             "test query", region="wt-wt", safesearch="moderate", max_results=3
         )

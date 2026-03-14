@@ -257,6 +257,14 @@ class BrainPhysicsSettings(BaseModel):
     consolidation_enabled: bool = True  # distill successful patterns into memory
 
 
+class NeoNSettings(BaseModel):
+    """NEO-N — device file tunnel for phones/tablets."""
+    enabled: bool = True
+    inbox_path: str = "~/neosy_inbox/neo_n"
+    max_file_size_mb: int = 500
+    rate_limit_per_hour: int = 100
+
+
 class BaratzaSettings(BaseModel):
     """BaratzaMemory — knowledge graph (PostgreSQL + Qdrant)."""
     enabled: bool = True
@@ -349,6 +357,7 @@ class Settings(BaseSettings):
     memory: MemorySettings = MemorySettings()
     browser: BrowserSettings = BrowserSettings()
     brain_physics: BrainPhysicsSettings = BrainPhysicsSettings()
+    neo_n: NeoNSettings = NeoNSettings()
     baratza: BaratzaSettings = BaratzaSettings()
 
     # === Flat fields (backward compat -- used by server.py and existing code) ===

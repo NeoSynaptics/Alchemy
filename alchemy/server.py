@@ -416,6 +416,27 @@ async def lifespan(app: FastAPI):
         except Exception:
             logger.exception("BaratzaMemory failed to start")
 
+    # --- NEO-N (device file tunnel) ---
+    app.state.neo_n_receiver = None
+    if settings.neo_n.enabled:
+        try:
+            from pathlib import Path as _Path
+            from alchemy.neo_n.receiver import FileReceiver
+            from alchemy.neo_n import api as neo_n_api
+
+            receiver = FileReceiver(
+                inbox_path=_Path(settings.neo_n.inbox_path),
+                max_file_size_mb=settings.neo_n.max_file_size_mb,
+                rate_limit_per_hour=settings.neo_n.rate_limit_per_hour,
+            )
+            # Wire API with receiver and connect pairing manager
+            pairing_mgr = getattr(getattr(app.state, "connect", None), "pairing", None)
+            neo_n_api.init(receiver, pairing_manager=pairing_mgr)
+            app.state.neo_n_receiver = receiver
+            logger.info("NEO-N file tunnel ready (inbox=%s)", receiver.inbox_path)
+        except Exception:
+            logger.exception("NEO-N failed to start")
+
     # --- BrainPhysics (cognitive routing simulator) ---
     app.state.brain_physics_engine = None
     if settings.brain_physics.enabled:
@@ -669,6 +690,11 @@ app.include_router(voice_control.router, prefix="/v1")
 # AlchemyMemory routes
 from alchemy.memory.api.memory_api import router as memory_router
 app.include_router(memory_router)
+
+# NEO-N routes (device file tunnel)
+if settings.neo_n.enabled:
+    from alchemy.neo_n.api import router as neo_n_router
+    app.include_router(neo_n_router)
 
 # BaratzaMemory routes
 if settings.baratza.enabled and settings.baratza.src_path:
