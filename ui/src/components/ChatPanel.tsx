@@ -12,6 +12,7 @@ export function ChatPanel() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
+  const conversationId = useRef(crypto.randomUUID())
   const scrollRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
@@ -30,7 +31,7 @@ export function ChatPanel() {
     setMessages((prev) => [...prev, { role: 'assistant', content: '' }])
 
     try {
-      for await (const chunk of streamChat(text)) {
+      for await (const chunk of streamChat(text, conversationId.current)) {
         if (chunk.content) {
           setMessages((prev) => {
             const updated = [...prev]

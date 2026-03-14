@@ -137,8 +137,15 @@ function useApiFetch<T>(fetcher: () => Promise<T>, pollMs?: number) {
 
   useEffect(() => {
     if (!pollMs) return
-    const id = setInterval(refresh, pollMs)
-    return () => clearInterval(id)
+    let id: ReturnType<typeof setInterval> | null = null
+
+    const start = () => { if (!id) id = setInterval(refresh, pollMs) }
+    const stop = () => { if (id) { clearInterval(id); id = null } }
+
+    start()
+    const onVisibility = () => document.hidden ? stop() : start()
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => { stop(); document.removeEventListener('visibilitychange', onVisibility) }
   }, [pollMs, refresh])
 
   return { data, loading, error, refresh }
@@ -162,7 +169,7 @@ export function useTaskStatus(taskId: string | null) {
 
 export function useHealth() {
   const fetcher = useCallback(() => apiRawFetch<HealthStatus>('/health'), [])
-  return useApiFetch(fetcher, 10_000)
+  return useApiFetch(fetcher, 30_000)
 }
 
 export function useApuStatus() {
@@ -232,11 +239,14 @@ export function useSettings() {
 
 export async function* streamChat(
   message: string,
+  conversationId?: string,
 ): AsyncGenerator<{ content: string; done: boolean; model?: string }> {
+  const body: Record<string, string> = { message, source: 'ui' }
+  if (conversationId) body.conversation_id = conversationId
   const res = await fetch('/api/v1/chat/stream', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message, source: 'ui' }),
+    body: JSON.stringify(body),
   })
   if (!res.ok) {
     throw new Error(`Chat ${res.status}: ${await res.text()}`)

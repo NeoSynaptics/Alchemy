@@ -370,21 +370,245 @@ function SearchPhotoStrip({ results, onViewPhoto }: {
   )
 }
 
+// ── Import Drop Zone ────────────────────────────────────
+
+interface UploadItem {
+  file: File
+  status: 'pending' | 'uploading' | 'done' | 'error'
+  preview?: string
+  summary?: string
+}
+
+function ImportTab({ onImportDone }: { onImportDone: () => void }) {
+  const [items, setItems] = useState<UploadItem[]>([])
+  const [dragOver, setDragOver] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const addFiles = useCallback((files: FileList | File[]) => {
+    const accepted = Array.from(files).filter(f =>
+      f.type.startsWith('image/') || f.type.startsWith('video/')
+    )
+    if (accepted.length === 0) return
+
+    const newItems: UploadItem[] = accepted.map(f => {
+      const item: UploadItem = { file: f, status: 'pending' }
+      if (f.type.startsWith('image/')) {
+        item.preview = URL.createObjectURL(f)
+      }
+      return item
+    })
+    setItems(prev => [...prev, ...newItems])
+  }, [])
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    setDragOver(false)
+    if (e.dataTransfer.files.length > 0) addFiles(e.dataTransfer.files)
+  }, [addFiles])
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    setDragOver(true)
+  }, [])
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    setDragOver(false)
+  }, [])
+
+  const removeItem = useCallback((idx: number) => {
+    setItems(prev => {
+      const item = prev[idx]
+      if (item?.preview) URL.revokeObjectURL(item.preview)
+      return prev.filter((_, i) => i !== idx)
+    })
+  }, [])
+
+  const clearDone = useCallback(() => {
+    setItems(prev => {
+      prev.filter(i => i.status === 'done' && i.preview).forEach(i => URL.revokeObjectURL(i.preview!))
+      return prev.filter(i => i.status !== 'done')
+    })
+  }, [])
+
+  const uploadAll = useCallback(async () => {
+    const pending = items.filter(i => i.status === 'pending')
+    if (pending.length === 0) return
+    setUploading(true)
+
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].status !== 'pending') continue
+      setItems(prev => prev.map((it, idx) => idx === i ? { ...it, status: 'uploading' } : it))
+
+      try {
+        const form = new FormData()
+        form.append('file', items[i].file)
+        const res = await fetch('/api/v1/memory/timeline/photo/upload', { method: 'POST', body: form })
+        if (!res.ok) throw new Error(`${res.status}`)
+        const data = await res.json()
+        setItems(prev => prev.map((it, idx) => idx === i ? { ...it, status: 'done', summary: data.summary || '' } : it))
+      } catch {
+        setItems(prev => prev.map((it, idx) => idx === i ? { ...it, status: 'error' } : it))
+      }
+    }
+
+    setUploading(false)
+    onImportDone()
+  }, [items, onImportDone])
+
+  const pendingCount = items.filter(i => i.status === 'pending').length
+  const doneCount = items.filter(i => i.status === 'done').length
+  const errorCount = items.filter(i => i.status === 'error').length
+
+  return (
+    <div className="h-full flex flex-col">
+      {/* Drop zone */}
+      <div
+        className={`flex-1 flex flex-col items-center justify-center border-2 border-dashed rounded-2xl m-4 transition-all duration-200 cursor-pointer ${
+          dragOver
+            ? 'border-amber-500 bg-amber-500/5 scale-[1.01]'
+            : items.length > 0
+              ? 'border-zinc-700/40 bg-zinc-900/30'
+              : 'border-zinc-700/40 bg-zinc-900/30 hover:border-zinc-600 hover:bg-zinc-800/30'
+        }`}
+        onDrop={handleDrop}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onClick={() => items.length === 0 && fileInputRef.current?.click()}
+      >
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          accept="image/*,video/*"
+          className="hidden"
+          onChange={e => e.target.files && addFiles(e.target.files)}
+        />
+
+        {items.length === 0 ? (
+          <div className="flex flex-col items-center gap-4 text-zinc-500">
+            <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" className="text-zinc-600">
+              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+              <polyline points="17 8 12 3 7 8" />
+              <line x1="12" y1="3" x2="12" y2="15" />
+            </svg>
+            <div className="text-center">
+              <p className="text-sm font-medium text-zinc-400">Drop photos & videos here</p>
+              <p className="text-xs text-zinc-600 mt-1">or click to browse from file explorer</p>
+            </div>
+            <p className="text-[10px] text-zinc-700 font-mono">JPEG · PNG · MP4 · MOV · HEIC</p>
+          </div>
+        ) : (
+          <div className="w-full h-full flex flex-col overflow-hidden p-4" onClick={e => e.stopPropagation()}>
+            {/* Toolbar */}
+            <div className="flex items-center justify-between pb-3 border-b border-zinc-800/50 flex-shrink-0">
+              <div className="flex items-center gap-3">
+                <span className="text-xs font-mono text-zinc-400">{items.length} file{items.length !== 1 ? 's' : ''}</span>
+                {doneCount > 0 && <span className="text-xs font-mono text-emerald-400">{doneCount} uploaded</span>}
+                {errorCount > 0 && <span className="text-xs font-mono text-red-400">{errorCount} failed</span>}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="px-3 py-1.5 text-xs font-mono text-zinc-400 hover:text-zinc-200 bg-zinc-800/50 hover:bg-zinc-700/50 rounded-lg transition-colors"
+                >+ Add more</button>
+                {doneCount > 0 && (
+                  <button onClick={clearDone}
+                    className="px-3 py-1.5 text-xs font-mono text-zinc-500 hover:text-zinc-300 bg-zinc-800/50 hover:bg-zinc-700/50 rounded-lg transition-colors"
+                  >Clear done</button>
+                )}
+                {pendingCount > 0 && (
+                  <button onClick={uploadAll} disabled={uploading}
+                    className="px-4 py-1.5 text-xs font-mono font-medium text-black bg-amber-500 hover:bg-amber-400 disabled:opacity-50 disabled:cursor-wait rounded-lg transition-colors"
+                  >{uploading ? 'Uploading...' : `Upload ${pendingCount}`}</button>
+                )}
+              </div>
+            </div>
+
+            {/* File grid */}
+            <div className="flex-1 overflow-y-auto mt-3" style={{ scrollbarWidth: 'thin' }}>
+              <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-2">
+                {items.map((item, idx) => (
+                  <div key={idx} className="relative aspect-square rounded-lg overflow-hidden bg-zinc-800 border border-zinc-700/30 group">
+                    {item.preview ? (
+                      <img src={item.preview} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex flex-col items-center justify-center text-zinc-600">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                          <polygon points="23 7 16 12 23 17 23 7" /><rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+                        </svg>
+                        <span className="text-[8px] mt-1 font-mono">{item.file.name.split('.').pop()?.toUpperCase()}</span>
+                      </div>
+                    )}
+                    {/* Status overlay */}
+                    {item.status === 'uploading' && (
+                      <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                        <div className="w-5 h-5 border-2 border-zinc-600 border-t-amber-400 rounded-full animate-spin" />
+                      </div>
+                    )}
+                    {item.status === 'done' && (
+                      <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                        <div className="w-6 h-6 rounded-full bg-emerald-500 flex items-center justify-center">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>
+                        </div>
+                      </div>
+                    )}
+                    {item.status === 'error' && (
+                      <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                        <div className="w-6 h-6 rounded-full bg-red-500 flex items-center justify-center">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12" /></svg>
+                        </div>
+                      </div>
+                    )}
+                    {/* Remove button */}
+                    {item.status !== 'uploading' && (
+                      <button onClick={() => removeItem(idx)}
+                        className="absolute top-1 right-1 p-0.5 rounded-full bg-black/60 text-zinc-400 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity">
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12" /></svg>
+                      </button>
+                    )}
+                    {/* Filename */}
+                    <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent px-1 py-0.5">
+                      <p className="text-[7px] text-zinc-300 truncate font-mono">{item.file.name}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Main Page ──────────────────────────────────────────
 
+const MAX_SPAN = 3 * 365 * DAY  // 3 years max zoom out
+const MIN_SPAN = 5 * DAY         // 5 days min zoom in
+
+function clampSpan(span: number): number {
+  return Math.max(MIN_SPAN, Math.min(MAX_SPAN, span))
+}
+
 export function MemoryPage() {
+  const [tab, setTab] = useState<'timeline' | 'import'>('timeline')
   const [allEvents, setAllEvents] = useState<TimelineEvent[]>([])
   const [searchResults, setSearchResults] = useState<TimelineEvent[] | null>(null)
   const [isSearching, setIsSearching] = useState(false)
   const [loading, setLoading] = useState(true)
   const [viewingPhoto, setViewingPhoto] = useState<{ event: TimelineEvent; dayEvents: TimelineEvent[] } | null>(null)
   const [expandedDay, setExpandedDay] = useState<{ group: DayGroup; anchorX: number } | null>(null)
-  const [viewStart, setViewStart] = useState(0)
-  const [viewEnd, setViewEnd] = useState(0)
+  const [view, setView] = useState({ start: 0, end: 0 })
+  const viewStart = view.start
+  const viewEnd = view.end
   const containerRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef({ active: false, lastX: 0 })
   const [containerW, setContainerW] = useState(1200)
   const [containerH, setContainerH] = useState(600)
+  const viewRef = useRef(view)
+  viewRef.current = view
 
   const viewSpan = viewEnd - viewStart
   const zoomView = deriveView(viewSpan)
@@ -398,8 +622,7 @@ export function MemoryPage() {
       const min = Math.min(...allEvents.map(e => e.ts))
       const max = Math.max(...allEvents.map(e => e.ts))
       const pad = (max - min) * 0.05 || DAY
-      setViewStart(min - pad)
-      setViewEnd(max + pad)
+      setView({ start: min - pad, end: max + pad })
     }
   }, [allEvents]) // eslint-disable-line
 
@@ -419,7 +642,7 @@ export function MemoryPage() {
       const min = Math.min(...results.map(e => e.ts))
       const max = Math.max(...results.map(e => e.ts))
       const pad = (max - min) * 0.1 || 30 * DAY
-      setViewStart(min - pad); setViewEnd(max + pad)
+      setView({ start: min - pad, end: max + pad })
     }
   }, [])
 
@@ -428,7 +651,8 @@ export function MemoryPage() {
     if (allEvents.length > 0) {
       const min = Math.min(...allEvents.map(e => e.ts))
       const max = Math.max(...allEvents.map(e => e.ts))
-      const pad = (max - min) * 0.05; setViewStart(min - pad); setViewEnd(max + pad)
+      const pad = (max - min) * 0.05
+      setView({ start: min - pad, end: max + pad })
     }
   }, [allEvents])
 
@@ -461,24 +685,24 @@ export function MemoryPage() {
   // Position helper
   const tsToX = useCallback((ts: number) => ((ts - viewStart) / viewSpan) * containerW, [viewStart, viewSpan, containerW])
 
-  // Wheel zoom
+  // Wheel zoom — uses ref to avoid re-registration on every state change
   useEffect(() => {
     const el = containerRef.current; if (!el) return
     const handler = (e: WheelEvent) => {
       e.preventDefault()
       const rect = el.getBoundingClientRect()
       const ratio = (e.clientX - rect.left) / rect.width
-      const span = viewEnd - viewStart
+      const { start, end } = viewRef.current
+      const span = end - start
       const factor = e.deltaY > 0 ? ZOOM_FACTOR : -ZOOM_FACTOR
-      const newSpan = Math.max(5 * DAY, Math.min(12 * 365 * DAY, span * (1 + factor)))
-      const center = viewStart + span * ratio
-      setViewStart(center - newSpan * ratio)
-      setViewEnd(center + newSpan * (1 - ratio))
+      const newSpan = clampSpan(span * (1 + factor))
+      const center = start + span * ratio
+      setView({ start: center - newSpan * ratio, end: center + newSpan * (1 - ratio) })
       setExpandedDay(null)
     }
     el.addEventListener('wheel', handler, { passive: false })
     return () => el.removeEventListener('wheel', handler)
-  }, [viewStart, viewEnd])
+  }, []) // eslint-disable-line
 
   // Drag pan
   const handleMouseDown = useCallback((e: React.MouseEvent) => { dragRef.current = { active: true, lastX: e.clientX } }, [])
@@ -486,35 +710,38 @@ export function MemoryPage() {
     if (!dragRef.current.active) return
     const dx = e.clientX - dragRef.current.lastX
     dragRef.current.lastX = e.clientX
-    const dt = -(dx / containerW) * viewSpan
-    setViewStart(s => s + dt); setViewEnd(s => s + dt)
-  }, [containerW, viewSpan])
+    setView(prev => {
+      const dt = -(dx / containerW) * (prev.end - prev.start)
+      return { start: prev.start + dt, end: prev.end + dt }
+    })
+  }, [containerW])
   const handleMouseUp = useCallback(() => { dragRef.current.active = false }, [])
 
   // Jump presets
   const jumpTo = useCallback((days: number) => {
     const now = Date.now() / 1000
-    setViewStart(now - days * DAY); setViewEnd(now); setExpandedDay(null)
+    setView({ start: now - days * DAY, end: now }); setExpandedDay(null)
   }, [])
   const jumpAll = useCallback(() => {
     if (allEvents.length === 0) return
     const min = Math.min(...allEvents.map(e => e.ts)); const max = Math.max(...allEvents.map(e => e.ts))
-    const pad = (max - min) * 0.05; setViewStart(min - pad); setViewEnd(max + pad); setExpandedDay(null)
+    const pad = (max - min) * 0.05; setView({ start: min - pad, end: max + pad }); setExpandedDay(null)
   }, [allEvents])
 
-  // Keyboard
+  // Keyboard — uses ref to avoid re-registration
   useEffect(() => {
     const h = (e: globalThis.KeyboardEvent) => {
       if (document.activeElement?.tagName === 'INPUT') return
-      const span = viewEnd - viewStart
-      if (e.key === 'ArrowLeft') { setViewStart(s => s - span * 0.1); setViewEnd(s => s - span * 0.1) }
-      if (e.key === 'ArrowRight') { setViewStart(s => s + span * 0.1); setViewEnd(s => s + span * 0.1) }
-      if (e.key === '+' || e.key === '=') { const d = span * 0.15; setViewStart(s => s + d); setViewEnd(s => s - d) }
-      if (e.key === '-') { const d = span * 0.15; setViewStart(s => s - d); setViewEnd(s => s + d) }
+      const { start, end } = viewRef.current
+      const span = end - start
+      if (e.key === 'ArrowLeft') { const dt = span * 0.1; setView({ start: start - dt, end: end - dt }) }
+      if (e.key === 'ArrowRight') { const dt = span * 0.1; setView({ start: start + dt, end: end + dt }) }
+      if (e.key === '+' || e.key === '=') { const d = span * 0.15; const ns = clampSpan(span - d * 2); const c = start + span / 2; setView({ start: c - ns / 2, end: c + ns / 2 }) }
+      if (e.key === '-') { const d = span * 0.15; const ns = clampSpan(span + d * 2); const c = start + span / 2; setView({ start: c - ns / 2, end: c + ns / 2 }) }
       if (e.key === 'Escape') setExpandedDay(null)
     }
     window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h)
-  }, [viewStart, viewEnd])
+  }, []) // eslint-disable-line
 
   // Viewer nav
   const viewerNav = useMemo(() => {
@@ -558,16 +785,23 @@ export function MemoryPage() {
   const photoAreaH = containerH - 52
 
   return (
-    <div className="h-[calc(100vh-4rem)] flex flex-col bg-[#0a0a0c] overflow-hidden relative">
+    <div className="h-screen flex flex-col bg-[#0a0a0c] overflow-hidden relative">
       <style>{`@keyframes slideUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }`}</style>
 
       {/* Top bar */}
       <div className="flex items-center justify-between px-5 py-3 border-b border-zinc-800/40 flex-shrink-0">
         <div className="flex items-center gap-4">
           <h1 className="text-sm font-medium text-zinc-300 tracking-wide">Memory</h1>
-          <SearchBar onSearch={handleSearch} onClear={handleClear} isSearching={isSearching} resultCount={searchResults ? searchResults.length : null} />
+          {/* Tabs */}
+          <div className="flex items-center bg-zinc-900/60 rounded-lg p-0.5 border border-zinc-800/40">
+            <button onClick={() => setTab('timeline')}
+              className={`px-3 py-1 text-xs font-mono rounded-md transition-colors ${tab === 'timeline' ? 'bg-zinc-700/60 text-zinc-200' : 'text-zinc-500 hover:text-zinc-300'}`}>Timeline</button>
+            <button onClick={() => setTab('import')}
+              className={`px-3 py-1 text-xs font-mono rounded-md transition-colors ${tab === 'import' ? 'bg-zinc-700/60 text-zinc-200' : 'text-zinc-500 hover:text-zinc-300'}`}>Import</button>
+          </div>
+          {tab === 'timeline' && <SearchBar onSearch={handleSearch} onClear={handleClear} isSearching={isSearching} resultCount={searchResults ? searchResults.length : null} />}
         </div>
-        <div className="flex items-center gap-3 text-[10px] font-mono tracking-wider">
+        {tab === 'timeline' && <div className="flex items-center gap-3 text-[10px] font-mono tracking-wider">
           <span className="text-zinc-500">{totalPhotos} photos</span>
           <span className="text-zinc-800">·</span>
           <span className="text-emerald-500/80">{classified} classified</span>
@@ -577,16 +811,19 @@ export function MemoryPage() {
           </>}
           <span className="text-zinc-800">·</span>
           <span className="text-zinc-600 uppercase">{zoomView}</span>
-        </div>
+        </div>}
       </div>
 
+      {/* Import tab */}
+      {tab === 'import' && <ImportTab onImportDone={() => { fetchAllPhotos().then(setAllEvents); setTab('timeline') }} />}
+
       {/* Search results photo strip */}
-      {searchResults && searchResults.length > 0 && (
+      {tab === 'timeline' && searchResults && searchResults.length > 0 && (
         <SearchPhotoStrip results={searchResults} onViewPhoto={handleStripViewPhoto} />
       )}
 
       {/* Timeline container */}
-      <div ref={containerRef} className="flex-1 relative overflow-hidden select-none"
+      {tab === 'timeline' && <div ref={containerRef} className="flex-1 relative overflow-hidden select-none"
         style={{ cursor: dragRef.current.active ? 'grabbing' : 'grab' }}
         onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp}>
 
@@ -698,11 +935,11 @@ export function MemoryPage() {
               ))}
             </div>
             <div className="flex items-center gap-2">
-              <button onClick={() => { const d = viewSpan * 0.15; setViewStart(s => s + d); setViewEnd(s => s - d) }}
+              <button onClick={() => setView(prev => { const ns = clampSpan(( prev.end - prev.start) * 0.7); const c = (prev.start + prev.end) / 2; return { start: c - ns / 2, end: c + ns / 2 } })}
                 className="p-1 text-zinc-500 hover:text-zinc-300 transition-colors">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
               </button>
-              <button onClick={() => { const d = viewSpan * 0.15; setViewStart(s => s - d); setViewEnd(s => s + d) }}
+              <button onClick={() => setView(prev => { const ns = clampSpan((prev.end - prev.start) * 1.3); const c = (prev.start + prev.end) / 2; return { start: c - ns / 2, end: c + ns / 2 } })}
                 className="p-1 text-zinc-500 hover:text-zinc-300 transition-colors">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="5" y1="12" x2="19" y2="12" /></svg>
               </button>
@@ -715,7 +952,7 @@ export function MemoryPage() {
           <ExpandedDayPanel group={expandedDay.group} anchorX={expandedDay.anchorX} maxHeight={containerH}
             onClose={() => setExpandedDay(null)} onViewPhoto={ev => setViewingPhoto({ event: ev, dayEvents: expandedDay.group.events })} />
         )}
-      </div>
+      </div>}
 
       {/* Photo viewer */}
       {viewingPhoto && <PhotoViewer event={viewingPhoto.event} onClose={() => setViewingPhoto(null)} onPrev={viewerNav.onPrev} onNext={viewerNav.onNext} />}

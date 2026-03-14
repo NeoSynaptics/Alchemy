@@ -141,7 +141,7 @@ export function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {modules.map((m) => (
+              {[...modules].sort((a, b) => a.id === 'brain_physics' ? -1 : b.id === 'brain_physics' ? 1 : 0).map((m) => (
                 <div key={m.id} className="flex items-center gap-3 text-sm">
                   <div
                     className={`h-2 w-2 rounded-full ${

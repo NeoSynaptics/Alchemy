@@ -39,6 +39,7 @@ class ModelProvider(ABC):
         temperature: float = 0.7,
         endpoint: str | None = None,
         think: bool | None = None,
+        num_ctx: int | None = None,
     ) -> tuple[str, float]:
         """Non-streaming generation. Returns (response_text, inference_ms)."""
 
@@ -51,6 +52,7 @@ class ModelProvider(ABC):
         temperature: float = 0.7,
         endpoint: str | None = None,
         think: bool | None = None,
+        num_ctx: int | None = None,
     ) -> AsyncGenerator[str, None]:
         """Streaming generation. Yields text chunks."""
 
@@ -110,14 +112,18 @@ class OllamaProvider(ModelProvider):
         stream: bool,
         temperature: float = 0.7,
         think: bool | None = None,
+        num_ctx: int | None = None,
     ) -> dict:
         """Build the Ollama /api/chat request payload."""
+        options: dict = {"temperature": temperature}
+        if num_ctx:
+            options["num_ctx"] = num_ctx
         payload: dict = {
             "model": model,
             "messages": self._to_ollama_messages(messages),
             "stream": stream,
             "keep_alive": self._keep_alive,
-            "options": {"temperature": temperature},
+            "options": options,
         }
         if think is not None:
             payload["think"] = think
@@ -131,10 +137,11 @@ class OllamaProvider(ModelProvider):
         temperature: float = 0.7,
         endpoint: str | None = None,
         think: bool | None = None,
+        num_ctx: int | None = None,
     ) -> tuple[str, float]:
         client = self._get_client(endpoint)
         payload = self._build_payload(
-            model, messages, stream=False, temperature=temperature, think=think,
+            model, messages, stream=False, temperature=temperature, think=think, num_ctx=num_ctx,
         )
         t0 = time.monotonic()
         resp = await client.post("/api/chat", json=payload)
@@ -151,10 +158,11 @@ class OllamaProvider(ModelProvider):
         temperature: float = 0.7,
         endpoint: str | None = None,
         think: bool | None = None,
+        num_ctx: int | None = None,
     ) -> AsyncGenerator[str, None]:
         client = self._get_client(endpoint)
         payload = self._build_payload(
-            model, messages, stream=True, temperature=temperature, think=think,
+            model, messages, stream=True, temperature=temperature, think=think, num_ctx=num_ctx,
         )
         async with client.stream("POST", "/api/chat", json=payload) as resp:
             resp.raise_for_status()
@@ -210,6 +218,7 @@ class AlchemyProvider(ModelProvider):
         temperature: float = 0.7,
         endpoint: str | None = None,
         think: bool | None = None,
+        num_ctx: int | None = None,
     ) -> tuple[str, float]:
         if not self._alchemy_client:
             raise RuntimeError("AlchemyProvider not started")
@@ -231,6 +240,7 @@ class AlchemyProvider(ModelProvider):
         temperature: float = 0.7,
         endpoint: str | None = None,
         think: bool | None = None,
+        num_ctx: int | None = None,
     ) -> AsyncGenerator[str, None]:
         text, _ = await self.generate(model, messages, temperature=temperature)
         yield text
@@ -275,8 +285,11 @@ class GatewayProvider(ModelProvider):
         temperature: float = 0.7,
         endpoint: str | None = None,
         think: bool | None = None,
+        num_ctx: int | None = None,
     ) -> tuple[str, float]:
         options: dict = {"temperature": temperature}
+        if num_ctx:
+            options["num_ctx"] = num_ctx
         kwargs: dict = {"options": options}
         if think is not None:
             kwargs["think"] = think
@@ -293,8 +306,11 @@ class GatewayProvider(ModelProvider):
         temperature: float = 0.7,
         endpoint: str | None = None,
         think: bool | None = None,
+        num_ctx: int | None = None,
     ) -> AsyncGenerator[str, None]:
         options: dict = {"temperature": temperature}
+        if num_ctx:
+            options["num_ctx"] = num_ctx
         kwargs: dict = {"options": options}
         if think is not None:
             kwargs["think"] = think

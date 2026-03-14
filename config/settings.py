@@ -246,6 +246,17 @@ class AgentsSettings(BaseModel):
     flow_vs: FlowVSAgentSettings = FlowVSAgentSettings()
 
 
+class BrainPhysicsSettings(BaseModel):
+    """BrainPhysics — coarse-to-fine cognitive routing with intuitive physics."""
+    enabled: bool = True
+    max_iterations: int = 5          # predictive processing loop max
+    error_threshold: float = 0.3     # below this → accept prediction, distill
+    coarse_resolution: int = 320     # first-pass screenshot downscale (px width)
+    fine_resolution: int = 1280      # refinement pass resolution
+    physics_timeout: float = 5.0     # max seconds for one simulation step
+    consolidation_enabled: bool = True  # distill successful patterns into memory
+
+
 class BaratzaSettings(BaseModel):
     """BaratzaMemory — knowledge graph (PostgreSQL + Qdrant)."""
     enabled: bool = True
@@ -337,6 +348,7 @@ class Settings(BaseSettings):
     agents: AgentsSettings = AgentsSettings()
     memory: MemorySettings = MemorySettings()
     browser: BrowserSettings = BrowserSettings()
+    brain_physics: BrainPhysicsSettings = BrainPhysicsSettings()
     baratza: BaratzaSettings = BaratzaSettings()
 
     # === Flat fields (backward compat -- used by server.py and existing code) ===
@@ -471,6 +483,9 @@ class Settings(BaseSettings):
 
     # AlchemyConnect
     connect_enabled: bool = True
+
+    # BrainPhysics
+    brain_physics_enabled: bool = True
 
     # Research
     research_enabled: bool = True

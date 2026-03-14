@@ -11,6 +11,18 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'page-dashboard': ['./src/pages/Dashboard.tsx'],
+          'page-brain-physics': ['./src/pages/BrainPhysics.tsx'],
+          'page-memory': ['./src/pages/Memory.tsx'],
+          'page-settings': ['./src/pages/Settings.tsx'],
+        },
+      },
+    },
+  },
   server: {
     port: 5173,
     proxy: {

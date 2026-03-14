@@ -60,6 +60,56 @@ class SmartRouter:
     def registry(self) -> ModelRegistry:
         return self._registry
 
+    # -- Rolling summarization (fire-and-forget) ------------------------------
+
+    def _maybe_summarize(self, conversation_id) -> None:
+        """Check if conversation needs summarization and fire it off in the background."""
+        if not self._conversations.needs_summarization(conversation_id):
+            return
+
+        conv_model = self._registry.get_default(ModelCapability.CONVERSATION)
+        if not conv_model:
+            return
+        provider = self._providers.get(conv_model.location)
+        if not provider:
+            return
+
+        if not self._conversations.mark_summarizing(conversation_id):
+            return  # already running
+
+        asyncio.create_task(
+            self._run_summarization(conversation_id, conv_model, provider)
+        )
+
+    async def _run_summarization(self, conversation_id, conv_model, provider) -> None:
+        """Background task: ask 14B to distill older messages into bullet points."""
+        try:
+            messages = self._conversations.build_summarize_request(conversation_id)
+            if not messages:
+                self._conversations.cancel_summarizing(conversation_id)
+                return
+
+            summary_text, elapsed_ms = await provider.generate(
+                model=conv_model.name,
+                messages=messages,
+                endpoint=conv_model.endpoint,
+                think=False,
+                temperature=0.3,
+                num_ctx=conv_model.max_context_tokens,
+            )
+
+            self._conversations.apply_summary(conversation_id, summary_text)
+            logger.info(
+                "Summarization done conv=%s in %.0fms",
+                str(conversation_id)[:8],
+                elapsed_ms,
+            )
+        except Exception:
+            logger.warning(
+                "Summarization failed conv=%s", str(conversation_id)[:8], exc_info=True
+            )
+            self._conversations.cancel_summarizing(conversation_id)
+
     async def route(self, request: ChatRequest) -> ChatResponse:
         """Non-streaming route: classify, infer, return full response."""
         decision = self._classify(request)
@@ -131,6 +181,7 @@ class SmartRouter:
             request.conversation_id,
             knowledge_context=knowledge_context,
         )
+        logger.info("Chat conv=%s history=%d messages (source=%s)", str(request.conversation_id)[:8], len(messages) - 1, request.source)
 
         # Inject classifier instruction into system prompt
         messages[0] = ChatMessage(
@@ -147,6 +198,7 @@ class SmartRouter:
             messages=messages,
             endpoint=conv_model.endpoint,
             think=False,
+            num_ctx=conv_model.max_context_tokens,
         ):
             full_response += chunk_text
 
@@ -251,6 +303,9 @@ class SmartRouter:
                 ))
             )
 
+        # Rolling summarization — compress older turns in background
+        self._maybe_summarize(request.conversation_id)
+
         yield StreamChunk(
             content="", done=True, model_used=conv_model.name, inference_ms=elapsed_ms
         )
@@ -323,6 +378,7 @@ class SmartRouter:
             request.conversation_id,
             knowledge_context=knowledge_context,
         )
+        logger.info("Chat conv=%s history=%d messages (source=%s)", str(request.conversation_id)[:8], len(messages) - 1, request.source)
         messages[0] = ChatMessage(
             role="system",
             content=messages[0].content + CLASSIFIER_INSTRUCTION,
@@ -333,6 +389,7 @@ class SmartRouter:
             messages=messages,
             endpoint=conv_model.endpoint,
             think=False,
+            num_ctx=conv_model.max_context_tokens,
         )
 
         _, cleaned = parse_intent_tag(raw_text)
@@ -365,6 +422,9 @@ class SmartRouter:
                     route_intent=decision.intent.value,
                 ))
             )
+
+        # Rolling summarization — compress older turns in background
+        self._maybe_summarize(request.conversation_id)
 
         return ChatResponse(
             message=cleaned,
