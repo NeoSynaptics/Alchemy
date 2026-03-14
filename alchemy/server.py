@@ -5,6 +5,7 @@ import atexit
 import logging
 import sys
 import threading
+import time
 from contextlib import asynccontextmanager
 from uuid import uuid4
 
@@ -680,6 +681,24 @@ if settings.baratza.enabled and settings.baratza.src_path:
         logger.warning("BaratzaMemory routes not available (src_path=%s)", settings.baratza.src_path)
 elif settings.baratza.enabled:
     logger.info("BaratzaMemory enabled but src_path not set — skipping route mount")
+
+
+@app.post("/v1/shutdown")
+async def shutdown():
+    """Graceful shutdown: trigger VRAM cleanup then stop the server."""
+    import os
+    import signal
+
+    logger.info("Shutdown requested via API")
+
+    # Run VRAM cleanup in background, then send SIGTERM to ourselves
+    # so uvicorn triggers the lifespan teardown properly.
+    def _delayed_kill():
+        time.sleep(0.5)
+        os.kill(os.getpid(), signal.SIGTERM)
+
+    threading.Thread(target=_delayed_kill, daemon=True).start()
+    return {"status": "shutting_down"}
 
 
 @app.get("/health")
