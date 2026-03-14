@@ -338,6 +338,23 @@ class StackOrchestrator:
             card.touch()
             return LoadResult(success=True, location=card.current_location)
 
+        # Hard gate: model must fit on a single GPU. No cross-GPU spillover.
+        snap = await self._monitor.snapshot()
+        fits_any = any(g.total_vram_mb >= card.vram_mb for g in snap.gpus)
+        if not fits_any:
+            logger.warning(
+                "REJECT %s (%dMB): exceeds every GPU's total VRAM — no single-GPU fit",
+                name, card.vram_mb,
+            )
+            self._event_log.record(
+                "vram_reject", model_name=name, success=False,
+                error=f"Model {name} ({card.vram_mb}MB) too large for any single GPU",
+            )
+            return LoadResult(
+                success=False,
+                error=f"Model {name} ({card.vram_mb}MB) too large for any single GPU",
+            )
+
         # Determine target GPU
         target_gpu = gpu if gpu is not None else card.preferred_gpu
         if target_gpu is None:
@@ -423,10 +440,41 @@ class StackOrchestrator:
         self._registry.update_location(name, location, tier)
         card.touch()
 
-        # Post-load drift check: compare actual VRAM delta vs expected
+        # Post-load checks: drift + spillover detection
         post_snap = await self._monitor.snapshot()
         post_gpu = next((g for g in post_snap.gpus if g.index == target_gpu), None)
         actual_free_after = post_gpu.free_vram_mb if post_gpu else None
+
+        # SPILLOVER CHECK: if any OTHER GPU lost significant VRAM, Ollama split the
+        # model across GPUs. This is never acceptable — unload immediately.
+        spillover_mb = 0
+        for g in post_snap.gpus:
+            if g.index == target_gpu:
+                continue
+            pre_other = next((pg for pg in pre_snap.gpus if pg.index == g.index), None)
+            if pre_other is not None:
+                other_delta = pre_other.free_vram_mb - g.free_vram_mb
+                if other_delta > 100:  # >100MB increase on non-target GPU = spillover
+                    spillover_mb += other_delta
+
+        if spillover_mb > 0:
+            logger.error(
+                "SPILLOVER DETECTED: %s bled %dMB onto non-target GPUs — unloading immediately",
+                name, spillover_mb,
+            )
+            self._event_log.record(
+                "vram_spillover", model_name=name, gpu_index=target_gpu,
+                success=False,
+                error=f"Model spilled {spillover_mb}MB onto other GPUs",
+                details={"spillover_mb": spillover_mb},
+            )
+            # Unload the spilled model
+            await self._backend_unload(card)
+            self._registry.update_location(name, ModelLocation.CPU_RAM, ModelTier.WARM)
+            return LoadResult(
+                success=False,
+                error=f"Model {name} spilled {spillover_mb}MB across GPUs — rejected and unloaded",
+            )
 
         self._event_log.record(
             "load", model_name=name, gpu_index=target_gpu,

@@ -1,8 +1,10 @@
 """Alchemy FastAPI server — model routing + management API on port 8000."""
 
 import asyncio
+import atexit
 import logging
 import sys
+import threading
 from contextlib import asynccontextmanager
 from uuid import uuid4
 
@@ -413,6 +415,26 @@ async def lifespan(app: FastAPI):
         except Exception:
             logger.exception("BaratzaMemory failed to start")
 
+    # --- BrainPhysics (cognitive routing simulator) ---
+    app.state.brain_physics_engine = None
+    if settings.brain_physics.enabled:
+        try:
+            from alchemy.brain_physics.engine import BrainPhysicsEngine, PhysicsSim, PredictionLoop
+
+            bp_engine = BrainPhysicsEngine(
+                physics=PhysicsSim(),
+                prediction_loop=PredictionLoop(
+                    max_iterations=settings.brain_physics.max_iterations,
+                    error_threshold=settings.brain_physics.error_threshold,
+                ),
+            )
+            app.state.brain_physics_engine = bp_engine
+            logger.info("BrainPhysics engine ready (max_iter=%d, threshold=%.2f)",
+                        settings.brain_physics.max_iterations,
+                        settings.brain_physics.error_threshold)
+        except Exception:
+            logger.exception("BrainPhysics failed to start")
+
     # --- Constitution (approval defense) ---
     app.state.constitution = None
     try:
@@ -432,6 +454,9 @@ async def lifespan(app: FastAPI):
         logger.info("Task planner initialized")
     except Exception:
         logger.debug("Task planner not available")
+
+    # Register VRAM cleanup atexit only when server actually runs
+    atexit.register(_atexit_vram_guard)
 
     yield
 
@@ -475,6 +500,93 @@ async def lifespan(app: FastAPI):
     await ollama.close()
     if getattr(app.state, "gui_actor_client", None):
         await app.state.gui_actor_client.close()
+
+    logger.info("Alchemy shutdown complete")
+
+    # --- VRAM cleanup: fire-and-forget background thread ---
+    # Dashboard closes immediately; models unload in parallel.
+    _start_vram_cleanup()
+
+
+# ---------------------------------------------------------------------------
+# VRAM cleanup — background thread + atexit guarantee
+# ---------------------------------------------------------------------------
+_cleanup_thread: threading.Thread | None = None
+_cleanup_done = threading.Event()
+
+
+def _log_safe(msg: str) -> None:
+    """Log during shutdown — falls back to print if logging is dead."""
+    try:
+        logging.getLogger("alchemy.server").info(msg)
+    except Exception:
+        try:
+            print(f"[alchemy] {msg}")
+        except Exception:
+            pass
+
+
+def _purge_vram_sync() -> None:
+    """Unload every running Ollama model from VRAM (synchronous).
+
+    Queries Ollama /api/ps directly — doesn't rely on the APU registry,
+    so it catches models regardless of how they were loaded or if the
+    registry drifted.
+    """
+    import httpx
+
+    try:
+        with httpx.Client(timeout=httpx.Timeout(30.0, connect=5.0)) as client:
+            resp = client.get("http://localhost:11434/api/ps")
+            if resp.status_code != 200:
+                return
+            running = resp.json().get("models", [])
+            if not running:
+                _log_safe("VRAM cleanup: no models loaded")
+                return
+            names = [m.get("name", "") for m in running if m.get("name")]
+            _log_safe(
+                f"VRAM cleanup: unloading {len(names)} model(s) — {', '.join(names)}"
+            )
+            for name in names:
+                try:
+                    client.post(
+                        "http://localhost:11434/api/generate",
+                        json={"model": name, "prompt": "", "keep_alive": 0},
+                    )
+                    _log_safe(f"VRAM cleanup: {name} unloaded")
+                except Exception:
+                    pass
+    except Exception:
+        pass  # Ollama may already be gone — nothing to clean
+    finally:
+        _cleanup_done.set()
+
+
+def _start_vram_cleanup() -> None:
+    """Spawn non-daemon background thread for VRAM cleanup."""
+    global _cleanup_thread
+    if _cleanup_done.is_set():
+        return
+    _cleanup_thread = threading.Thread(
+        target=_purge_vram_sync, name="alchemy-vram-cleanup", daemon=False,
+    )
+    _cleanup_thread.start()
+
+
+def _atexit_vram_guard() -> None:
+    """Atexit: join the background thread, or run cleanup ourselves.
+
+    - If background thread is running → wait for it (max 30s).
+    - If it never started (crash/hard kill) → do it now synchronously.
+    - If cleanup already done → no-op.
+    """
+    if _cleanup_done.is_set():
+        return
+    if _cleanup_thread and _cleanup_thread.is_alive():
+        _cleanup_thread.join(timeout=30)
+    if not _cleanup_done.is_set():
+        _purge_vram_sync()
 
 
 app = FastAPI(
@@ -536,6 +648,11 @@ app.include_router(click_api.router)
 # AlchemyWord
 from alchemy.word.api import router as word_router
 app.include_router(word_router, prefix="/v1")
+
+# BrainPhysics
+if settings.brain_physics.enabled:
+    from alchemy.brain_physics.api import router as brain_physics_router
+    app.include_router(brain_physics_router, prefix="/v1")
 
 app.include_router(settings_api.router, prefix="/v1")
 
